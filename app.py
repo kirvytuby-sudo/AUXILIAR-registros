@@ -27,32 +27,18 @@ st.markdown("""
         border-radius: 10px;
         padding: 20px 16px;
         text-align: center;
-        min-height: 140px;
+        min-height: 130px;
         display: flex;
         flex-direction: column;
         justify-content: center;
     }
-    .mod-card.activo  { border-color: #1E3A8A; background: #EFF6FF; }
-    .mod-card.pronto  { border-color: #CBD5E1; background: #F8FAFC; opacity: 0.7; }
+    .mod-card.activo { border-color: #1E3A8A; background: #EFF6FF; }
+    .mod-card.pronto { border-color: #CBD5E1; background: #F8FAFC; opacity: 0.7; }
     .mod-icon  { font-size: 2rem; margin-bottom: 8px; }
     .mod-title { font-weight: 700; color: #1E3A8A; font-size: 1rem; }
     .mod-desc  { color: #64748B; font-size: 0.82rem; margin-top: 4px; }
     .badge-ok   { background:#DCFCE7; color:#166534; border-radius:12px; padding:2px 10px; font-size:0.75rem; }
     .badge-soon { background:#F1F5F9; color:#94A3B8; border-radius:12px; padding:2px 10px; font-size:0.75rem; }
-
-    div[data-testid="stPageLink"] a {
-        background: #1E3A8A !important;
-        color: white !important;
-        border-radius: 8px !important;
-        padding: 6px 18px !important;
-        font-weight: 600 !important;
-        text-decoration: none !important;
-        display: inline-block !important;
-        margin-top: 10px !important;
-    }
-    div[data-testid="stPageLink"] a:hover {
-        background: #1e40af !important;
-    }
 
     #MainMenu { visibility: hidden; }
     footer     { visibility: hidden; }
@@ -67,55 +53,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 MODULOS = [
-    {
-        "icon": "💼",
-        "title": "Pagos Bancarios",
-        "desc": "Conciliación de nómina BBVA Net Cash — PDF → Excel",
-        "estado": "activo",
-        "pagina": "pages/1_Pagos_Bancarios.py",
-    },
-    {
-        "icon": "📋",
-        "title": "Provisión de Nómina",
-        "desc": "XML (CFDI) → Plantilla SINUBE con columnas dinámicas",
-        "estado": "activo",
-        "pagina": "pages/2_Provision_Nomina.py",
-    },
-    {
-        "icon": "💳",
-        "title": "Préstamos",
-        "desc": "PDFs de préstamos → Excel con catálogo de cuentas",
-        "estado": "activo",
-        "pagina": "pages/3_Prestamos.py",
-    },
-    {
-        "icon": "⛽",
-        "title": "Ventas del Día",
-        "desc": "Reporte de ventas diarias — póliza contable",
-        "estado": "pronto",
-        "pagina": None,
-    },
-    {
-        "icon": "🏦",
-        "title": "Estado de Cuenta",
-        "desc": "Análisis y conciliación de estados de cuenta bancarios",
-        "estado": "pronto",
-        "pagina": None,
-    },
-    {
-        "icon": "📑",
-        "title": "Reconciliación",
-        "desc": "Reconciliación contable con plantilla SINUBE",
-        "estado": "pronto",
-        "pagina": None,
-    },
-    {
-        "icon": "🔗",
-        "title": "Conciliación SAT",
-        "desc": "Conciliación de CFDIs contra registros contables",
-        "estado": "pronto",
-        "pagina": None,
-    },
+    {"icon": "💼", "title": "Pagos Bancarios",    "desc": "Conciliación de nómina BBVA Net Cash — PDF → Excel",         "estado": "activo", "pagina": "pages/1_Pagos_Bancarios.py"},
+    {"icon": "📋", "title": "Provisión de Nómina","desc": "XML (CFDI) → Plantilla SINUBE con columnas dinámicas",        "estado": "activo", "pagina": "pages/2_Provision_Nomina.py"},
+    {"icon": "💳", "title": "Préstamos",           "desc": "PDFs de préstamos → Excel con catálogo de cuentas",           "estado": "activo", "pagina": "pages/3_Prestamos.py"},
+    {"icon": "⛽", "title": "Ventas del Día",      "desc": "Reporte de ventas diarias — póliza contable",                 "estado": "pronto", "pagina": None},
+    {"icon": "🏦", "title": "Estado de Cuenta",   "desc": "Análisis y conciliación de estados de cuenta bancarios",      "estado": "pronto", "pagina": None},
+    {"icon": "📑", "title": "Reconciliación",      "desc": "Reconciliación contable con plantilla SINUBE",                "estado": "pronto", "pagina": None},
+    {"icon": "🔗", "title": "Conciliación SAT",   "desc": "Conciliación de CFDIs contra registros contables",            "estado": "pronto", "pagina": None},
 ]
 
 cols = st.columns(4)
@@ -135,7 +79,8 @@ for i, mod in enumerate(MODULOS):
 </div>
 """, unsafe_allow_html=True)
         if mod["estado"] == "activo" and mod["pagina"]:
-            st.page_link(mod["pagina"], label=f"Abrir {mod['title']} →")
+            if st.button(f"Abrir →", key=f"mod_{i}"):
+                st.switch_page(mod["pagina"])
         st.markdown("<br>", unsafe_allow_html=True)
 
 st.markdown("---")

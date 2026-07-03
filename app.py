@@ -251,28 +251,15 @@ if total_pdfs > 0:
     if generar:
         with st.spinner(f"Procesando {n_sel} PDF(s)..."):
             try:
-                # Cargar catálogo
+                # Cargar catálogo — igual que _cargar_catalogo_hilo en gui_conciliacion.py
+                # load_poliza() devuelve DataFrames indexados por nombre_norm con columna "Cuenta"
                 catalogo = {"empleados": {}, "prestamos": {}}
                 if catalogo_path and os.path.isfile(catalogo_path):
                     mapa = cn.load_poliza(catalogo_path)
-                    import pandas as pd
                     for k in ("empleados", "prestamos"):
                         df = mapa.get(k)
                         if df is not None and not df.empty:
-                            cols_df = [c for c in df.columns if c]
-                            if len(cols_df) >= 2:
-                                col_nombre = cols_df[0]
-                                col_cuenta  = cols_df[1]
-                                import unicodedata, re
-                                def norm(s):
-                                    s = unicodedata.normalize("NFKD", str(s).strip())
-                                    s = s.encode("ascii", "ignore").decode("utf-8")
-                                    return re.sub(r"\s+", " ", s).upper()
-                                catalogo[k] = {
-                                    norm(row[col_nombre]): str(row[col_cuenta]).strip()
-                                    for _, row in df.iterrows()
-                                    if pd.notna(row[col_nombre])
-                                }
+                            catalogo[k] = {idx: str(row["Cuenta"]) for idx, row in df.iterrows()}
 
                 # Generar Excel en tmp
                 out_path = os.path.join(TMP, "PagosBancarios_Consolidado.xlsx")

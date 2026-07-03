@@ -2,6 +2,7 @@
 AUXILIAR DE REGISTROS — Página de inicio
 """
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="Auxiliar de Registros",
@@ -21,29 +22,20 @@ st.markdown("""
 
     .mod-card {
         background: #F8FAFC; border: 2px solid #E2E8F0;
-        border-radius: 10px; padding: 20px 16px;
-        text-align: center; min-height: 155px;
+        border-radius: 10px; padding: 20px 16px 12px;
+        text-align: center; min-height: 130px;
         display: flex; flex-direction: column; justify-content: center;
     }
     .mod-card.activo { border-color: #1E3A8A; background: #EFF6FF; }
     .mod-card.pronto { border-color: #CBD5E1; opacity: 0.7; }
-    .mod-icon  { font-size: 2rem; margin-bottom: 8px; }
+    .mod-icon  { font-size: 2rem; margin-bottom: 6px; }
     .mod-title { font-weight: 700; color: #1E3A8A; font-size: 1rem; }
     .mod-desc  { color: #64748B; font-size: 0.82rem; margin-top: 4px; }
-
-    .btn-mod {
-        display: inline-block; background: #1E3A8A; color: #fff !important;
-        text-decoration: none !important; padding: 7px 18px;
-        border-radius: 8px; font-weight: 600; font-size: 0.85rem;
-        margin-top: 10px; cursor: pointer;
-    }
-    .btn-mod:hover { background: #1e40af; }
     .badge-soon {
         background: #F1F5F9; color: #94A3B8;
         border-radius: 12px; padding: 2px 10px; font-size: 0.75rem;
-        display: inline-block; margin-top: 10px;
+        display: inline-block; margin-top: 8px;
     }
-
     #MainMenu { visibility: hidden; }
     footer     { visibility: hidden; }
 </style>
@@ -80,23 +72,32 @@ MODULOS = [
      "estado": "pronto", "url": None},
 ]
 
+# Track which button was clicked BEFORE rendering components
+ir_a = None
+
 cols = st.columns(4)
 for i, mod in enumerate(MODULOS):
     with cols[i % 4]:
-        if mod["estado"] == "activo":
-            accion = f'<a class="btn-mod" href="/{mod["url"]}" target="_self">Abrir →</a>'
-        else:
-            accion = '<span class="badge-soon">🔜 Próximamente</span>'
-
         st.markdown(f"""
 <div class="mod-card {mod['estado']}">
     <div class="mod-icon">{mod['icon']}</div>
     <div class="mod-title">{mod['title']}</div>
     <div class="mod-desc">{mod['desc']}</div>
-    {accion}
+    {'<span class="badge-soon">🔜 Próximamente</span>' if mod['estado'] == 'pronto' else ''}
 </div>
-<div style="height:12px"></div>
 """, unsafe_allow_html=True)
+        if mod["estado"] == "activo":
+            if st.button("Abrir →", key=f"nav_{i}", use_container_width=True, type="primary"):
+                ir_a = mod["url"]
+        else:
+            st.markdown("<div style='height:38px'></div>", unsafe_allow_html=True)
+
+# Navigate via JS after all widgets rendered
+if ir_a:
+    components.html(
+        f"<script>window.parent.location.href = '/{ir_a}';</script>",
+        height=0,
+    )
 
 st.markdown("---")
 st.caption("AUXILIAR DE REGISTROS · La Sanitaria · v2.0  —  Usa también la barra lateral (☰) para navegar.")

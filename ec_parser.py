@@ -272,27 +272,7 @@ def _parsear_bbva_pyme(texto):
                 cur_conts.append(line.strip())
     _flush_bbva()
 
-    def _es_comision_bbva(desc):
-        d = desc.upper()
-        if "IVA" in d: return True
-        if "APLI TASA DE DES" in d: return True
-        if "PENA BAJA FACTURACION" in d: return True
-        if "SERV BANCA INTERNET" in d: return True
-        if "CONTRATACI-TPV" in d: return True
-        return False
-
-    normales   = [m for m in movimientos if not _es_comision_bbva(m[1])]
-    comisiones = [m for m in movimientos if _es_comision_bbva(m[1])]
-    if comisiones:
-        tot_dep = round(sum(m[2] for m in comisiones), 2)
-        tot_ret = round(sum(m[3] for m in comisiones), 2)
-        ultima_fecha = comisiones[-1][0]
-        ultimo_saldo = comisiones[-1][4] if len(comisiones[-1]) > 4 else None
-        entry = (ultima_fecha, "COMISIONES E IVA", tot_dep, tot_ret, ultimo_saldo) \
-                if ultimo_saldo is not None else \
-                (ultima_fecha, "COMISIONES E IVA", tot_dep, tot_ret)
-        normales.append(entry)
-    return normales
+    return movimientos
 
 
 def _parsear_banamex(texto, variante="Banamex Débito"):
@@ -749,15 +729,7 @@ def _parsear_banorte(texto, ruta=None, pdfplumber_mod=None):
         saldo_anterior = saldo
         movimientos.append((fecha, desc, dep, ret, saldo))
 
-        def _es_comision(desc):
-            d = desc.upper()
-            if "TRASPASO" in d: return False
-            if "IVA" in d or "I.V.A." in d: return True
-            if "COMISION" in d: return True
-            if "TRANSFERENCIA - ENVIO" in d and ("(SPEI;" in d or "(CECOBAN;" in d): return True
-            if "TRANSFERENCIA - ENVIO" in d and "DISPERSION DE NOMINA" in d: return True
-            if "EMISION DE CHEQUERA" in d: return True
-            return False
+
 
     for linea in lineas:
         lu = linea.upper()
@@ -773,24 +745,7 @@ def _parsear_banorte(texto, ruta=None, pdfplumber_mod=None):
             if cur_fecha_str is not None: cur_lineas.append(linea.strip())
     _flush(cur_fecha_str, cur_lineas)
 
-    def _es_comision(desc):
-        d = desc.upper()
-        if "TRASPASO" in d: return False
-        if "IVA" in d or "I.V.A." in d: return True
-        if "COMISION" in d: return True
-        if "TRANSFERENCIA - ENVIO" in d and ("(SPEI;" in d or "(CECOBAN;" in d): return True
-        if "EMISION DE CHEQUERA" in d: return True
-        return False
-
-    normales   = [m for m in movimientos if not _es_comision(m[1])]
-    comisiones = [m for m in movimientos if _es_comision(m[1])]
-    if comisiones:
-        tot_dep = round(sum(m[2] for m in comisiones), 2)
-        tot_ret = round(sum(m[3] for m in comisiones), 2)
-        ultima_fecha = comisiones[-1][0]
-        ultimo_saldo = comisiones[-1][4]
-        normales.append((ultima_fecha, "COMISIONES E IVA", tot_dep, tot_ret, ultimo_saldo))
-    return normales
+    return movimientos
 
 
 def _parsear_fila(fila):

@@ -27,11 +27,10 @@ st.markdown("""
         border-radius: 10px;
         padding: 20px 16px;
         text-align: center;
-        height: 160px;
+        min-height: 140px;
         display: flex;
         flex-direction: column;
         justify-content: center;
-        transition: border-color 0.2s;
     }
     .mod-card.activo  { border-color: #1E3A8A; background: #EFF6FF; }
     .mod-card.pronto  { border-color: #CBD5E1; background: #F8FAFC; opacity: 0.7; }
@@ -40,6 +39,20 @@ st.markdown("""
     .mod-desc  { color: #64748B; font-size: 0.82rem; margin-top: 4px; }
     .badge-ok   { background:#DCFCE7; color:#166534; border-radius:12px; padding:2px 10px; font-size:0.75rem; }
     .badge-soon { background:#F1F5F9; color:#94A3B8; border-radius:12px; padding:2px 10px; font-size:0.75rem; }
+
+    div[data-testid="stPageLink"] a {
+        background: #1E3A8A !important;
+        color: white !important;
+        border-radius: 8px !important;
+        padding: 6px 18px !important;
+        font-weight: 600 !important;
+        text-decoration: none !important;
+        display: inline-block !important;
+        margin-top: 10px !important;
+    }
+    div[data-testid="stPageLink"] a:hover {
+        background: #1e40af !important;
+    }
 
     #MainMenu { visibility: hidden; }
     footer     { visibility: hidden; }
@@ -118,10 +131,12 @@ for i, mod in enumerate(MODULOS):
     <div class="mod-icon">{mod['icon']}</div>
     <div class="mod-title">{mod['title']}</div>
     <div class="mod-desc">{mod['desc']}</div>
-    <div style="margin-top:10px">{badge}</div>
+    <div style="margin-top:8px">{badge}</div>
 </div>
-<br>
 """, unsafe_allow_html=True)
+        if mod["estado"] == "activo" and mod["pagina"]:
+            st.page_link(mod["pagina"], label=f"Abrir {mod['title']} →")
+        st.markdown("<br>", unsafe_allow_html=True)
 
 st.markdown("---")
 st.caption("AUXILIAR DE REGISTROS · La Sanitaria · v2.0  —  Usa la barra lateral izquierda (☰) para navegar entre módulos.")

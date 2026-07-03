@@ -179,7 +179,7 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
                 ws2 = sorted(rows[y], key=lambda w: w["x0"])
                 tokens = [w["text"] for w in ws2]
                 xs     = [w["x0"]  for w in ws2]
-                if len(tokens) <&�:
+                if len(tokens) < 2:
                     continue
                 m1 = pat_fecha.match(tokens[0])
                 m2 = pat_fecha.match(tokens[1]) if len(tokens) > 1 else None
@@ -398,7 +398,7 @@ def _parsear_santander(texto):
             movimientos.append((fecha, desc, dep, ret, saldo))
         i = j
     if not movimientos:
-        pat_f2 = re.compile(r"(\d{2/\d{2/\d{4})")
+        pat_f2 = re.compile(r"(\d{2}/\d{2}/\d{4})")
         for linea in texto.splitlines():
             m2 = pat_f2.search(linea)
             if not m2: continue
@@ -408,25 +408,136 @@ def _parsear_santander(texto):
             saldo = montos[-1]; monto = montos[-2] if len(montos) >= 2 else 0.0
             if saldo_ant is not None:
                 diff = round(saldo - saldo_ant, 2)
-                dep, ret = (monto, 0.0) if diff >= 0 else (0(������Ѽ�(��������������͔�(���������������������ɕЀ􁵽�Ѽ�����(��������������͌�����}�ȹ�Ո�����������쁑�͌�����}���Ѽ��Ո�������͌����ɥ�����Ȁ��P�(������������ͅ���}��Ѐ�ͅ���(��������������٥����ѽ̹�����������������͌�������ɕа�ͅ�����(����ɕ��ɸ���٥����ѽ�(()����}���͕��}͍�ѥ������ѕ�Ѽ��х�����9�����(�������A��͕ȁM��ѥ���������(����5ML���9��İ���Ȱ�5H��̰�	H��а�5d��԰�)U8��ذ(��������������)U0��ܰ�<��ఉM@��䰉=
-P������9=X���İ�%���Ȱ(��������������)8��İ�AH��а�U��ఉ=
-P������9=X���İ������(��������������(�����Ѐ�ɔ�͕�ɍ��ȉq����q�����q����ѕ�Ѽ�(���������聅����􁥹С�й�ɽ���Ĥ�(������͔�(���������Ȁ�ɔ�͕�ɍ��ȉq��q�����l�p�t�q�����l�p�t�q�����q����ѕ�Ѽ�(�������������聅��������������С�ȹ�ɽ���̤�(�������}�������ɔ���������ȉx�q�����q̬�m�iu����q̬��������(�������}���ѽ}���ɔ���������ȉp��mq��t�p�q�������(�������}���Ѽ����ɔ���������Ȉ�mq��t�p�q�������(������٥����ѽ̀�mt�ͅ���}��Ѐ�9���(����ͥ}���ɔ�͕�ɍ��Ȉ���M����q̭��������M1=q̭9QI%=I�M����q̭��ѕɥ�ȥmyq�t��mq��t�p�q��������ѕ�Ѽ��ɔ�$�(�������ͥ}��(������������ͅ���}��Ѐ􁙱��Сͥ}���ɽ���Ĥ�ɕ��������������(���������ፕ�Ёፕ�ѥ�������(���������̀�ѕ�Ѽ�����ѱ���̠�쁤���(����ݡ�����������������̤�(��������������}��������э��������m�t���ɥ����(�������������Ё�聤����쁍��ѥ�Ք(������������􁥹С���ɽ���Ĥ�쁵��}��Ȁ􁴹�ɽ���Ȥ쁑�͍}����􁴹�ɽ���̤���ɥ���(��������������}��ȁ��Ё���5ML��ȁ������ā�ȁ��������聤����쁍��ѥ�Ք(�����������聙�����􁑅є�������5MMm���}���t������(���������ፕ�Ёፕ�ѥ��聤����쁍��ѥ�Ք(����������􁤀���쁉���Օ}����̀�m��͍}���t(��������ݡ�����������������̤�������Ё���}��������э��������m�t���ɥ�����(���������������􁱥����m�t���ɥ���(�����������������聉���Օ}����̹����������(�����������������(������������Ք�􀈀�����������Օ}����̤(�����������ѽ̀�m����С�ɕ�����������������ȁ��������}���ѽ}��������������Ք�t(�������������Ё���ѽ�聵��ѽ̀�m����С�ɕ�����������������ȁ��������}���Ѽ�������������Ք�t(��������������ѽ��(������������ͅ����􁵽�ѽ�l��t쁵��Ѽ�􁵽�ѽ�l��t�����������ѽ̤���ȁ��͔����(���������������ͅ���}��Ё�́��Ё9����(����������������������ɽչ��ͅ������ͅ���}��а�Ȥ(���������������������ɕЀ􀡵��Ѽ���������������������͔����������Ѽ�(��������������͔�(���������������������ɕЀ􁵽�Ѽ�����(��������������͌�����}���ѽ}���Ո�������͍}����쁑�͌�����}���Ѽ��Ո�������͌����ɥ�����Ȁ��P�(��������������͌��ɔ��Ո�ȉq̬����������͌����ɥ�����Ȁ��P�(������������ͅ���}��Ѐ�ͅ���(��������������٥����ѽ̹�����������������͌�������ɕа�ͅ�����(�����������(����ɕ��ɸ���٥����ѽ�(()����}���͕��}�����̈́�ѕ�Ѽ��(�������A��͕ȁ%����̈́�554���
-=9
-AQ<����Ѽ�ͅ�������(����5ML���9��İ���Ȱ�5H��̰�	H��а�5d��԰�)U8��ذ(��������������)U0��ܰ�<��ఉM@��䰉=
-P������9=X���İ�%�����(����啅�}���ɔ�͕�ɍ��ȉq����q�����q����ѕ�Ѽ�(���������􁥹С啅�}���ɽ���Ĥ�����啅�}����͔���є�ѽ��䠤�啅�(�������}�������ɔ���������ȉx�m�iu����p�q̬���q��İ���q̬�������ɔ�5U1Q%1%9�(�������}���Ѽ��ɔ���������Ȉ�mq��t�p�q�������(������٥����ѽ̀�mt�ͅ���}��Ѐ�9���(������ȁ��������}�����������ѕȡѕ�Ѽ��(�����������}��Ȁ􁴹�ɽ���Ĥ쁑��}��Ȁ􁴹�ɽ���Ȥ�ɕ�Ѽ�􁴹�ɽ���̤���ɥ���(��������������}��ȁ��Ё���5ML聍��ѥ�Ք(�����������ɔ�͕�ɍ��ȉq��II9
-%�
-=9
-AQ=�
-!�q����ɕ�Ѽ�聍��ѥ�Ք(�����������聙�����􁑅є�������5MMm���}���t����С���}��Ȥ�(���������ፕ�Ёፕ�ѥ��聍��ѥ�Ք(�����������ѽ̀�mt(����������ȁ́������}���Ѽ���������ɕ�Ѽ��(���������������聵��ѽ̹�����������С̹ɕ���������������(�������������ፕ�Ёፕ�ѥ�������(�������������Ё���ѽ�聍��ѥ�Ք(��������ͅ����􁵽�ѽ�l��t(������������	19
-�%9%
-%0�����ɕ�Ѽ�����Ƞ��ͅ���}��Ѐ�ͅ���쁍��ѥ�Ք(�����������Ѽ�􁵽�ѽ�l��t�����������ѽ̤���ȁ��͔���̡ͅ�������ͅ���}��Ё�ȁͅ�����(�����������ͅ���}��Ё�́��Ё9����(������������������ɽչ��ͅ������ͅ���}��а�Ȥ(�����������������ɕЀ􀡵��Ѽ���������������������͔����������Ѽ�(����������͔�(�����������������ɕЀ􁵽�Ѽ�����(����������͌�����}���Ѽ��Ո�����ɕ�Ѽ����ɥ���(����������͌��ɔ��Ո�ȉyqL�q̬���������͌����ɥ���(����������͌��ɔ��Ո�ȉq̬����������͌����ɥ�����Ȁ��P�(��������ͅ���}��Ѐ�ͅ���(����������٥����ѽ̹�����������������͌�������ɕа�ͅ�����(����ɕ��ɸ���٥����ѽ�(()����}���͕��}����ѕ�Ѽ��(�������A��͕ȁ��ɥ������ɕ�̸���(����5ML��쉕��ɼ��İ����ɕɼ��Ȱ����鼈�̰���ɥ���а���弈�԰��չ����ذ(���������������ձ����ܰ�����Ѽ��ఉ͕�ѥ���ɔ��䰉���Չɔ��������٥���ɔ���İ��������ɔ�����(����啅�}���ɔ�͕�ɍ��ȉq����q�����q����ѕ�Ѽ�(���������􁥹С啅�}���ɽ���Ĥ�����啅�}����͔���є�ѽ��䠤�啅�(�������}�������ɔ���������ȉx�q��İ���q̭��q̨�m�i���'7Ok
-������t��q̬���������ɔ�%9=I
-M�(�������}���Ѽ��ɔ���������Ȉ�mq��t�p�q�������(�������}���є��ɔ���������(��������ȉQ�х����������х������
-Օ�ф�Am��u���є�����́չ�I��յ�������ɕ٥���m��u��9m��u�鵕ɼ����
-Օ�ф���ɔ�$�(������٥����ѽ̀�mt쁱����̀�ѕ�Ѽ�����ѱ���̠�쁤���(����ݡ�����������������̤�(��������������}��������э��������m�t���ɥ����(�������������Ё�聤����쁍��ѥ�Ք(������������􁥹С���ɽ���Ĥ�쁵��}��Ȁ􁴹�ɽ���Ȥ���ݕȠ����ɥ���쁑�͍}����􁴹�ɽ���̤���ɥ���(��������������}��ȁ��Ё���5ML聤����쁍��ѥ�Ք(�����������聙�����􁑅є�������5MMm���}���t������(���������ፕ�Ёፕ�ѥ��聤����쁍��ѥ�Ք(����������􁤀���쁍��Ѐ��쁉���Օ}����̀�m��͍}���t(��������ݡ�����������������̤��������Ѐ����(���������������􁱥����m�t���ɥ���(������������������}��������э�������ȁ���}���є�͕�ɍ�����聉ɕ��(�����������������聉���Օ}����̹����������쁍��Ѐ���(�����������������(������������Ք�􀈀�����������Օ}����̤(�����������ѽ̀�m����С�ɕ�����������������ȁ��������}���Ѽ�������������Ք�t(�������������Ё���ѽ�聤����쁍��ѥ�Ք(�����������Ѽ�􁵽�ѽ�l�t(����������}�Ȁ􁉽���ɔ�͕�ɍ��ȉq�
-Iq��������Ք����Ȁ�A<�I
-%	%<���������Ք�����Ƞ�(������������􁵽�Ѽ������}�ȁ��͔�����ɕЀ����������}�ȁ��͔����Ѽ(����������͌�����}���Ѽ��Ո�������͍}�������ɥ���(����������͌��ɔ��Ո�ȉq�
-Iq����������͌����ɥ���(����������͌��ɔ��Ո�ȉq̬����������͌����ɥ�����Ȁ��P�(����������٥����ѽ̹�����������������͌�������ɕФ�(        i += 1
+                dep, ret = (monto, 0.0) if diff >= 0 else (0.0, monto)
+            else:
+                dep, ret = monto, 0.0
+            desc = pat_f2.sub("", linea); desc = pat_monto.sub("", desc).strip() or "—"
+            saldo_ant = saldo
+            movimientos.append((fecha, desc, dep, ret, saldo))
+    return movimientos
+
+
+def _parsear_scotiabank(texto, tablas=None):
+    """Parser Scotiabank."""
+    MESES = {"ENE":1,"FEB":2,"MAR":3,"ABR":4,"MAY":5,"JUN":6,
+             "JUL":7,"AGO":8,"SEP":9,"OCT":10,"NOV":11,"DIC":12,
+             "JAN":1,"APR":4,"AUG":8,"OCT":10,"NOV":11,"DEC":12}
+    anio = 2024
+    y4 = re.search(r"\b(20\d{2})\b", texto)
+    if y4: anio = int(y4.group(1))
+    else:
+        y2 = re.search(r"\b(\d{2})[/\-](\d{2})[/\-](\d{2})\b", texto)
+        if y2: anio = 2000 + int(y2.group(3))
+    pat_fecha = re.compile(r"^(\d{2})\s+([A-Z]{3})\s+(.*?)$")
+    pat_monto_d = re.compile(r"\$([\d,]+\.\d{2})")
+    pat_monto   = re.compile(r"([\d,]+\.\d{2})")
+    movimientos = []; saldo_ant = None
+    si_m = re.search(r"(?:Saldo\s+inicial|SALDO\s+ANTERIOR|Saldo\s+anterior)[^\d]+([\d,]+\.\d{2})", texto, re.I)
+    if si_m:
+        try: saldo_ant = float(si_m.group(1).replace(",",""))
+        except Exception: pass
+    lineas = texto.splitlines(); i = 0
+    while i < len(lineas):
+        m = pat_fecha.match(lineas[i].strip())
+        if not m: i += 1; continue
+        dia = int(m.group(1)); mes_str = m.group(2); desc_ini = m.group(3).strip()
+        if mes_str not in MESES or dia < 1 or dia > 31: i += 1; continue
+        try: fecha = date(anio, MESES[mes_str], dia)
+        except Exception: i += 1; continue
+        j = i + 1; bloque_lines = [desc_ini]
+        while j < len(lineas) and not pat_fecha.match(lineas[j].strip()):
+            nl = lineas[j].strip()
+            if nl: bloque_lines.append(nl)
+            j += 1
+        bloque = " ".join(bloque_lines)
+        montos = [float(x.replace(",","")) for x in pat_monto_d.findall(bloque)]
+        if not montos: montos = [float(x.replace(",","")) for x in pat_monto.findall(bloque)]
+        if montos:
+            saldo = montos[-1]; monto = montos[-2] if len(montos) >= 2 else 0.0
+            if saldo_ant is not None:
+                diff = round(saldo - saldo_ant, 2)
+                dep, ret = (monto, 0.0) if diff >= 0 else (0.0, monto)
+            else:
+                dep, ret = monto, 0.0
+            desc = pat_monto_d.sub("", desc_ini); desc = pat_monto.sub("", desc).strip() or "—"
+            desc = re.sub(r"\s+", " ", desc).strip() or "—"
+            saldo_ant = saldo
+            movimientos.append((fecha, desc, dep, ret, saldo))
+        i = j
+    return movimientos
+
+
+def _parsear_inbursa(texto):
+    """Parser Inbursa: MMM. DD CONCEPTO monto saldo."""
+    MESES = {"ENE":1,"FEB":2,"MAR":3,"ABR":4,"MAY":5,"JUN":6,
+             "JUL":7,"AGO":8,"SEP":9,"OCT":10,"NOV":11,"DIC":12}
+    year_m = re.search(r"\b(20\d{2})\b", texto)
+    anio = int(year_m.group(1)) if year_m else date.today().year
+    pat_linea = re.compile(r"^([A-Z]{3})\.\s{1,3}(\d{1,2})\s+(.*)", re.MULTILINE)
+    pat_monto = re.compile(r"([\d,]+\.\d{2})")
+    movimientos = []; saldo_ant = None
+    for m in pat_linea.finditer(texto):
+        mes_str = m.group(1); dia_str = m.group(2); resto = m.group(3).strip()
+        if mes_str not in MESES: continue
+        if re.search(r"\b(REFERENCIA|CONCEPTO|FECHA)\b", resto): continue
+        try: fecha = date(anio, MESES[mes_str], int(dia_str))
+        except Exception: continue
+        montos = []
+        for s in pat_monto.findall(resto):
+            try: montos.append(float(s.replace(",","")))
+            except Exception: pass
+        if not montos: continue
+        saldo = montos[-1]
+        if "BALANCE INICIAL" in resto.upper(): saldo_ant = saldo; continue
+        monto = montos[-2] if len(montos) >= 2 else abs(saldo - (saldo_ant or saldo))
+        if saldo_ant is not None:
+            diff = round(saldo - saldo_ant, 2)
+            dep, ret = (monto, 0.0) if diff >= 0 else (0.0, monto)
+        else:
+            dep, ret = monto, 0.0
+        desc = pat_monto.sub("", resto).strip()
+        desc = re.sub(r"^\S+\s+", "", desc).strip()
+        desc = re.sub(r"\s+", " ", desc).strip() or "—"
+        saldo_ant = saldo
+        movimientos.append((fecha, desc, dep, ret, saldo))
+    return movimientos
+
+
+def _parsear_amex(texto):
+    """Parser American Express."""
+    MESES = {"enero":1,"febrero":2,"marzo":3,"abril":4,"mayo":5,"junio":6,
+             "julio":7,"agosto":8,"septiembre":9,"octubre":10,"noviembre":11,"diciembre":12}
+    year_m = re.search(r"\b(20\d{2})\b", texto)
+    anio = int(year_m.group(1)) if year_m else date.today().year
+    pat_fecha = re.compile(r"^(\d{1,2})\s+de\s*([A-Za-záéíóúÁÉÍÓÚ]+)\s+(.*?)$", re.IGNORECASE)
+    pat_monto = re.compile(r"([\d,]+\.\d{2})")
+    pat_corte = re.compile(
+        r"Total de las|Estado de Cuenta P[aá]g|Este no es un|Resumen de|Abreviaci[oó]n|N[uú]mero de Cuenta", re.I)
+    movimientos = []; lineas = texto.splitlines(); i = 0
+    while i < len(lineas):
+        m = pat_fecha.match(lineas[i].strip())
+        if not m: i += 1; continue
+        dia = int(m.group(1)); mes_str = m.group(2).lower().strip(); desc_ini = m.group(3).strip()
+        if mes_str not in MESES: i += 1; continue
+        try: fecha = date(anio, MESES[mes_str], dia)
+        except Exception: i += 1; continue
+        j = i + 1; cont = 0; bloque_lines = [desc_ini]
+        while j < len(lineas) and cont < 4:
+            nl = lineas[j].strip()
+            if pat_fecha.match(nl) or pat_corte.search(nl): break
+            if nl: bloque_lines.append(nl); cont += 1
+            j += 1
+        bloque = " ".join(bloque_lines)
+        montos = [float(x.replace(",","")) for x in pat_monto.findall(bloque)]
+        if not montos: i += 1; continue
+        monto = montos[0]
+        is_cr = bool(re.search(r"\bCR\b", bloque)) or "PAGO RECIBIDO" in bloque.upper()
+        dep = monto if is_cr else 0.0; ret = 0.0 if is_cr else monto
+        desc = pat_monto.sub("", desc_ini).strip()
+        desc = re.sub(r"\bCR\b", "", desc).strip()
+        desc = re.sub(r"\s+", " ", desc).strip() or "—"
+        movimientos.append((fecha, desc, dep, ret))
+        i += 1
     return movimientos
 
 
@@ -539,7 +650,7 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
         except Exception: continue
         desc = pat_monto.sub("", resto); desc = re.sub(r"\$\s*", "", desc)
         desc = re.sub(r"\s+\d{4,}\s*$", "", desc); desc = re.sub(r"\s+", " ", desc).strip() or "—"
-        if saldo_ant2 is not N/ne:
+        if saldo_ant2 is not None:
             diff = round(saldo - saldo_ant2, 2)
             dep = round(diff, 2) if diff > 0 else 0.0; ret = round(-diff, 2) if diff < 0 else 0.0
         else:
@@ -671,7 +782,7 @@ def _parsear_banorte(texto, ruta=None, pdfplumber_mod=None):
         if "EMISION DE CHEQUERA" in d: return True
         return False
 
-    normales   = [m for`m in movimientos if not _es_comision(m[1])]
+    normales   = [m for m in movimientos if not _es_comision(m[1])]
     comisiones = [m for m in movimientos if _es_comision(m[1])]
     if comisiones:
         tot_dep = round(sum(m[2] for m in comisiones), 2)

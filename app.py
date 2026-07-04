@@ -54,7 +54,7 @@ def pagina_inicio():
         {"icon":"💳","title":"Préstamos",           "desc":"PDFs de préstamos → Excel con catálogo de cuentas",         "estado":"activo","page":p_prest},
                 {"icon":"🔀","title":"Banco vs Auxiliar",  "desc":"Excel banco + auxiliar → conciliación bilateral",                                       "estado":"activo","page":p_cba},
         {"icon":"⛽","title":"Ventas del Día",      "desc":"Reporte de ventas diarias — póliza contable",               "estado":"pronto","page":None},
-        {"icon":"🏦","title":"Estado de Cuenta",   "desc":"Análisis y conciliación de estados de cuenta bancarios",    "estado":"pronto","page":None},
+        {"icon":"🏦","title":"Estado de Cuenta",   "desc":"Análisis y conciliación de estados de cuenta bancarios",    "estado":"activo","page":p_ec},
         {"icon":"📑","title":"Reconciliación",      "desc":"Reconciliación contable con plantilla SINUBE",              "estado":"pronto","page":None},
         {"icon":"🔗","title":"Conciliación SAT",   "desc":"Conciliación de CFDIs contra registros contables",          "estado":"pronto","page":None},
     ]
@@ -83,8 +83,8 @@ p_home = st.Page(pagina_inicio, title="Inicio", icon="🏠", default=True)
 
 pg = st.navigation(
     {"": [p_home],
-     "Módulos disponibles": [p_pagos, p_prov, p_prest, p_cba],
-     "Próximamente": [p_vd, p_ec, p_rec, p_sat]},
+     "Módulos disponibles": [p_pagos, p_prov, p_prest, p_cba, p_ec],
+     "Próximamente": [p_vd, p_rec, p_sat]},
     position="sidebar",
 )
 pg.run()

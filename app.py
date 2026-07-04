@@ -21,6 +21,7 @@ p_rec   = st.Page("pages/6_Reconciliacion.py",   title="Reconciliación",      i
 p_sat   = st.Page("pages/7_Conciliacion_SAT.py", title="Conciliación SAT",    icon="🔗")
 
 # ── Página de inicio ───────────────────────────────────────────────────────────
+p_cba   = st.Page("pages/8_Conciliacion_Banco_Auxiliar.py", title="Banco vs Auxiliar", icon="🔀")
 def pagina_inicio():
     st.markdown("""
 <style>
@@ -51,6 +52,7 @@ def pagina_inicio():
         {"icon":"💼","title":"Pagos Bancarios",    "desc":"Conciliación de nómina BBVA Net Cash — PDF → Excel",       "estado":"activo","page":p_pagos},
         {"icon":"📋","title":"Provisión de Nómina","desc":"XML (CFDI) → Plantilla SINUBE con columnas dinámicas",      "estado":"activo","page":p_prov},
         {"icon":"💳","title":"Préstamos",           "desc":"PDFs de préstamos → Excel con catálogo de cuentas",         "estado":"activo","page":p_prest},
+                {"icon":"🔀","title":"Banco vs Auxiliar",  "desc":"Excel banco + auxiliar → conciliación bilateral",                                       "estado":"activo","page":p_cba},
         {"icon":"⛽","title":"Ventas del Día",      "desc":"Reporte de ventas diarias — póliza contable",               "estado":"pronto","page":None},
         {"icon":"🏦","title":"Estado de Cuenta",   "desc":"Análisis y conciliación de estados de cuenta bancarios",    "estado":"pronto","page":None},
         {"icon":"📑","title":"Reconciliación",      "desc":"Reconciliación contable con plantilla SINUBE",              "estado":"pronto","page":None},
@@ -81,7 +83,7 @@ p_home = st.Page(pagina_inicio, title="Inicio", icon="🏠", default=True)
 
 pg = st.navigation(
     {"": [p_home],
-     "Módulos disponibles": [p_pagos, p_prov, p_prest],
+     "Módulos disponibles": [p_pagos, p_prov, p_prest, p_cba],
      "Próximamente": [p_vd, p_ec, p_rec, p_sat]},
     position="sidebar",
 )

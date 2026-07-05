@@ -100,8 +100,8 @@ MODULOS = [
         "icon": "🔗",
         "title": "Conciliación SAT",
         "desc": "Conciliación de CFDIs contra registros contables",
-        "estado": "pronto",
-        "pagina": None,
+        "estado": "activo",
+        "pagina": "pages/5_Conciliacion_SAT.py",
     },
 ]
 

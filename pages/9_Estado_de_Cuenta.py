@@ -85,7 +85,7 @@ def _importar_parser():
 BANCOS = [
     "Auto-detectar",
     "Banorte Débito", "Banorte Empresarial",
-    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management",
+    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC",
     "Banamex Débito", "Banamex Empresarial",
     "Santander", "HSBC", "Scotiabank",
     "Banregio", "Inbursa", "American Express", "Afirme",
@@ -138,12 +138,15 @@ with col_cfg:
 **Parseo nativo completo:**
 - Banorte (Débito / Empresarial)
 - BBVA (Débito / Maestra PYME / Cash Management)
+- **BBVA TDC** (T Negoc / LCDigital — Tarjeta de Crédito)
 - Banamex / Citibanamex
 - Santander · HSBC · Banregio
 - Scotiabank · Inbursa · Afirme
 - American Express
 
 **Excel:** cualquier formato tabular con columnas de fecha, descripción, cargo y abono.
+
+> **Nota BBVA TDC:** Para PDFs descargados directamente del portal BBVA (texto seleccionable) el parseo es instantáneo. Para PDFs generados con "Imprimir → Guardar como PDF" (imagen) se usa OCR automático — requiere `tesseract-ocr` instalado en el servidor. En la columna *Depósito* aparecen los **abonos (pagos)** y en *Retiro* los **cargos (compras)**.
         """)
 
 # ── Procesamiento ─────────────────────────────────────────────────────────────

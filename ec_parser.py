@@ -787,26 +787,62 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
             if _ini: saldo_ant = float(_ini.group(1).replace(",",""))
         except Exception:
             pass
-    # fallback texto
-    pat_tx = re.compile(r"^(\d{1,2})\s+([^\n]+)", re.MULTILINE)
+    # fallback texto — agrupado por bloques para capturar descripción completa
     saldo_ant2 = saldo_ant
     ini_m2 = re.search(r"Saldo\s+inicial\s+\$\s*([\d,]+\.\d{2})", texto)
     if ini_m2: saldo_ant2 = float(ini_m2.group(1).replace(",",""))
-    for m in pat_tx.finditer(texto):
-        dia = int(m.group(1)); resto = m.group(2).strip()
-        if dia < 1 or dia > 31: continue
-        if any(kw in resto.lower() for kw in _SKIP_TX): continue
-        montos_raw = pat_monto.findall(resto)
-        if len(montos_raw) < 2: continue
+    # Agrupar líneas en bloques de transacción (una nueva transacción empieza con DD + texto)
+    pat_inicio = re.compile(r"^(\d{1,2})\s+([A-ZÁÉÍÓÚÑ].+)")
+    lineas = texto.splitlines()
+    bloques = []  # lista de (dia, [líneas])
+    cur_dia = None; cur_lines = []
+    for linea in lineas:
+        ln = linea.strip()
+        if not ln: continue
+        m = pat_inicio.match(ln)
+        if m:
+            dia = int(m.group(1))
+            if 1 <= dia <= 31 and not any(kw in ln.lower() for kw in _SKIP_TX):
+                if cur_dia is not None: bloques.append((cur_dia, cur_lines))
+                cur_dia = dia; cur_lines = [ln]; continue
+        if cur_dia is not None and _es_cont_valida(ln):
+            cur_lines.append(ln)
+    if cur_dia is not None: bloques.append((cur_dia, cur_lines))
+    for dia, rows in bloques:
+        # Unir líneas — el OCR parte palabras entre líneas (ej. "LET" + "ICIA")
+        bt = " ".join(rows)
+        montos = pat_monto.findall(bt)
+        if len(montos) < 2: continue
         try:
-            saldo = float(montos_raw[-1].replace(",","")); monto = float(montos_raw[-2].replace(",",""))
+            saldo = float(montos[-1].replace(",",""))
+            monto = float(montos[-2].replace(",",""))
             fecha = date(anio, mes, dia)
         except Exception: continue
-        desc = pat_monto.sub("", resto); desc = re.sub(r"\$\s*", "", desc)
-        desc = re.sub(r"\s+\d{4,}\s*$", "", desc); desc = re.sub(r"\s+", " ", desc).strip() or "—"
+        # Descripción base: primera línea sin día ni montos
+        fl = rows[0]
+        desc = pat_monto.sub("", fl); desc = re.sub(r"\$\s*", "", desc)
+        desc = re.sub(r"^\d{1,2}\s+", "", desc); desc = re.sub(r"\s+", " ", desc).strip() or "—"
+        # DESTINATARIO: puede estar partido por salto de línea → buscar en bt completo
+        dest_m = re.search(
+            r"DESTINATARIO\s*[:\|]\s*(.+?)(?=\s*(?:\(DA|\(DATO|RFC\s+DEST|ND\s+CVE|CVE\s*RASTREO|CON\s*CEPTO|CONCEPTO|$))",
+            bt, re.IGNORECASE)
+        dest = ""
+        if dest_m:
+            dest = dest_m.group(1).strip().rstrip("(").strip()
+            dest = re.sub(r"\s*\(?DA\s*TO\s*NO.+$", "", dest, flags=re.I).strip()
+        # CONCEPTO: OCR parte "CON\nCEPTO:" → en bt queda "CON CEPTO:"
+        conc_m = re.search(
+            r"(?:CON\s+)?CEPTO\s*[:\|]\s*(.+?)(?=\s*(?:HORA|CVE|RFC|$))",
+            bt, re.IGNORECASE)
+        if not conc_m:
+            conc_m = re.search(r"CONCEPTO\s*[:\|]\s*(.+?)(?=\s*(?:HORA|CVE|RFC|$))", bt, re.IGNORECASE)
+        concepto = conc_m.group(1).strip()[:80] if conc_m else ""
+        if dest: desc += " | " + dest
+        if concepto and concepto.upper() not in desc.upper(): desc += " | " + concepto
         if saldo_ant2 is not None:
             diff = round(saldo - saldo_ant2, 2)
-            dep = round(diff, 2) if diff > 0 else 0.0; ret = round(-diff, 2) if diff < 0 else 0.0
+            dep = round(diff, 2) if diff > 0 else 0.0
+            ret = round(-diff, 2) if diff < 0 else 0.0
         else:
             dep, ret = 0.0, monto
         saldo_ant2 = saldo

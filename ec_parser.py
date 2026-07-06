@@ -900,7 +900,8 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
         return []
 
     pat_tx  = re.compile(r"^(\d{2}/\d{2}/\d{2})\s+(\d{2}/\d{2}/\d{2})\s+(.+)$")
-    pat_neg = re.compile(r"\$\s*[—–]?\s*-")
+    # S y § son lecturas OCR frecuentes del símbolo $
+    pat_neg = re.compile(r'[$S§]\s*[—–]?\s*-')
     pat_amt = re.compile(r'([\d,]+\.\d{2})')
     movimientos = []
 
@@ -914,6 +915,8 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
         stop = False
         for linea in text.splitlines():
             ls = linea.strip()
+            # Corregir OCR "1,551 00" → "1,551.00" (punto decimal leído como espacio)
+            ls = re.sub(r'(\d{1,3}(?:,\d{3})+)\s(\d{2})(?=\s|$)', r'\1.\2', ls)
             if not ls:
                 continue
             lu = ls.upper()

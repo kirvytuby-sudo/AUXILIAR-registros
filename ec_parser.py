@@ -912,13 +912,36 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
 
     for img in imgs:
         text = pytesseract.image_to_string(img, config='--psm 6')
-        stop = False
-        for linea in text.splitlines():
-            ls = linea.strip()
-            # Corregir OCR "1,551 00" → "1,551.00" (punto decimal leído como espacio)
+
+        # ── Normalizar y unir líneas partidas por OCR ─────────────────────
+        raw_lines = []
+        for l in text.splitlines():
+            ls = l.strip()
+            # Corregir "1,551 00" → "1,551.00" (punto decimal leído como espacio)
             ls = re.sub(r'(\d{1,3}(?:,\d{3})+)\s(\d{2})(?=\s|$)', r'\1.\2', ls)
-            if not ls:
+            if ls:
+                raw_lines.append(ls)
+
+        # Unir: línea con fecha pero sin monto + siguiente línea con monto pero sin fecha
+        joined = []
+        skip_next = False
+        for idx, ls in enumerate(raw_lines):
+            if skip_next:
+                skip_next = False
                 continue
+            has_date = bool(pat_tx.search(ls))
+            has_amt  = bool(pat_amt.search(ls))
+            if has_date and not has_amt and idx + 1 < len(raw_lines):
+                nxt = raw_lines[idx + 1]
+                if pat_amt.search(nxt) and not pat_tx.search(nxt):
+                    joined.append(ls + ' ' + nxt)
+                    skip_next = True
+                    continue
+            joined.append(ls)
+
+        # ── Procesar líneas ya unidas ─────────────────────────────────────
+        stop = False
+        for ls in joined:
             lu = ls.upper()
             if any(sw in lu for sw in _TDC_REAL_STOP):
                 stop = True
@@ -928,11 +951,10 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
                     stop = True
                     break
                 continue
-            # Saltar solo si NO tiene patrón de fecha — líneas de transacción
-            # pueden contener palabras del skip list por ruido OCR de columnas adyacentes
+            # Saltar solo si NO tiene patrón de fecha — ruido OCR de columnas adyacentes
             if any(sk in lu for sk in _TDC_SKIP) and not pat_tx.search(ls):
                 continue
-            m = pat_tx.search(ls)   # search (no match) → tolera basura OCR al inicio
+            m = pat_tx.search(ls)
             if not m:
                 continue
             try:

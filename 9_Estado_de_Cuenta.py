@@ -86,7 +86,7 @@ def _importar_parser():
 BANCOS = [
     "Auto-detectar",
     "Banorte Débito", "Banorte Empresarial",
-    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC",
+    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC", "BBVA Libretón",
     "Banamex Débito", "Banamex Empresarial",
     "Santander", "HSBC", "Scotiabank",
     "Banregio", "Inbursa", "American Express", "Afirme",

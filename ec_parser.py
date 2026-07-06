@@ -1171,7 +1171,8 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
         if any(k in texto_total.upper() for k in ("T NEGOC", "LCDIGITAL", "FECHA AUTORIZACION")):
             movs = _parsear_bbva_tdc(texto_total, paginas_tablas, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
             if movs: return movs
-        if any(k in texto_total.upper() for k in ("LIBRETON","LIBRETÓN","CUENTA DIGITAL")):
+        # Llamada directa si el usuario seleccionó BBVA Libretón, o por detección automática
+        if "LIBRETON" in bk.upper() or any(k in texto_total.upper() for k in ("LIBRETON","LIBRETÓN","CUENTA DIGITAL")):
             movs = _parsear_bbva_libreton(ruta, pdfplumber_mod)
             if movs: return movs
         if any(k in texto_total.upper() for k in ("CASH MANAGEMENT","MAESTRA PYME","OPER LIQ COD")):
@@ -1357,8 +1358,8 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
 BANCOS = [
     "Auto-detectar",
     "Banorte Débito", "Banorte Empresarial",
-    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management",
-    "Banamex Débito", "Banamex Empresarial",
+    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA Libretón",
+     "Banamex Débito", "Banamex Empresarial",
     "Santander", "HSBC", "Scotiabank",
     "Banregio", "Inbursa", "American Express", "Afirme",
 ]

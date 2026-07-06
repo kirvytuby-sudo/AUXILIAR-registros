@@ -729,8 +729,6 @@ def _parsear_banorte(texto, ruta=None, pdfplumber_mod=None):
         saldo_anterior = saldo
         movimientos.append((fecha, desc, dep, ret, saldo))
 
-
-
     for linea in lineas:
         lu = linea.upper()
         if any(s in lu for s in _SKIP_HDR): continue
@@ -795,6 +793,166 @@ def _parsear_linea(linea, patron_fecha, patron_monto):
     return (fecha, desc, dep, ret)
 
 
+# ── BBVA TDC (Tarjeta de Crédito Digital) ─────────────────────────────────────
+
+_TDC_REAL_STOP = (
+    "RESUMEN INFORMATIVO", "SI ESTAS ADHERIDO", "PLAN DE APOYO",
+    "RESUMEN DE SUS", "FECHA NOMBRE DE", "FECHA TRANSACCION",
+    "SUBTOTAL DE", "TOTAL DE PARCIALIDADES",
+)
+_TDC_SKIP = (
+    "IVA :", "IVA:", "INTERES:", "BBVA MEXICO", "AV. PASEO", "LINEA BBVA",
+    "T NEGOC", "LCDIGITAL", "ESTADO DE CUENTA", "MOVIMIENTOS EFECTUADOS",
+    "AUTORIZACION APLICACION", "TASA ANUAL", "SUCURSAL", "CREDITO DISPONIBLE",
+    "LIMITE", "INTERESES", "ESTIMADO TARJETA", "R.F.C.", "NO. DE",
+    "PAGO MINIMO", "RENDIMIENTO", "OTROS ABONOS", "OTROS CARGOS",
+    "COMISIONES COBRADAS", "MONTO BASE", "DIRECCION", "CENTENO",
+    "GRANJAS", "08400", "TOTAL DE", "INCLUIDO EN", "SUBTOTAL",
+    "WWW.", "FECHA DE CORTE", "FECHA LIMITE", "CREMACION",
+    "CAT ACTUAL", "TASA DE INTERES", "RFC BBA", "REGIMEN",
+    "COMPRAS +", "IVA. +", "SALDO INICIAL", "SALDO AL CORTE",
+    "FECHA AUTORIZACION", "IMPORTE CARGOS", "IMPORTE ABONOS",
+    "LINEA BBVA:", "CIUDAD DE MEXICO", "PAGINA ",
+)
+
+
+def _limpiar_desc_tdc(raw):
+    """Limpia la parte de descripción de una línea TDC (prefijo antes del monto)."""
+    desc = raw
+    desc = re.sub(r'\s*\$\s*[—–]?\s*-?\s*$', '', desc)   # quitar "$ -" al final
+    desc = re.sub(r'\s*[S§s]\$?\s*$', '', desc)            # artefacto OCR del $
+    desc = re.sub(r'\s*\$\s*$', '', desc)
+    desc = re.sub(r'\s+[#H*]{2,}\w*', '', desc)            # referencias enmascaradas
+    desc = re.sub(r'\s+\w{8,}\s*$', '', desc)              # código largo al final
+    desc = re.sub(r'\s+[A-Z]{3}\s+\d{6,}[A-Z0-9]*\s*$', '', desc)  # patrón RFC
+    desc = re.sub(r'\s+[a-z]{2,6}\s*$', '', desc)          # artefacto minúsculas OCR
+    desc = re.sub(r'\s+[a-zA-Z/\\|]{1,2}\s*$', '', desc)   # carácter suelto OCR
+    desc = re.sub(r'\s+', ' ', desc).strip()
+    return desc or "—"
+
+
+def _parsear_bbva_tdc_texto(texto):
+    """Parser BBVA TDC para PDFs con texto extraíble (pdfplumber)."""
+    pat_tx  = re.compile(r"^(\d{2}/\d{2}/\d{2})\s+(\d{2}/\d{2}/\d{2})\s+(.+)$")
+    pat_neg = re.compile(r"\$\s*[—–]?\s*-")
+    pat_amt = re.compile(r'([\d,]+\.\d{2})')
+    movimientos = []
+    for linea in texto.splitlines():
+        ls = linea.strip()
+        if not ls:
+            continue
+        lu = ls.upper()
+        if any(sw in lu for sw in _TDC_REAL_STOP):
+            break
+        if "TOTAL IMPORTES" in lu:
+            if len(pat_amt.findall(ls)) >= 2:
+                break
+            continue
+        if any(sk in lu for sk in _TDC_SKIP):
+            continue
+        m = pat_tx.match(ls)
+        if not m:
+            continue
+        try:
+            fecha = parse_fecha(m.group(2))
+            if isinstance(fecha, str):
+                continue
+        except Exception:
+            continue
+        desc_raw = m.group(3).strip()
+        amounts = list(re.finditer(r'([\d,]+\.\d{2})', desc_raw))
+        if not amounts:
+            continue
+        last_m   = amounts[-1]
+        amount   = float(last_m.group(1).replace(",", ""))
+        prefix   = desc_raw[:last_m.start()]
+        is_abono = bool(pat_neg.search(prefix))
+        dep = amount if is_abono else 0.0
+        ret = 0.0   if is_abono else amount
+        movimientos.append((fecha, _limpiar_desc_tdc(prefix), dep, ret))
+    return movimientos
+
+
+def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
+    """
+    Parser BBVA T Negoc / LCDigital (Tarjeta de Crédito Digital).
+    Soporta PDFs digitales (texto extraíble) y PDFs imagen (via OCR con
+    pdf2image + pytesseract; requiere tesseract-ocr instalado en el sistema).
+
+    Convenio dep/ret para TDC:
+        dep = abonos (pagos)   → reducen la deuda
+        ret = cargos (compras) → aumentan la deuda
+    """
+    # Primero intentar text-based si el PDF tiene texto
+    if texto.strip():
+        movs = _parsear_bbva_tdc_texto(texto)
+        if movs:
+            return movs
+
+    # OCR fallback para PDFs imagen (e.g. "Print to PDF")
+    if ruta is None:
+        return []
+
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+    except ImportError:
+        return []
+
+    pat_tx  = re.compile(r"^(\d{2}/\d{2}/\d{2})\s+(\d{2}/\d{2}/\d{2})\s+(.+)$")
+    pat_neg = re.compile(r"\$\s*[—–]?\s*-")
+    pat_amt = re.compile(r'([\d,]+\.\d{2})')
+    movimientos = []
+
+    try:
+        imgs = convert_from_path(ruta, dpi=200)
+    except Exception:
+        return []
+
+    for img in imgs:
+        text = pytesseract.image_to_string(img, config='--psm 6')
+        stop = False
+        for linea in text.splitlines():
+            ls = linea.strip()
+            if not ls:
+                continue
+            lu = ls.upper()
+            if any(sw in lu for sw in _TDC_REAL_STOP):
+                stop = True
+                break
+            if "TOTAL IMPORTES" in lu:
+                if len(pat_amt.findall(ls)) >= 2:
+                    stop = True
+                    break
+                continue
+            if any(sk in lu for sk in _TDC_SKIP):
+                continue
+            m = pat_tx.match(ls)
+            if not m:
+                continue
+            try:
+                fecha = parse_fecha(m.group(2))
+                if isinstance(fecha, str):
+                    continue
+            except Exception:
+                continue
+            desc_raw = m.group(3).strip()
+            amounts  = list(re.finditer(r'([\d,]+\.\d{2})', desc_raw))
+            if not amounts:
+                continue
+            last_m   = amounts[-1]
+            amount   = float(last_m.group(1).replace(",", ""))
+            prefix   = desc_raw[:last_m.start()]
+            is_abono = bool(pat_neg.search(prefix))
+            dep = amount if is_abono else 0.0
+            ret = 0.0   if is_abono else amount
+            movimientos.append((fecha, _limpiar_desc_tdc(prefix), dep, ret))
+        if stop:
+            break
+
+    return movimientos
+
+
 # ── API pública ────────────────────────────────────────────────────────────────
 
 def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
@@ -811,18 +969,27 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
     texto_total = "\n".join(paginas_texto)
     bk = banco_key.lstrip("🔍 ─").strip()
 
+    # ── Despacho explícito por banco ────────────────────────────────────────
+    if bk == "BBVA TDC":
+        return _parsear_bbva_tdc(texto_total, paginas_tablas, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
+
     if bk.startswith("Banorte"):
         return _parsear_banorte(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
-    if bk == "BBVA Pyme" or bk.startswith("BBVA"):
+
+    if bk.startswith("BBVA"):
+        # Detectar TDC antes que otras variantes BBVA
+        if any(k in texto_total.upper() for k in ("T NEGOC", "LCDIGITAL", "FECHA AUTORIZACION")):
+            movs = _parsear_bbva_tdc(texto_total, paginas_tablas, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
+            if movs: return movs
         if any(k in texto_total.upper() for k in ("CASH MANAGEMENT","MAESTRA PYME","OPER LIQ COD")):
             movs = _parsear_bbva_cashmanagement(ruta, pdfplumber_mod)
             if movs: return movs
         if bk == "BBVA Pyme":
             movs = _parsear_bbva_pyme(texto_total)
             if movs: return movs
-        if bk.startswith("BBVA"):
-            movs = _parsear_bbva(texto_total, paginas_tablas, bk)
-            if movs: return movs
+        movs = _parsear_bbva(texto_total, paginas_tablas, bk)
+        if movs: return movs
+
     if bk.startswith("Banamex"):
         movs = _parsear_banamex(texto_total, bk)
         if movs: return movs
@@ -842,7 +1009,7 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
         movs = _parsear_afirme(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs
 
-    # Auto-detección
+    # ── Auto-detección ────────────────────────────────────────────────────────
     BANORTE_PAT = re.compile(r"\d{2}-(?:ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)-\d{2}")
     if BANORTE_PAT.search(texto_total):
         movs = _parsear_banorte(texto_total)
@@ -850,8 +1017,16 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
     if any(k in texto_total.upper() for k in ("CASH MANAGEMENT","MAESTRA PYME","OPER LIQ COD")):
         movs = _parsear_bbva_cashmanagement(ruta, pdfplumber_mod)
         if movs: return movs
+    # Marcadores TDC en texto
+    if any(k in texto_total.upper() for k in ("T NEGOC", "LCDIGITAL")):
+        movs = _parsear_bbva_tdc(texto_total, paginas_tablas, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
+        if movs: return movs
     if any("CARGO" in str(t) or "ABONO" in str(t) for t in paginas_tablas):
         movs = _parsear_bbva(texto_total, paginas_tablas, "BBVA Débito")
+        if movs: return movs
+    # PDF sin texto extraíble → intentar TDC via OCR como último recurso
+    if not texto_total.strip():
+        movs = _parsear_bbva_tdc("", paginas_tablas, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs
     patron_fecha = re.compile(r"\b(\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4})\b")
     patron_monto = re.compile(r"[\d,]+\.\d{2}")
@@ -968,8 +1143,8 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
     ws_c.merge_range(1,0,1,1, nombre_base, fmt_sub)
     conc_data = [
         ("Saldo inicial", saldo_ini, fmt_cv),
-        ("(+) Total depósitos", total_dep, fmt_cv),
-        ("(-) Total retiros", total_ret, fmt_cv),
+        ("(+) Total depósitos / abonos", total_dep, fmt_cv),
+        ("(-) Total retiros / cargos", total_ret, fmt_cv),
         ("= Saldo final calculado", saldo_fin_real, fmt_ct),
     ]
     if saldo_esp is not None:
@@ -987,7 +1162,7 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
 BANCOS = [
     "Auto-detectar",
     "Banorte Débito", "Banorte Empresarial",
-    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management",
+    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC",
     "Banamex Débito", "Banamex Empresarial",
     "Santander", "HSBC", "Scotiabank",
     "Banregio", "Inbursa", "American Express", "Afirme",

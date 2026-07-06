@@ -768,9 +768,28 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
             saldo_ant = saldo
             movimientos.append((fecha, desc, dep, ret, saldo))
         if movimientos: return movimientos
+    # ── OCR fallback: PDF escaneado sin texto seleccionable ──────────────────
+    if not texto.strip() and ruta is not None:
+        try:
+            from pdf2image import convert_from_path as _c2p
+            import pytesseract as _tsr
+            _imgs = _c2p(ruta, dpi=200)
+            texto = "\n".join(_tsr.image_to_string(img, lang="eng") for img in _imgs)
+            # Re-calcular año/mes desde texto OCR
+            _pm = re.search(r'(\d{2})\s*([A-Z]{3})\s*(\d{4})\s+AL', texto, re.IGNORECASE)
+            if _pm:
+                mes = MESES.get(_pm.group(2).upper(), mes); anio = int(_pm.group(3))
+            else:
+                _pm2 = re.search(r'Fecha\s+de\s+corte\s+\d{1,2}\s+([A-Z]{3})\s+(\d{4})', texto, re.IGNORECASE)
+                if _pm2:
+                    mes = MESES.get(_pm2.group(1).upper(), mes); anio = int(_pm2.group(2))
+            _ini = re.search(r'Saldo\s+inicial\s+\$\s*([\d,]+\.\d{2})', texto)
+            if _ini: saldo_ant = float(_ini.group(1).replace(",",""))
+        except Exception:
+            pass
     # fallback texto
     pat_tx = re.compile(r"^(\d{1,2})\s+([^\n]+)", re.MULTILINE)
-    saldo_ant2 = None
+    saldo_ant2 = saldo_ant
     ini_m2 = re.search(r"Saldo\s+inicial\s+\$\s*([\d,]+\.\d{2})", texto)
     if ini_m2: saldo_ant2 = float(ini_m2.group(1).replace(",",""))
     for m in pat_tx.finditer(texto):

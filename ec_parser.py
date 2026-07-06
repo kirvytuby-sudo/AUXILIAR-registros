@@ -930,7 +930,7 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
                 continue
             if any(sk in lu for sk in _TDC_SKIP):
                 continue
-            m = pat_tx.match(ls)
+            m = pat_tx.search(ls)   # search (no match) → tolera basura OCR al inicio
             if not m:
                 continue
             try:

@@ -212,6 +212,161 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
     return movimientos
 
 
+def _parsear_bbva_libreton(ruta, pdfplumber_mod):
+    """Parser BBVA Libretón / Cuenta Digital.
+
+    El header CARGOS/ABONOS sólo aparece en la página de resumen;
+    se hace un pre-pase global para obtener las posiciones X y luego
+    se procesan todas las páginas con esas referencias.
+    Fechas en formato DD/ABR.
+    """
+    MESES = {"ENE":1,"FEB":2,"MAR":3,"ABR":4,"MAY":5,"JUN":6,
+             "JUL":7,"AGO":8,"SEP":9,"OCT":10,"NOV":11,"DIC":12}
+    pat_fecha = re.compile(
+        r"^(\d{2})/(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)$", re.IGNORECASE)
+    pat_monto = re.compile(r"^\d{1,3}(?:,\d{3})*\.\d{2}$")
+    movimientos = []
+
+    # ── Pre-pase: obtener x_cargo, x_abono, x_saldo de cualquier página ────────
+    x_cargo_hdr = x_abono_hdr = x_saldo_hdr = None
+    all_page_rows = []   # lista de defaultdict(list) por página
+    anio_global = date.today().year
+
+    with pdfplumber_mod.open(ruta) as pdf:
+        for page in pdf.pages:
+            words = page.extract_words(keep_blank_chars=False, x_tolerance=2, y_tolerance=3)
+            rows_tmp = defaultdict(list)
+            for w in words:
+                rows_tmp[round(w["top"])].append(w)
+            all_page_rows.append(rows_tmp)
+
+            # Año del documento
+            txt = page.extract_text() or ""
+            m_anio = re.search(r"/(\d{4})", txt)
+            if m_anio:
+                anio_global = int(m_anio.group(1))
+
+            # Buscar fila header con CARGOS y ABONOS
+            if x_cargo_hdr is None:
+                for y_h in sorted(rows_tmp.keys()):
+                    row_w = rows_tmp[y_h]
+                    row_texts = [w["text"].upper() for w in row_w]
+                    if "CARGOS" in row_texts and "ABONOS" in row_texts:
+                        for w in sorted(row_w, key=lambda w: w["x0"]):
+                            t = w["text"].upper()
+                            if t == "CARGOS" and x_cargo_hdr is None:
+                                x_cargo_hdr = w["x0"]
+                            elif t == "ABONOS" and x_abono_hdr is None:
+                                x_abono_hdr = w["x0"]
+                            elif t in ("OPERACION","OPERACIÓN","LIQUIDACION","LIQUIDACIÓN") \
+                                 and x_saldo_hdr is None:
+                                x_saldo_hdr = w["x0"]
+                        break
+
+    if x_cargo_hdr is None or x_abono_hdr is None:
+        return []
+
+    x_sep   = (x_cargo_hdr + x_abono_hdr) / 2
+    x_saldo = x_saldo_hdr if x_saldo_hdr else (x_abono_hdr + 45)
+
+    _SKIP_ROWS = ("BBVA MEXICO","AV. PASEO","ESTADO DE CUENTA","LIBRETON","PAGINA",
+                  "NO. DE CUENTA","NO. DE CLIENTE","LA GAT","DETALLE DE",
+                  "TOTAL IMPORTE","TOTAL DE MOVIMIENTOS","TOTAL MOVIMIENTOS",
+                  "SALDO INICIAL","DEPOSITOS / ABONOS","RETIROS / CARGOS",
+                  "INTERESES A FAVOR","ISR RETENIDO","SALDO PROMEDIO")
+
+    def _es_ruido(tokens):
+        txt = " ".join(tokens).upper()
+        return any(s in txt for s in _SKIP_ROWS)
+
+    # ── Procesar todas las páginas con las posiciones fijas ─────────────────────
+    for rows_tmp in all_page_rows:
+        cur_fecha = cur_desc = None
+        cur_dep = cur_ret = 0.0
+        cur_saldo = None
+
+        def _flush():
+            nonlocal cur_fecha, cur_desc, cur_dep, cur_ret, cur_saldo
+            if cur_fecha is not None and cur_desc is not None and (cur_dep or cur_ret):
+                if cur_saldo is not None:
+                    movimientos.append((cur_fecha, cur_desc, cur_dep, cur_ret, cur_saldo))
+                else:
+                    movimientos.append((cur_fecha, cur_desc, cur_dep, cur_ret))
+            cur_fecha = cur_desc = None
+            cur_dep = cur_ret = 0.0
+            cur_saldo = None
+
+        def _clasificar_montos(tokens, xs):
+            """Clasifica los montos de una fila según su columna X."""
+            nonlocal cur_dep, cur_ret, cur_saldo
+            for tok, x in zip(tokens, xs):
+                if not pat_monto.match(tok):
+                    continue
+                val = float(tok.replace(",", ""))
+                if x >= x_saldo - 5:
+                    cur_saldo = val
+                elif x >= x_sep:
+                    if cur_dep == 0.0:
+                        cur_dep = val
+                else:
+                    if cur_ret == 0.0:
+                        cur_ret = val
+
+        for y in sorted(rows_tmp.keys()):
+            ws2 = sorted(rows_tmp[y], key=lambda w: w["x0"])
+            tokens = [w["text"] for w in ws2]
+            xs     = [w["x0"]  for w in ws2]
+
+            if not tokens or _es_ruido(tokens):
+                continue
+
+            m1 = pat_fecha.match(tokens[0]) if tokens else None
+            m2 = pat_fecha.match(tokens[1]) if len(tokens) > 1 else None
+
+            if m1 and m2:
+                # Nueva transacción
+                _flush()
+                try:
+                    dia = int(m2.group(1))   # fecha de liquidación
+                    mes = MESES[m2.group(2).upper()]
+                    cur_fecha = date(anio_global, mes, dia)
+                except Exception:
+                    cur_fecha = None; continue
+                cur_dep = cur_ret = 0.0; cur_saldo = None
+                # Tokens después de las dos fechas
+                rest_tokens = tokens[2:]
+                rest_xs     = xs[2:]
+                desc_parts = []
+                for tok, x in zip(rest_tokens, rest_xs):
+                    if pat_monto.match(tok):
+                        val = float(tok.replace(",", ""))
+                        if x >= x_saldo - 5:
+                            cur_saldo = val
+                        elif x >= x_sep:
+                            if cur_dep == 0.0: cur_dep = val
+                        else:
+                            if cur_ret == 0.0: cur_ret = val
+                    else:
+                        desc_parts.append(tok)
+                cur_desc = " ".join(desc_parts).strip() or None
+
+            elif cur_fecha is not None:
+                # Fila de continuación
+                has_monto = any(pat_monto.match(t) for t in tokens)
+                if has_monto:
+                    _clasificar_montos(tokens, xs)
+                    # Si descripción aún vacía, tomar tokens no-monto de esta fila
+                    if cur_desc is None:
+                        non_amt = [t for t, x in zip(tokens, xs)
+                                   if not pat_monto.match(t) and x < x_cargo_hdr]
+                        if non_amt:
+                            cur_desc = " ".join(non_amt).strip()
+
+        _flush()
+
+    return movimientos
+
+
 def _parsear_bbva_pyme(texto):
     """Parser BBVA Maestra PYME."""
     MESES = {"ENE":1,"FEB":2,"MAR":3,"ABR":4,"MAY":5,"JUN":6,
@@ -903,7 +1058,8 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
     # S y § son lecturas OCR frecuentes del símbolo $
     # Abono si: hay signo menos precedido de $/$S/§, O si la línea termina en "s" sola
     # (s minúscula = $ subrayado en la columna ABONOS sin guión explícito)
-    pat_neg = re.compile(r'[$S§]\s*[—–]?\s*-|\bs\s*$')
+    # Abono: signo menos tras $/$S/§, O símbolo de moneda suelto sin guión (abono subrayado)
+    pat_neg = re.compile(r'[$S§]\s*[—–]?\s*-|\b[sS§]\s*$')
     pat_amt = re.compile(r'([\d,]+\.\d{2})')
     movimientos = []
 
@@ -921,6 +1077,8 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
             ls = l.strip()
             # Corregir "1,551 00" → "1,551.00" (punto decimal leído como espacio)
             ls = re.sub(r'(\d{1,3}(?:,\d{3})+)\s(\d{2})(?=\s|$)', r'\1.\2', ls)
+            # Corregir "3,339,.54" → "3,339.54" (coma extra antes del decimal por OCR)
+            ls = re.sub(r',(?=\.\d)', '', ls)
             if ls:
                 raw_lines.append(ls)
 
@@ -970,7 +1128,10 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
             if not amounts:
                 continue
             last_m   = amounts[-1]
-            amount   = float(last_m.group(1).replace(",", ""))
+            try:
+                amount = float(last_m.group(1).replace(",", ""))
+            except ValueError:
+                continue   # monto corrupto por OCR, saltar línea
             prefix   = desc_raw[:last_m.start()]
             is_abono = bool(pat_neg.search(prefix))
             dep = amount if is_abono else 0.0
@@ -1010,6 +1171,9 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
         if any(k in texto_total.upper() for k in ("T NEGOC", "LCDIGITAL", "FECHA AUTORIZACION")):
             movs = _parsear_bbva_tdc(texto_total, paginas_tablas, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
             if movs: return movs
+        if any(k in texto_total.upper() for k in ("LIBRETON","LIBRETÓN","CUENTA DIGITAL")):
+            movs = _parsear_bbva_libreton(ruta, pdfplumber_mod)
+            if movs: return movs
         if any(k in texto_total.upper() for k in ("CASH MANAGEMENT","MAESTRA PYME","OPER LIQ COD")):
             movs = _parsear_bbva_cashmanagement(ruta, pdfplumber_mod)
             if movs: return movs
@@ -1038,10 +1202,13 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
         movs = _parsear_afirme(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs
 
-    # ── Auto-detección ────────────────────────────────────────────────────────
+    # ── Auto-detección ──────────────────────────────────────────────────────
     BANORTE_PAT = re.compile(r"\d{2}-(?:ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)-\d{2}")
     if BANORTE_PAT.search(texto_total):
         movs = _parsear_banorte(texto_total)
+        if movs: return movs
+    if any(k in texto_total.upper() for k in ("LIBRETON","LIBRETÓN","CUENTA DIGITAL")):
+        movs = _parsear_bbva_libreton(ruta, pdfplumber_mod)
         if movs: return movs
     if any(k in texto_total.upper() for k in ("CASH MANAGEMENT","MAESTRA PYME","OPER LIQ COD")):
         movs = _parsear_bbva_cashmanagement(ruta, pdfplumber_mod)
@@ -1053,7 +1220,6 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
     if any("CARGO" in str(t) or "ABONO" in str(t) for t in paginas_tablas):
         movs = _parsear_bbva(texto_total, paginas_tablas, "BBVA Débito")
         if movs: return movs
-    # PDF sin texto extraíble → intentar TDC via OCR como último recurso
     if not texto_total.strip():
         movs = _parsear_bbva_tdc("", paginas_tablas, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs
@@ -1172,8 +1338,8 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
     ws_c.merge_range(1,0,1,1, nombre_base, fmt_sub)
     conc_data = [
         ("Saldo inicial", saldo_ini, fmt_cv),
-        ("(+) Total depósitos / abonos", total_dep, fmt_cv),
-        ("(-) Total retiros / cargos", total_ret, fmt_cv),
+        ("(+) Total depósitos", total_dep, fmt_cv),
+        ("(-) Total retiros", total_ret, fmt_cv),
         ("= Saldo final calculado", saldo_fin_real, fmt_ct),
     ]
     if saldo_esp is not None:
@@ -1191,7 +1357,7 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
 BANCOS = [
     "Auto-detectar",
     "Banorte Débito", "Banorte Empresarial",
-    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC",
+    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management",
     "Banamex Débito", "Banamex Empresarial",
     "Santander", "HSBC", "Scotiabank",
     "Banregio", "Inbursa", "American Express", "Afirme",

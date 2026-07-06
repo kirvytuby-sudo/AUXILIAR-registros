@@ -928,7 +928,9 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
                     stop = True
                     break
                 continue
-            if any(sk in lu for sk in _TDC_SKIP):
+            # Saltar solo si NO tiene patrón de fecha — líneas de transacción
+            # pueden contener palabras del skip list por ruido OCR de columnas adyacentes
+            if any(sk in lu for sk in _TDC_SKIP) and not pat_tx.search(ls):
                 continue
             m = pat_tx.search(ls)   # search (no match) → tolera basura OCR al inicio
             if not m:

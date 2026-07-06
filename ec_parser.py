@@ -785,8 +785,8 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
                     mes = MESES.get(_pm2.group(1).upper(), mes); anio = int(_pm2.group(2))
             _ini = re.search(r'Saldo\s+inicial\s+\$\s*([\d,]+\.\d{2})', texto)
             if _ini: saldo_ant = float(_ini.group(1).replace(",",""))
-        except Exception:
-            pass
+        except Exception as _ocr_err:
+            raise RuntimeError(f"OCR Afirme falló: {_ocr_err}") from _ocr_err
     # fallback texto
     pat_tx = re.compile(r"^(\d{1,2})\s+([^\n]+)", re.MULTILINE)
     saldo_ant2 = saldo_ant

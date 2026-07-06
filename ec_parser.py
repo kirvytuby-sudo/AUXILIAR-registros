@@ -1377,8 +1377,8 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
 BANCOS = [
     "Auto-detectar",
     "Banorte Débito", "Banorte Empresarial",
-    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA Libretón",
-     "Banamex Débito", "Banamex Empresarial",
+    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC", "BBVA Libretón",
+    "Banamex Débito", "Banamex Empresarial",
     "Santander", "HSBC", "Scotiabank",
     "Banregio", "Inbursa", "American Express", "Afirme",
 ]

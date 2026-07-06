@@ -901,7 +901,9 @@ def _parsear_bbva_tdc(texto, tablas, ruta=None, pdfplumber_mod=None):
 
     pat_tx  = re.compile(r"^(\d{2}/\d{2}/\d{2})\s+(\d{2}/\d{2}/\d{2})\s+(.+)$")
     # S y § son lecturas OCR frecuentes del símbolo $
-    pat_neg = re.compile(r'[$S§]\s*[—–]?\s*-')
+    # Abono si: hay signo menos precedido de $/$S/§, O si la línea termina en "s" sola
+    # (s minúscula = $ subrayado en la columna ABONOS sin guión explícito)
+    pat_neg = re.compile(r'[$S§]\s*[—–]?\s*-|\bs\s*$')
     pat_amt = re.compile(r'([\d,]+\.\d{2})')
     movimientos = []
 

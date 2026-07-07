@@ -1,7 +1,7 @@
 """
 pages/8_Conciliacion_Banco_Auxiliar.py — Módulo Conciliación Banco vs Auxiliar
 Carga un Excel del banco y un auxiliar contable, concilia depósitos↔cargos
-y retiros↔abonos con tolerancia ±$0.05 y ±2 días.
+y retiros↔abonos con tolerancia ±$0.05 (sin límite de fechas).
 """
 import io
 import os
@@ -196,7 +196,6 @@ def _match(banco_movs, aux_list, tipo_banco):
     Devuelve banco_movs con campo 'match_aux' relleno donde corresponda.
     """
     TOL_AMT  = 0.05
-    TOL_DAYS = 2
 
     aux_copy = [dict(a) for a in aux_list]  # copia para marcar matched
 
@@ -214,8 +213,6 @@ def _match(banco_movs, aux_list, tipo_banco):
             if abs(a["monto"] - monto_b) > TOL_AMT:
                 continue
             diff_d = abs((a["fecha"] - fecha_b).days)
-            if diff_d > TOL_DAYS:
-                continue
             if best_diff is None or diff_d < best_diff:
                 best_diff = diff_d
                 best_i = i
@@ -650,4 +647,4 @@ else:
 """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("Módulo Conciliación Banco vs Auxiliar · v1.0  ·  Tolerancia ±$0.05 · ±2 días")
+st.caption("Módulo Conciliación Banco vs Auxiliar · v1.0  ·  Tolerancia ±$0.05 · match por monto, fecha como desempate")

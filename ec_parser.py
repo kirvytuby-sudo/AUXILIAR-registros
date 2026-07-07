@@ -822,7 +822,7 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
         fl = rows[0]
         desc = pat_monto.sub("", fl); desc = re.sub(r"\$\s*", "", desc)
         desc = re.sub(r"^\d{1,2}\s+", "", desc); desc = re.sub(r"\s+", " ", desc).strip() or "—"
-        # DESTINATARIO: puede estar partido por salto de línea → buscar en bt completo
+        # Intentar extracción de keywords (DESTINATARIO, CONCEPTO)
         dest_m = re.search(
             r"DESTINATARIO\s*[:\|]\s*(.+?)(?=\s*(?:\(DA|\(DATO|RFC\s+DEST|ND\s+CVE|CVE\s*RASTREO|CON\s*CEPTO|CONCEPTO|$))",
             bt, re.IGNORECASE)
@@ -830,7 +830,6 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
         if dest_m:
             dest = dest_m.group(1).strip().rstrip("(").strip()
             dest = re.sub(r"\s*\(?DA\s*TO\s*NO.+$", "", dest, flags=re.I).strip()
-        # CONCEPTO: OCR parte "CON\nCEPTO:" → en bt queda "CON CEPTO:"
         conc_m = re.search(
             r"(?:CON\s+)?CEPTO\s*[:\|]\s*(.+?)(?=\s*(?:HORA|CVE|RFC|$))",
             bt, re.IGNORECASE)
@@ -839,6 +838,17 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
         concepto = conc_m.group(1).strip()[:80] if conc_m else ""
         if dest: desc += " | " + dest
         if concepto and concepto.upper() not in desc.upper(): desc += " | " + concepto
+        # Si no se encontraron keywords, incluir texto adicional del bloque directamente
+        if not dest and not concepto and len(rows) > 1:
+            extra = []
+            for row in rows[1:]:
+                cl = pat_monto.sub("", row); cl = re.sub(r"\$\s*", "", cl)
+                cl = re.sub(r"\s+", " ", cl).strip()
+                # Excluir líneas con solo números/referencias largas
+                if len(cl) > 4 and not re.match(r'^[\d\s,\.]+$', cl):
+                    extra.append(cl)
+            if extra:
+                desc += " — " + " ".join(extra)[:180]
         if saldo_ant2 is not None:
             diff = round(saldo - saldo_ant2, 2)
             dep = round(diff, 2) if diff > 0 else 0.0
@@ -1369,7 +1379,7 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
     ws.merge_range(0,0,0,4,f"Estado de Cuenta — {nombre_base}  ({n_filas} movimientos)", fmt_tit)
     ws.set_row(0, 24)
     ws.set_column(0,0,14); ws.set_column(1,1,55); ws.set_column(2,4,17)
-    for c, h in enumerate(["Fecha","Descripción","Depósito","Retiro","Saldo"]):
+    for c, h in enumerate(["Fecha","Descripci\u00f3n","Dep\u00f3sito","Retiro","Saldo"]):
         ws.write(1, c, h, fmt_h)
     ws.freeze_panes(2, 0)
     ws.autofilter(1, 0, 1+n_filas, 4)
@@ -1389,19 +1399,19 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
 
     diferencia = (saldo_fin_real - saldo_esp) if saldo_esp is not None else None
     ws_c.set_column(0,0,36); ws_c.set_column(1,1,20)
-    ws_c.merge_range(0,0,0,1,"Conciliación Bancaria", fmt_tit)
+    ws_c.merge_range(0,0,0,1,"Conciliaci\u00f3n Bancaria", fmt_tit)
     ws_c.set_row(0, 24)
     ws_c.merge_range(1,0,1,1, nombre_base, fmt_sub)
     conc_data = [
         ("Saldo inicial", saldo_ini, fmt_cv),
-        ("(+) Total depósitos", total_dep, fmt_cv),
+        ("(+) Total dep\u00f3sitos", total_dep, fmt_cv),
         ("(-) Total retiros", total_ret, fmt_cv),
         ("= Saldo final calculado", saldo_fin_real, fmt_ct),
     ]
     if saldo_esp is not None:
         conc_data.append(("Saldo final esperado (banco)", saldo_esp, fmt_cv))
         f_dif = fmt_ok if diferencia is not None and abs(diferencia) < 0.01 else fmt_err
-        conc_data.append(("Diferencia (calculado − esperado)", diferencia, f_dif))
+        conc_data.append(("Diferencia (calculado \u2212 esperado)", diferencia, f_dif))
     for i, (lbl, val, fmt_v) in enumerate(conc_data, start=2):
         ws_c.write(i, 0, lbl, fmt_cl); ws_c.write(i, 1, val, fmt_v)
 
@@ -1412,9 +1422,9 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
 
 BANCOS = [
     "Auto-detectar",
-    "Banorte Débito", "Banorte Empresarial",
-    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC", "BBVA Libretón",
-    "Banamex Débito", "Banamex Empresarial",
+    "Banorte D\u00e9bito", "Banorte Empresarial",
+    "BBVA D\u00e9bito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC", "BBVA Libret\u00f3n",
+    "Banamex D\u00e9bito", "Banamex Empresarial",
     "Santander", "HSBC", "Scotiabank",
     "Banregio", "Inbursa", "American Express", "Afirme",
 ]

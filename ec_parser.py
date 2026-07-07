@@ -748,14 +748,14 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
             fl = rows[0]; desc = pat_monto.sub("", fl)
             desc = re.sub(r"\$\s*", "", desc); desc = re.sub(r"^\d{1,2}\s+", "", desc)
             desc = re.sub(r"\s+", " ", desc).strip() or "—"
-            dest_m = re.search(r"DESTINATARIO:(.+?)(?=\s*\(?DATO\s+NO|\s+RFC\s+DEST|\s+ND\s+CVE|$)", bt, re.IGNORECASE)
+            dest_m = re.search(r"DESTINATARIO\s*[:\|]\s*(.+?)(?=\s*(?:\(?DATO\s+NO|RFC\s+DEST|ND\s+CVE|CVE\s*RASTREO|CONCEPTO|$))", bt, re.IGNORECASE)
             dest = ""
             if dest_m:
                 dest = dest_m.group(1).strip()
                 dest = re.sub(r"\s*\(?DA\s+TO\s+NO.+$", "", dest, flags=re.I).strip()
                 dest = re.sub(r"\s*\(?DATO\s+NO.+$", "", dest, flags=re.I).strip()
                 dest = dest.rstrip("(").strip()
-            conc_m = re.search(r"CONCEPTO:(.+?)(?=\s+HORA:|\s+CVE\s+RASTREO:|\s+M[eé]todo|$)", bt, re.IGNORECASE)
+            conc_m = re.search(r"CONCEPTO\s*[:\|]\s*(.+?)(?=\s*(?:HORA|CVE\s+RASTREO|M[eé]todo|RFC|$))", bt, re.IGNORECASE)
             concepto = conc_m.group(1).strip()[:80] if conc_m else ""
             if dest: desc += " | " + dest
             if concepto and concepto.upper() not in desc.upper(): desc += " | " + concepto
@@ -775,6 +775,10 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
             import pytesseract as _tsr
             _imgs = _c2p(ruta, dpi=200)
             texto = "\n".join(_tsr.image_to_string(img, lang="eng") for img in _imgs)
+            # Normalizar palabras clave frecuentemente partidas por OCR
+            texto = re.sub(r'DESTI\s+NATARIO', 'DESTINATARIO', texto, flags=re.I)
+            texto = re.sub(r'CON\s+CEPTO', 'CONCEPTO', texto, flags=re.I)
+            texto = re.sub(r'RA\s+STREO', 'RASTREO', texto, flags=re.I)
             # Re-calcular año/mes desde texto OCR
             _pm = re.search(r'(\d{2})\s*([A-Z]{3})\s*(\d{4})\s+AL', texto, re.IGNORECASE)
             if _pm:
@@ -802,6 +806,14 @@ def _parsear_afirme(texto, ruta=None, pdfplumber_mod=None):
         m = pat_inicio.match(ln)
         if m:
             dia = int(m.group(1))
+            # Líneas de metadatos SPEI nunca son inicio de transacción, aunque el OCR
+            # les añada un dígito al inicio (artefacto de columna de numeración)
+            _NO_TX_KW = ("destinatario", "rfc dest", "rfc: ", "hora:", "cve rastreo",
+                         "nd cve", "concepto:", "dato no")
+            if any(kw in ln.lower() for kw in _NO_TX_KW):
+                if cur_dia is not None and _es_cont_valida(ln):
+                    cur_lines.append(ln)
+                continue
             if 1 <= dia <= 31 and not any(kw in ln.lower() for kw in _SKIP_TX):
                 if cur_dia is not None: bloques.append((cur_dia, cur_lines))
                 cur_dia = dia; cur_lines = [ln]; continue

@@ -640,8 +640,14 @@ def _parsear_inbursa(texto):
 
 def _parsear_amex(texto):
     """Parser American Express."""
-    MESES = {"enero":1,"febrero":2,"marzo":3,"abril":4,"mayo":5,"junio":6,
-             "julio":7,"agosto":8,"septiembre":9,"octubre":10,"noviembre":11,"diciembre":12}
+    # Acepta meses completos (mayo) y abreviados (may) — Amex usa "4 deMay"
+    MESES = {
+        "enero":1,"ene":1,"febrero":2,"feb":2,"marzo":3,"mar":3,
+        "abril":4,"abr":4,"mayo":5,"may":5,"junio":6,"jun":6,
+        "julio":7,"jul":7,"agosto":8,"ago":8,
+        "septiembre":9,"sep":9,"sept":9,"octubre":10,"oct":10,
+        "noviembre":11,"nov":11,"diciembre":12,"dic":12,
+    }
     year_m = re.search(r"\b(20\d{2})\b", texto)
     anio = int(year_m.group(1)) if year_m else date.today().year
     pat_fecha = re.compile(r"^(\d{1,2})\s+de\s*([A-Za-záéíóúÁÉÍÓÚ]+)\s+(.*?)$", re.IGNORECASE)

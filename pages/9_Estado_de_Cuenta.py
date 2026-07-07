@@ -70,7 +70,7 @@ def _get_openpyxl():
 
 def _importar_parser():
     """Importa ec_parser. Busca en el directorio del repositorio."""
-    import sys, os
+    import sys, os, importlib
     dirs = [
         os.path.dirname(os.path.abspath(__file__)),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."),
@@ -79,13 +79,90 @@ def _importar_parser():
         if d not in sys.path:
             sys.path.insert(0, d)
     import ec_parser
+    importlib.reload(ec_parser)  # fuerza recarga para evitar caché de sys.modules
     return ec_parser
+
+
+def _obtener_api_key():
+    """Obtiene la API key de Anthropic: session_state → secrets → env."""
+    if st.session_state.get("_ec_ia_key"):
+        return st.session_state["_ec_ia_key"]
+    try:
+        k = st.secrets.get("ANTHROPIC_API_KEY", "")
+        if k: return k
+    except Exception:
+        pass
+    import os
+    return os.environ.get("ANTHROPIC_API_KEY", "")
+
+
+def _parsear_con_ia(texto_pdf: str, banco_hint: str, api_key: str) -> list:
+    """Llama a Claude Haiku para extraer movimientos cuando el parser falla."""
+    import re, json
+    from datetime import datetime
+    try:
+        import anthropic
+    except ImportError:
+        st.error("Paquete `anthropic` no instalado en el servidor. Agrégalo a requirements.txt.")
+        return []
+
+    texto_recortado = texto_pdf[:8000] if len(texto_pdf) > 8000 else texto_pdf
+    prompt = f"""Eres un experto en estados de cuenta bancarios mexicanos.
+Banco: {banco_hint or 'desconocido'}
+
+Extrae TODOS los movimientos del siguiente texto. Para cada uno devuelve:
+- fecha: DD/MM/YYYY
+- descripcion: descripción del movimiento (sin montos)
+- deposito: monto depositado/abonado (0 si no aplica)
+- retiro: monto retirado/cargado (0 si no aplica)
+
+Responde ÚNICAMENTE con JSON válido:
+{{"movimientos": [{{"fecha":"DD/MM/YYYY","descripcion":"...","deposito":0.0,"retiro":0.0}}]}}
+
+Texto del estado de cuenta:
+{texto_recortado}"""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = resp.content[0].text.strip()
+        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not m:
+            return []
+        data = json.loads(m.group())
+        result = []
+        for mov in data.get("movimientos", []):
+            try:
+                fecha_str = mov.get("fecha", "")
+                fecha = None
+                for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%d-%m-%Y"):
+                    try:
+                        fecha = datetime.strptime(fecha_str, fmt).date()
+                        break
+                    except ValueError:
+                        continue
+                if fecha is None:
+                    continue
+                desc = str(mov.get("descripcion", "—")).strip() or "—"
+                dep  = float(mov.get("deposito", 0) or 0)
+                ret  = float(mov.get("retiro",   0) or 0)
+                result.append((fecha, desc, dep, ret))
+            except Exception:
+                continue
+        return result
+    except Exception as e:
+        st.error(f"Error llamando a la API de Claude: {e}")
+        return []
 
 # ── BANCOS ────────────────────────────────────────────────────────────────────
 BANCOS = [
     "Auto-detectar",
     "Banorte Débito", "Banorte Empresarial",
-    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC",
+    "BBVA Débito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC", "BBVA Libretón",
     "Banamex Débito", "Banamex Empresarial",
     "Santander", "HSBC", "Scotiabank",
     "Banregio", "Inbursa", "American Express", "Afirme",
@@ -133,6 +210,33 @@ with col_cfg:
     generar = st.button("🔍 Procesar estado de cuenta", type="primary", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Opción C: IA fallback ────────────────────────────────────────
+    with st.expander("🤖 Fallback con IA (cuando el parser falla)"):
+        st.markdown("""
+**¿Qué hace?** Si el parser no encuentra movimientos, la app llama automáticamente
+a la API de Claude (modelo Haiku, rápido y económico) para extraerlos.
+
+**Para Streamlit Cloud:** agrega `ANTHROPIC_API_KEY = "sk-ant-..."` en
+*Settings → Secrets* de tu app.
+
+**Para uso temporal:** escribe la key aquí (solo dura esta sesión).
+        """)
+        _key_placeholder = ""
+        try:
+            _key_placeholder = "••••" + st.secrets["ANTHROPIC_API_KEY"][-4:] \
+                               if st.secrets.get("ANTHROPIC_API_KEY") else ""
+        except Exception:
+            pass
+        _ia_key_input = st.text_input(
+            "API Key de Anthropic (opcional)",
+            value=_key_placeholder,
+            type="password",
+            placeholder="sk-ant-...",
+            help="Si ya configuraste ANTHROPIC_API_KEY en Secrets, déjalo vacío.",
+        )
+        if _ia_key_input and not _ia_key_input.startswith("••••"):
+            st.session_state["_ec_ia_key"] = _ia_key_input
+
     with st.expander("ℹ️ Bancos soportados"):
         st.markdown("""
 **Parseo nativo completo:**
@@ -172,12 +276,21 @@ with col_res:
         ext  = os.path.splitext(archivo.name)[1].lower()
         nombre_base = os.path.splitext(archivo.name)[0]
 
+        _texto_pdf_para_ia = ""   # guardamos para fallback IA
         with st.spinner("Extrayendo movimientos…"):
             movs_raw = []
             try:
                 with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
                     tmp.write(archivo.read()); tmp_path = tmp.name
                 if ext == ".pdf":
+                    # Guardar texto para posible fallback IA
+                    try:
+                        with pdfplumber_mod.open(tmp_path) as _pdf:
+                            _texto_pdf_para_ia = "\n".join(
+                                (p.extract_text() or "") for p in _pdf.pages
+                            )
+                    except Exception:
+                        pass
                     movs_raw = ec.leer_pdf(tmp_path, pdfplumber_mod, banco_sel)
                 else:
                     movs_raw = ec.leer_excel(tmp_path, openpyxl_mod)
@@ -189,8 +302,19 @@ with col_res:
                 try: os.unlink(tmp_path)
                 except Exception: pass
 
+        # ── Opción C: fallback con IA si parser no encontró nada ──────
+        if not movs_raw and ext == ".pdf":
+            _api_key = _obtener_api_key()
+            if _api_key:
+                with st.spinner("🤖 Parser convencional sin resultados — intentando con IA (Claude Haiku)…"):
+                    movs_raw = _parsear_con_ia(_texto_pdf_para_ia, banco_sel, _api_key)
+                if movs_raw:
+                    st.info(f"🤖 IA extrajo {len(movs_raw)} movimientos (el parser convencional no encontró ninguno).")
+
         if not movs_raw:
             st.warning("No se encontraron movimientos. Verifica que el banco seleccionado sea correcto o intenta con 'Auto-detectar'.")
+            if ext == ".pdf" and not _obtener_api_key():
+                st.info("💡 Tip: configura una API Key de Anthropic en el panel izquierdo para que la IA lo intente automáticamente.")
             st.stop()
 
         filas, total_dep, total_ret = ec.calcular_saldos(movs_raw, saldo_ini)

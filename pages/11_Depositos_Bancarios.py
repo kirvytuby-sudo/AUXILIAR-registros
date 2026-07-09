@@ -562,5 +562,6 @@ if st.button("⚙️ Generar Póliza", type="primary",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary",
         )
-    else:
-        st.warning("No se encontraron depósitos clasificables.")
+
+else:
+    st.info("⬆️ Sube al menos un archivo de depósito para continuar.")

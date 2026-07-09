@@ -16,6 +16,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
+[data-testid="stAppViewContainer"] { background: #dbeafe; }
     .hdr { background:#0A7A4A; padding:18px 24px; border-radius:10px; margin-bottom:20px; }
     .hdr h2 { color:#fff; margin:0; font-size:1.3rem; }
     .hdr p  { color:#A7F3D0; margin:4px 0 0; font-size:.9rem; }

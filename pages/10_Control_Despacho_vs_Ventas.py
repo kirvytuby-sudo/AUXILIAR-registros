@@ -11,6 +11,7 @@ st.set_page_config(
 )
 
 st.markdown("""<style>
+[data-testid="stAppViewContainer"] { background: #dbeafe; }
 .header-bar{background:#B45309;padding:18px 28px;border-radius:10px;margin-bottom:20px;}
 .header-bar h1{color:#FFFFFF;font-size:1.5rem;margin:0;}
 .header-bar p{color:#FEF3C7;margin:4px 0 0;font-size:.9rem;}

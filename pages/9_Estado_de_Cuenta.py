@@ -15,7 +15,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-[data-testid="stAppViewContainer"] { background: #F8FAFC; }
+[data-testid="stAppViewContainer"] { background: #dbeafe; }
 .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
 .ec-header {
     background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
@@ -25,11 +25,11 @@ st.markdown("""
 .ec-header h1 { margin: 0; font-size: 1.6rem; font-weight: 700; letter-spacing: .5px; }
 .ec-header p  { margin: .3rem 0 0; opacity: .8; font-size: .9rem; }
 .ec-card {
-    background: white; border-radius: 8px; padding: 1.2rem 1.5rem;
-    box-shadow: 0 1px 6px rgba(0,0,0,.07); margin-bottom: 1rem;
+    background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: 1.2rem 1.5rem;
+    margin-bottom: 1rem;
 }
 .ec-stat {
-    background: #EEF2FF; border-radius: 8px; padding: .9rem 1.2rem;
+    background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: .9rem 1.2rem;
     text-align: center; margin-bottom: .5rem;
 }
 .ec-stat .val { font-size: 1.4rem; font-weight: 700; color: #1E3A8A; }

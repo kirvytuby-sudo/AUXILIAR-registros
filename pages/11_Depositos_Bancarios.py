@@ -185,7 +185,7 @@ def leer_banco(file_obj, banco: str) -> tuple[list, list]:
 
 
 # ─── Generación del Excel (respetando formato del template) ───────────────────
-def generar_excel(registros: list) -> bytes:
+def generar_excel(registros: list, plantilla=None) -> bytes:
     """
     Genera el Excel de póliza respetando el formato del template
     DEPOSITOS BANCARIOS FELUSA.xlsx:
@@ -240,71 +240,72 @@ def generar_excel(registros: list) -> bytes:
     # ══════════════════════════════════════════════════════════════════════════
     # Hoja POLIZA
     # ══════════════════════════════════════════════════════════════════════════
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "POLIZA"
+    if plantilla is not None:
+        # Cargar la plantilla y limpiar filas de datos (fila 4 en adelante)
+        wb = openpyxl.load_workbook(plantilla)
+        ws = wb["POLIZA"] if "POLIZA" in wb.sheetnames else wb.active
+        max_row = ws.max_row
+        for row_idx in range(4, max_row + 1):
+            for col_idx in range(1, ws.max_column + 1):
+                ws.cell(row=row_idx, column=col_idx).value = None
+    else:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "POLIZA"
 
-    # ── FILA 1: índices de columna (0-20) ──
-    for pol_idx in range(21):
-        set_cell(ws, 1, pol_idx + 1,
-                 value=pol_idx,
-                 font=fnt(color="000000"),
-                 fill=F_NONE, align=A_CTR)
+        # ── FILA 1: índices de columna (0-20) ──
+        for pol_idx in range(21):
+            set_cell(ws, 1, pol_idx + 1,
+                     value=pol_idx,
+                     font=fnt(color="000000"),
+                     fill=F_NONE, align=A_CTR)
 
-    # ── FILA 2: números de cuenta (solo en cols de banco y tránsito) ──
-    # Cargos: cols 9,10,11 (poliza idx 8,9,10)
-    for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
-        set_cell(ws, 2, pol_idx + 1,
-                 value=CARGOS[banco][0],
-                 font=fnt(color="000000"),
-                 fill=F_GRAY2, align=A_CTR)
-    # Abonos: cols 13-20 (poliza idx 12-19)
-    for a in ABONOS:
-        set_cell(ws, 2, a["col"] + 1,
-                 value=a["cuenta"],
-                 font=fnt(color="000000"),
-                 fill=F_GRAY2, align=A_CTR)
+        # ── FILA 2: números de cuenta (solo en cols de banco y tránsito) ──
+        for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
+            set_cell(ws, 2, pol_idx + 1,
+                     value=CARGOS[banco][0],
+                     font=fnt(color="000000"),
+                     fill=F_GRAY2, align=A_CTR)
+        for a in ABONOS:
+            set_cell(ws, 2, a["col"] + 1,
+                     value=a["cuenta"],
+                     font=fnt(color="000000"),
+                     fill=F_GRAY2, align=A_CTR)
 
-    # ── FILA 3: etiquetas de columna con colores del template ──
-    # Cols A-H: admin (colores del template)
-    headers_admin = [
-        (1,  "TIPO DE POLIZA", F_TIPO,  fnt(color="000000")),
-        (2,  "Fecha",          F_FECHA, fnt(bold=True, color="FFFFFF")),
-        (3,  "REFERENCIA",     F_REF,   fnt(bold=True, color="FFFFFF")),
-        (4,  "CONCEPTO",       F_CONC,  fnt(bold=True, color="FFFFFF")),
-        (5,  "ERROR",          F_ERROR, fnt(bold=True, color="FFFFFF")),
-        (6,  "UIDD",           F_ADMIN, fnt(bold=True, color="FFFFFF")),
-        (7,  "NUM POLIZA",     F_ADMIN, fnt(bold=True, color="FFFFFF")),
-        (8,  "PROCESADO",      F_ADMIN, fnt(bold=True, color="FFFFFF")),
-    ]
-    for col, lbl, fill, font in headers_admin:
-        set_cell(ws, 3, col, value=lbl, font=font, fill=fill, align=A_CTR)
+        # ── FILA 3: etiquetas de columna con colores del template ──
+        headers_admin = [
+            (1,  "TIPO DE POLIZA", F_TIPO,  fnt(color="000000")),
+            (2,  "Fecha",          F_FECHA, fnt(bold=True, color="FFFFFF")),
+            (3,  "REFERENCIA",     F_REF,   fnt(bold=True, color="FFFFFF")),
+            (4,  "CONCEPTO",       F_CONC,  fnt(bold=True, color="FFFFFF")),
+            (5,  "ERROR",          F_ERROR, fnt(bold=True, color="FFFFFF")),
+            (6,  "UIDD",           F_ADMIN, fnt(bold=True, color="FFFFFF")),
+            (7,  "NUM POLIZA",     F_ADMIN, fnt(bold=True, color="FFFFFF")),
+            (8,  "PROCESADO",      F_ADMIN, fnt(bold=True, color="FFFFFF")),
+        ]
+        for col, lbl, fill, font in headers_admin:
+            set_cell(ws, 3, col, value=lbl, font=font, fill=fill, align=A_CTR)
 
-    # Cols banco (9,10,11): nombre del banco
-    for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
-        set_cell(ws, 3, pol_idx + 1,
-                 value=CARGOS[banco][1].strip(),
-                 font=fnt(bold=True, color="FFFFFF"),
-                 fill=F_BANCO, align=A_CTR)
+        for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
+            set_cell(ws, 3, pol_idx + 1,
+                     value=CARGOS[banco][1].strip(),
+                     font=fnt(bold=True, color="FFFFFF"),
+                     fill=F_BANCO, align=A_CTR)
 
-    # Col 12 (L): TOTAL CARGOS — rojo, sin fill (igual que template I3)
-    set_cell(ws, 3, 12, value="TOTAL CARGOS",
-             font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
+        set_cell(ws, 3, 12, value="TOTAL CARGOS",
+                 font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
 
-    # Cols tránsito (13-20): nombre de la cuenta
-    for a in ABONOS:
-        set_cell(ws, 3, a["col"] + 1,
-                 value=a["nombre"],
-                 font=fnt(bold=True, color="000000"),
-                 fill=F_ABONO, align=A_CTR_W)
+        for a in ABONOS:
+            set_cell(ws, 3, a["col"] + 1,
+                     value=a["nombre"],
+                     font=fnt(bold=True, color="000000"),
+                     fill=F_ABONO, align=A_CTR_W)
 
-    # Col 21 (U): TOTAL ABONOS — rojo, sin fill (igual que template J3)
-    set_cell(ws, 3, 21, value="TOTAL ABONOS",
-             font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
+        set_cell(ws, 3, 21, value="TOTAL ABONOS",
+                 font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
 
-    # Col 22 (V): DIFERENCIA — encabezado
-    set_cell(ws, 3, 22, value="DIFERENCIA",
-             font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
+        set_cell(ws, 3, 22, value="DIFERENCIA",
+                 font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
 
     # ── FILAS DE DATOS (desde fila 4) ──
     # Orden: BBVA → INBURSA → BANORTE, y dentro de cada banco por fecha
@@ -410,31 +411,28 @@ def generar_excel(registros: list) -> bytes:
     ws.freeze_panes = "B4"
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Hoja CUENTAS (igual al template)
+    # Hoja CUENTAS (solo si no se usa plantilla; la plantilla ya la tiene)
     # ══════════════════════════════════════════════════════════════════════════
-    wc = wb.create_sheet("CUENTAS")
+    if plantilla is None:
+        wc = wb.create_sheet("CUENTAS")
 
-    fn_plain = fnt(color="000000")
-    A_CTR_C  = Alignment(horizontal="center")
+        fn_plain = fnt(color="000000")
+        A_CTR_C  = Alignment(horizontal="center")
 
-    # Fila 1: CARGOS / ABONOS
-    set_cell(wc, 1, 1, "CARGOS", font=fn_plain, fill=F_NONE, align=A_CTR_C)
-    set_cell(wc, 1, 4, "ABONOS", font=fn_plain, fill=F_NONE, align=A_CTR_C)
-    # Fila 2: headers
-    set_cell(wc, 2, 1, "N° Cuenta",          font=fn_plain, fill=F_NONE)
-    set_cell(wc, 2, 2, "Banco",              font=fn_plain, fill=F_NONE)
-    set_cell(wc, 2, 4, "N° Cuenta",          font=fn_plain, fill=F_NONE)
-    set_cell(wc, 2, 5, "Nombre del Deposito",font=fn_plain, fill=F_NONE)
-    # Cargos
-    for i, (banco, (cuenta, nombre)) in enumerate(CARGOS.items(), start=3):
-        set_cell(wc, i, 1, cuenta,  font=fn_plain, fill=F_NONE)
-        set_cell(wc, i, 2, nombre.strip(), font=fn_plain, fill=F_NONE)
-    for i, a in enumerate(ABONOS, start=3):
-        set_cell(wc, i, 4, a["cuenta"], font=fn_plain, fill=F_NONE)
-        set_cell(wc, i, 5, a["nombre"], font=fn_plain, fill=F_NONE)
-
-    for col_num, w in {1: 16.3, 2: 10.0, 4: 16.3, 5: 42.9}.items():
-        wc.column_dimensions[get_column_letter(col_num)].width = w
+        set_cell(wc, 1, 1, "CARGOS", font=fn_plain, fill=F_NONE, align=A_CTR_C)
+        set_cell(wc, 1, 4, "ABONOS", font=fn_plain, fill=F_NONE, align=A_CTR_C)
+        set_cell(wc, 2, 1, "N° Cuenta",           font=fn_plain, fill=F_NONE)
+        set_cell(wc, 2, 2, "Banco",               font=fn_plain, fill=F_NONE)
+        set_cell(wc, 2, 4, "N° Cuenta",           font=fn_plain, fill=F_NONE)
+        set_cell(wc, 2, 5, "Nombre del Deposito", font=fn_plain, fill=F_NONE)
+        for i, (banco, (cuenta, nombre)) in enumerate(CARGOS.items(), start=3):
+            set_cell(wc, i, 1, cuenta,         font=fn_plain, fill=F_NONE)
+            set_cell(wc, i, 2, nombre.strip(), font=fn_plain, fill=F_NONE)
+        for i, a in enumerate(ABONOS, start=3):
+            set_cell(wc, i, 4, a["cuenta"], font=fn_plain, fill=F_NONE)
+            set_cell(wc, i, 5, a["nombre"], font=fn_plain, fill=F_NONE)
+        for col_num, w in {1: 16.3, 2: 10.0, 4: 16.3, 5: 42.9}.items():
+            wc.column_dimensions[get_column_letter(col_num)].width = w
 
     buf = BytesIO()
     wb.save(buf)
@@ -467,6 +465,15 @@ with col3:
                                      type=["xlsx"], key="inbursa",
                                      label_visibility="collapsed")
     st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown('<div class="upload-box">', unsafe_allow_html=True)
+st.markdown("**📋 PLANTILLA DE DEPOSITOS**  *(opcional — si se sube, los datos se escriben sobre ella)*")
+file_plantilla = st.file_uploader(
+    "Plantilla de Depósitos (.xlsx)",
+    type=["xlsx", "xlsm"], key="plantilla",
+    label_visibility="collapsed",
+)
+st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
 
@@ -545,7 +552,7 @@ if st.button("⚙️ Generar Póliza", type="primary",
 
         # ── Descargar ──
         st.subheader("💾 Descargar")
-        excel_bytes = generar_excel(todos_ok)
+        excel_bytes = generar_excel(todos_ok, plantilla=file_plantilla)
         nombre_archivo = f"DEPOSITOS BANCARIOS {datetime.now().strftime('%Y-%m')}.xlsx"
         st.download_button(
             label="📥 Descargar Póliza Excel",

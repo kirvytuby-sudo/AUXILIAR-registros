@@ -83,6 +83,13 @@ MODULOS = [
         "pagina": "pages/4_Ventas_del_Dia.py",
     },
     {
+        "icon": "📊",
+        "title": "Control Despacho vs Ventas",
+        "desc": "Concilia despachos contra póliza de ventas — UUID, IVA, IEPS por producto",
+        "estado": "activo",
+        "pagina": "pages/10_Control_Despacho_vs_Ventas.py",
+    },
+    {
         "icon": "🏦",
         "title": "Estado de Cuenta",
         "desc": "Análisis y conciliación de estados de cuenta bancarios",

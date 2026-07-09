@@ -536,7 +536,7 @@ if generar and desp_file is not None and vd_file is not None:
                         "Tot VtaDía":    "{:,.2f}",
                         "Diferencia":    "{:,.2f}",
                     })
-                    .applymap(_color_dif, subset=["Diferencia"])
+                    .map(_color_dif, subset=["Diferencia"])
                 )
                 st.dataframe(styled, use_container_width=True, hide_index=True)
 

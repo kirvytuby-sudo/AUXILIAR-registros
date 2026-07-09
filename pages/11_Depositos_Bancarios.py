@@ -18,14 +18,15 @@ st.set_page_config(page_title="Depósitos Bancarios", page_icon="🏦", layout="
 # ─── Estilos ──────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-[data-testid="stAppViewContainer"] { background: #0f172a; }
+[data-testid="stAppViewContainer"] { background: #dbeafe; }
 [data-testid="stHeader"] { background: transparent; }
-h1, h2, h3, .stMarkdown p { color: #e2e8f0; }
-.upload-box { background: #1e293b; border: 1px solid #334155;
+h1, h2, h3, .stMarkdown p { color: #1e293b; }
+.upload-box { background: #eff6ff; border: 1.5px solid #93c5fd;
               border-radius: 10px; padding: 16px; margin-bottom: 12px; }
-.stat-card  { background: #1e3a5f; border-radius: 8px; padding: 12px 16px;
-              text-align: center; }
-.no-clasif  { background: #7f1d1d; border-radius: 8px; padding: 12px 16px; }
+.stat-card  { background: #eff6ff; border: 1.5px solid #93c5fd;
+              border-radius: 8px; padding: 12px 16px; text-align: center; }
+.no-clasif  { background: #fee2e2; border: 1.5px solid #fca5a5;
+              border-radius: 8px; padding: 12px 16px; color: #7f1d1d; }
 </style>
 """, unsafe_allow_html=True)
 

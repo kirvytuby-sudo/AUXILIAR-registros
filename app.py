@@ -91,6 +91,13 @@ MODULOS = [
     },
     {
         "icon": "🏦",
+        "title": "Depósitos Bancarios",
+        "desc": "BBVA, Banorte e Inbursa → póliza de depósitos con cuentas de tránsito",
+        "estado": "activo",
+        "pagina": "pages/11_Depositos_Bancarios.py",
+    },
+    {
+        "icon": "🏛️",
         "title": "Estado de Cuenta",
         "desc": "Análisis y conciliación de estados de cuenta bancarios",
         "estado": "pronto",

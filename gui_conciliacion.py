@@ -446,13 +446,14 @@ class WorkspaceWindow(tk.Toplevel):
         ("pagos_bancarios",  "  💼 Pagos Bancarios  ",    "_tab_conciliacion"),
         ("prestamos",        "  💳 Préstamos  ",           "_tab_prestamos"),
         ("provision_nomina", "  📋 Provisión de Nómina  ", "_tab_provision_nomina"),
-        ("ventas_dia",       "  ⛽ Ventas del Día  ",      "_tab_ventas_dia"),
+        ("ventas_dia",       "  ⛽ Ventas del Día  ",      "_tab_ventas_grupo"),
         ("estado_cuenta",    "  🏦 Estado de Cuenta  ",   "_tab_estado_cuenta"),
         ("reconciliacion",   "  📑 Reconciliación  ",      "_tab_reconciliacion"),
         ("visor",            "  📊 Visor de Resultados  ", "_tab_visor"),
         ("configuracion",    "  ⚙  Configuración  ",       "_tab_configuracion"),
         ("concilia_sat",     "  🔗 Conciliación SAT  ",    "_tab_concilia_sat"),
         ("conc_banco_aux",   "  🔀 Banco vs Auxiliar  ",   "_tab_conc_banco_aux"),
+        ("depositos_bancarios", "  🏦 Depósitos Bancarios  ", "_tab_depositos_bancarios"),
     ]
 
     # Color de acento por módulo (orden visual del mockup RumboERP)
@@ -461,12 +462,14 @@ class WorkspaceWindow(tk.Toplevel):
         "prestamos":        "#D9527A",
         "provision_nomina": "#1E6FBF",
         "ventas_dia":       "#E14B3D",
+        "vd_concilia":      "#B45309",
         "estado_cuenta":    "#C2611A",
         "reconciliacion":   "#2E7D32",
         "visor":            "#4F46C7",
         "configuracion":    "#8C3B73",
         "concilia_sat":     "#0A7A4A",
         "conc_banco_aux":   "#6B3FA0",
+        "depositos_bancarios": "#1565C0",
     }
 
     # (emoji, etiqueta ribbon, color acento)
@@ -475,12 +478,14 @@ class WorkspaceWindow(tk.Toplevel):
         "prestamos":        ("💳", "PRÉSTAMOS",  "#D9527A"),
         "provision_nomina": ("📋", "PROVISIÓN",  "#1E6FBF"),
         "ventas_dia":       ("⛽", "VENTAS",      "#E14B3D"),
+        "vd_concilia":      ("📊", "DESP/VTA",   "#B45309"),
         "estado_cuenta":    ("🏦", "BANCOS",      "#C2611A"),
         "reconciliacion":   ("📑", "RECONCILIA",  "#2E7D32"),
         "visor":            ("📊", "VISOR",       "#4F46C7"),
         "configuracion":    ("⚙",  "CONFIG",      "#8C3B73"),
         "concilia_sat":     ("🔗", "CONCILIA",     "#0A7A4A"),
         "conc_banco_aux":   ("🔀", "BCO/AUX",     "#6B3FA0"),
+        "depositos_bancarios": ("🏦", "DEPÓSITOS",   "#1565C0"),
     }
 
     def __init__(self, master, nombre="LA SANITARIA", modulos=None,
@@ -2442,6 +2447,8 @@ class WorkspaceWindow(tk.Toplevel):
             ("BBVA Débito",       "#004481"),
             ("BBVA Crédito",      "#004481"),
             ("BBVA Pyme",         "#1A6EB5"),
+            ("BBVA TDC",          "#004481"),
+            ("BBVA Libretón",     "#004481"),
             ("Banamex Débito",    "#C62828"),
             ("Banamex Crédito",   "#C62828"),
             ("Santander Débito",  "#EC0000"),
@@ -2485,6 +2492,7 @@ class WorkspaceWindow(tk.Toplevel):
             for ch in cell.winfo_children(): ch.bind("<Button-1>", lambda e, n=nombre: _sel_banco(n))
             self._ec_banco_btns[nombre] = cell
         _sel_banco("Banorte Débito")
+        self._ec_sel_banco = _sel_banco   # accesible desde _ec_elegir_archivo
 
         # ── Sección 2: archivo ──────────────────────────────────────
         s2 = tk.Frame(inn, bg=COLOR_BLANCO,
@@ -2638,6 +2646,121 @@ class WorkspaceWindow(tk.Toplevel):
             bg=COLOR_BLANCO, fg=COLOR_TEXTO, font=("Segoe UI", 9), justify="left")
         self._ec_lbl_resumen.pack(padx=10, pady=6, anchor="w")
 
+        # ── Menú contextual Treeview: guardar corrección ──────────────
+        _ctx_menu = tk.Menu(self._ec_tree, tearoff=0)
+        def _ctx_corregir():
+            sel = self._ec_tree.selection()
+            if not sel: return
+            vals = self._ec_tree.item(sel[0])["values"]
+            if not vals: return
+            desc_orig = str(vals[1]) if len(vals) > 1 else ""
+            if not desc_orig: return
+            top = tk.Toplevel(self)
+            top.title("✏ Corregir descripción")
+            top.geometry("520x160")
+            top.configure(bg=COLOR_FONDO)
+            tk.Label(top, text="Descripción original:", bg=COLOR_FONDO,
+                     fg="#9CA3AF", font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(14, 0))
+            tk.Label(top, text=desc_orig, bg=COLOR_FONDO,
+                     fg=COLOR_BLANCO, font=("Segoe UI", 9, "bold"), wraplength=480).pack(anchor="w", padx=16)
+            tk.Label(top, text="Descripción corregida:", bg=COLOR_FONDO,
+                     fg="#9CA3AF", font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(10, 0))
+            _var_corr = tk.StringVar(value=desc_orig)
+            _ent = ttk.Entry(top, textvariable=_var_corr, width=64)
+            _ent.pack(anchor="w", padx=16, pady=(2, 0))
+            _ent.select_range(0, "end"); _ent.focus_set()
+            def _guardar():
+                nueva = _var_corr.get().strip()
+                if nueva and nueva != desc_orig:
+                    try:
+                        import aprendizaje as _ap
+                        _ap.guardar_correccion(desc_orig, nueva)
+                        self._ec_tree.set(sel[0], "Descripción", nueva)
+                        self._log(f"🧠 Corrección guardada: '{desc_orig}' → '{nueva}'", False)
+                    except Exception as _e:
+                        messagebox.showerror("Error", str(_e), parent=top)
+                top.destroy()
+            tk.Button(top, text="💾 Guardar corrección", command=_guardar,
+                      bg="#1E3A8A", fg="white", relief="flat", padx=12, pady=4,
+                      font=("Segoe UI", 9, "bold")).pack(pady=10)
+            top.bind("<Return>", lambda e: _guardar())
+            top.transient(self); top.grab_set()
+        _ctx_menu.add_command(label="✏ Corregir descripción (guardar)", command=_ctx_corregir)
+        def _ctx_popup(event):
+            if self._ec_tree.identify_row(event.y):
+                self._ec_tree.selection_set(self._ec_tree.identify_row(event.y))
+                _ctx_menu.post(event.x_root, event.y_root)
+        self._ec_tree.bind("<Button-3>", _ctx_popup)
+        self._ec_tree.bind("<Double-1>", lambda e: _ctx_corregir())
+
+        # ── Sección Aprendizaje ──────────────────────────────────────
+        s_ap = tk.Frame(inn, bg=COLOR_BLANCO,
+                        highlightbackground="#D0D0D0", highlightthickness=1)
+        s_ap.grid(row=6, column=0, sticky="ew", padx=16, pady=(6, 14))
+        s_ap.columnconfigure(0, weight=1)
+        tk.Label(s_ap, text="🧠 Sistema de Aprendizaje",
+                 bg=COLOR_BLANCO, fg=COLOR_TEXTO,
+                 font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=14, pady=(10, 2))
+        tk.Label(s_ap,
+                 text="A: corrige descripciones con clic derecho  •  B: memoriza bancos automáticamente  •  C: IA cuando el parser falla",
+                 bg=COLOR_BLANCO, fg="#888888", font=("Segoe UI", 8)).pack(anchor="w", padx=14, pady=(0, 8))
+
+        # API Key (Opción C)
+        api_row = tk.Frame(s_ap, bg=COLOR_BLANCO)
+        api_row.pack(fill="x", padx=14, pady=(0, 6))
+        tk.Label(api_row, text="API Key Claude (Opción C):", bg=COLOR_BLANCO,
+                 fg=COLOR_TEXTO, font=("Segoe UI", 8, "bold")).pack(side="left")
+        self._ec_api_var = tk.StringVar()
+        try:
+            import aprendizaje as _ap0
+            _k0 = _ap0.obtener_api_key()
+            if _k0: self._ec_api_var.set("••••" + _k0[-4:])
+        except Exception: pass
+        _api_entry = ttk.Entry(api_row, textvariable=self._ec_api_var, width=44)
+        _api_entry.pack(side="left", padx=8)
+        def _mostrar_api(e):
+            if "•" in self._ec_api_var.get():
+                self._ec_api_var.set("")
+        def _guardar_api():
+            val = self._ec_api_var.get().strip()
+            if not val or "•" in val: return
+            try:
+                import aprendizaje as _apm
+                _apm.guardar_api_key(val)
+                self._ec_api_var.set("••••" + val[-4:])
+                messagebox.showinfo("API Key", "✅ API Key guardada.", parent=self)
+            except Exception as _e2:
+                messagebox.showerror("Error", str(_e2), parent=self)
+        _api_entry.bind("<FocusIn>", _mostrar_api)
+        ttk.Button(api_row, text="Guardar", command=_guardar_api).pack(side="left")
+
+        # Botones de gestión
+        btn_ap = tk.Frame(s_ap, bg=COLOR_BLANCO)
+        btn_ap.pack(fill="x", padx=14, pady=(0, 10))
+        def _ver_corr():
+            try:
+                import aprendizaje as _apm
+                _apm.abrir_ventana_correcciones(self)
+            except Exception as _e3:
+                messagebox.showerror("Error", str(_e3), parent=self)
+        def _ver_stats():
+            try:
+                import aprendizaje as _apm
+                st = _apm.obtener_estadisticas()
+                messagebox.showinfo("Estadísticas de aprendizaje",
+                    f"Correcciones guardadas : {st.get('num_correcciones', 0)}\n"
+                    f"Patrones de banco      : {st.get('num_patrones_banco', 0)}\n"
+                    f"Archivos procesados    : {st.get('total_archivos_procesados', 0)}\n"
+                    f"IA configurada         : {'✅ Sí' if st.get('ia_configurada') else '❌ No'}\n"
+                    f"Última actualización   : {st.get('ultima_actualizacion', '—')}",
+                    parent=self)
+            except Exception as _e4:
+                messagebox.showerror("Error", str(_e4), parent=self)
+        ttk.Button(btn_ap, text="✏ Ver / Editar correcciones",
+                   command=_ver_corr).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_ap, text="📊 Estadísticas",
+                   command=_ver_stats).pack(side="left")
+
 
     def _ec_elegir_archivo(self):
         self.lift()
@@ -2655,6 +2778,22 @@ class WorkspaceWindow(tk.Toplevel):
         )
         if ruta:
             self._ec_archivo.set(ruta)
+            # Opción B: sugerir banco por nombre de archivo
+            try:
+                import aprendizaje as _ap
+                sug = _ap.sugerir_banco(ruta)
+                if sug and hasattr(self, "_ec_sel_banco"):
+                    # Buscar coincidencia exacta o por prefijo en los botones
+                    _btns = getattr(self, "_ec_banco_btns", {})
+                    _match = next(
+                        (n for n in _btns if n == sug or n.startswith(sug.split()[0])),
+                        None
+                    )
+                    if _match:
+                        self._ec_sel_banco(_match)
+                        self._log(f"🧠 Banco detectado automáticamente: {_match}", False)
+            except Exception:
+                pass
 
     def _ec_abrir(self):
         if self._ec_resultado and os.path.exists(self._ec_resultado):
@@ -2723,6 +2862,35 @@ class WorkspaceWindow(tk.Toplevel):
                 movimientos = self._ec_leer_pdf(ruta, pdfplumber)
             else:
                 movimientos = self._ec_leer_excel(ruta, openpyxl)
+
+            # ── Opción A: aplicar correcciones aprendidas ──────────────
+            if movimientos:
+                try:
+                    import aprendizaje as _ap
+                    movimientos, _n_corr = _ap.aplicar_correcciones(movimientos)
+                    if _n_corr:
+                        self.after(0, self._log,
+                            f"🧠 Aprendizaje: {_n_corr} corrección(es) aplicada(s) automáticamente.", False)
+                except Exception:
+                    pass
+
+            # ── Opción C: fallback con IA si parser no encontró nada ───
+            if not movimientos:
+                try:
+                    import aprendizaje as _ap
+                    if _ap.obtener_api_key():
+                        self.after(0, self._ec_status,
+                            "🤖 Parser falló — intentando con IA...", COLOR_AZUL)
+                        self.after(0, self._log,
+                            "🤖 Parser convencional sin resultados. Llamando a la API de Claude...", False)
+                        _texto_ia = getattr(self, "_ec_dbg_texto", "")
+                        _banco_ia = getattr(self, "_ec_dbg_banco", "")
+                        movimientos = _ap.parsear_con_ia(_texto_ia, _banco_ia)
+                        if movimientos:
+                            self.after(0, self._log,
+                                f"🤖 IA extrajo {len(movimientos)} movimientos.", False)
+                except Exception as _ia_e:
+                    self.after(0, self._log, f"⚠ IA error: {_ia_e}", True)
 
             if not movimientos:
                 _dbg_banco = getattr(self, "_ec_dbg_banco", "?")
@@ -2937,6 +3105,15 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._ec_status,
                 f"✅ {os.path.basename(out_path)}", COLOR_OK)
 
+            # ── Opción B: memorizar banco + registrar uso ──────────────
+            try:
+                import aprendizaje as _ap
+                _banco_str = self._ec_banco.get().strip().lstrip("🔍 ─").strip()
+                _ap.registrar_uso(_banco_str, len(filas), ruta)
+                _ap.recordar_banco(ruta, _banco_str)
+            except Exception:
+                pass
+
         except Exception as exc:
             det = _tb2.format_exc()
             self.after(0, self._pb_error, self._ec_pb, self._ec_pb_lbl)
@@ -2978,7 +3155,15 @@ class WorkspaceWindow(tk.Toplevel):
         if banco_key.startswith("Banorte"):
             return self._ec_parsear_banorte(texto_total, ruta=ruta, pdfplumber=pdfplumber)
 
+        if banco_key == "BBVA TDC":
+            return self._ec_parsear_bbva_tdc(texto_total, ruta=ruta)
+
         if banco_key == "BBVA Pyme" or banco_key.startswith("BBVA"):
+            # Detectar TDC antes que otras variantes BBVA
+            if any(k in texto_total.upper() for k in ("T NEGOC", "LCDIGITAL", "FECHA AUTORIZACION")):
+                movs = self._ec_parsear_bbva_tdc(texto_total, ruta=ruta)
+                if movs:
+                    return movs
             # Cash Management: columnas posicionales (tiene prioridad sobre V45-only)
             if any(k in texto_total.upper() for k in ("CASH MANAGEMENT", "MAESTRA PYME", "OPER LIQ COD")):
                 movs = self._ec_parsear_bbva_cashmanagement(ruta, pdfplumber)
@@ -3053,6 +3238,18 @@ class WorkspaceWindow(tk.Toplevel):
             if movs:
                 return movs
 
+        # 2b) BBVA TDC (marcadores en texto)
+        if any(k in texto_total.upper() for k in ("T NEGOC", "LCDIGITAL")):
+            movs = self._ec_parsear_bbva_tdc(texto_total, ruta=ruta)
+            if movs:
+                return movs
+
+        # 2c) PDF sin texto extraíble → intentar TDC vía OCR
+        if not texto_total.strip():
+            movs = self._ec_parsear_bbva_tdc("", ruta=ruta)
+            if movs:
+                return movs
+
         # 3) BBVA por tablas con columnas conocidas
         if any("CARGO" in str(t) or "ABONO" in str(t) for t in paginas_tablas):
             movs = self._ec_parsear_bbva(texto_total, paginas_tablas, "BBVA Débito")
@@ -3072,6 +3269,148 @@ class WorkspaceWindow(tk.Toplevel):
         return movimientos
 
     # ── Parsers por banco ──────────────────────────────────────────────
+
+    def _ec_parsear_bbva_tdc(self, texto, ruta=None):
+        """
+        Parser BBVA T Negoc / LCDigital (Tarjeta de Crédito Digital).
+        Soporta PDFs digitales y PDFs imagen (OCR via pdf2image + pytesseract).
+
+        dep = abonos (pagos) → reducen la deuda
+        ret = cargos (compras) → aumentan la deuda
+        """
+        import re
+
+        _TDC_REAL_STOP = (
+            "RESUMEN INFORMATIVO", "SI ESTAS ADHERIDO", "PLAN DE APOYO",
+            "RESUMEN DE SUS", "FECHA NOMBRE DE", "FECHA TRANSACCION",
+            "SUBTOTAL DE", "TOTAL DE PARCIALIDADES",
+        )
+        _TDC_SKIP = (
+            "IVA :", "IVA:", "INTERES:", "BBVA MEXICO", "AV. PASEO", "LINEA BBVA",
+            "T NEGOC", "LCDIGITAL", "ESTADO DE CUENTA", "MOVIMIENTOS EFECTUADOS",
+            "AUTORIZACION APLICACION", "TASA ANUAL", "SUCURSAL", "CREDITO DISPONIBLE",
+            "LIMITE", "INTERESES", "ESTIMADO TARJETA", "R.F.C.", "NO. DE",
+            "PAGO MINIMO", "RENDIMIENTO", "OTROS ABONOS", "OTROS CARGOS",
+            "COMISIONES COBRADAS", "MONTO BASE", "DIRECCION", "CENTENO",
+            "GRANJAS", "08400", "TOTAL DE", "INCLUIDO EN", "SUBTOTAL",
+            "WWW.", "FECHA DE CORTE", "FECHA LIMITE", "CREMACION",
+            "CAT ACTUAL", "TASA DE INTERES", "RFC BBA", "REGIMEN",
+            "COMPRAS +", "IVA. +", "SALDO INICIAL", "SALDO AL CORTE",
+            "FECHA AUTORIZACION", "IMPORTE CARGOS", "IMPORTE ABONOS",
+            "LINEA BBVA:", "CIUDAD DE MEXICO", "PAGINA ",
+        )
+
+        def _limpiar(raw):
+            desc = raw
+            desc = re.sub(r'\s*\$\s*[—–]?\s*-?\s*$', '', desc)
+            desc = re.sub(r'\s*[S§s]\$?\s*$', '', desc)
+            desc = re.sub(r'\s*\$\s*$', '', desc)
+            desc = re.sub(r'\s+[#H*]{2,}\w*', '', desc)
+            desc = re.sub(r'\s+\w{8,}\s*$', '', desc)
+            desc = re.sub(r'\s+[A-Z]{3}\s+\d{6,}[A-Z0-9]*\s*$', '', desc)
+            desc = re.sub(r'\s+[a-z]{2,6}\s*$', '', desc)
+            desc = re.sub(r'\s+[a-zA-Z/\\|]{1,2}\s*$', '', desc)
+            desc = re.sub(r'\s+', ' ', desc).strip()
+            return desc or "—"
+
+        # search (no match) → tolera basura OCR al inicio de línea
+        pat_tx  = re.compile(r"(\d{2}/\d{2}/\d{2})\s+(\d{2}/\d{2}/\d{2})\s+(.+)$")
+        # Abono si: hay signo menos precedido de $/$S/§, O si la línea termina en "s" sola
+        # (s minúscula = $ subrayado en la columna ABONOS sin guión explícito)
+        pat_neg = re.compile(r'[$S§]\s*[—–]?\s*-|\b[sS§]\s*$')
+        pat_amt = re.compile(r'([\d,]+\.\d{2})')
+
+        def _normalizar_y_unir(lineas):
+            """Normaliza líneas OCR y une líneas partidas (fecha sin monto + monto sin fecha)."""
+            raw = []
+            for l in lineas:
+                ls = l.strip()
+                ls = re.sub(r'(\d{1,3}(?:,\d{3})+)\s(\d{2})(?=\s|$)', r'\1.\2', ls)
+                ls = re.sub(r',(?=\.\d)', '', ls)   # "3,339,.54" → "3,339.54"
+                if ls:
+                    raw.append(ls)
+            joined = []
+            skip_next = False
+            for idx, ls in enumerate(raw):
+                if skip_next:
+                    skip_next = False
+                    continue
+                has_date = bool(pat_tx.search(ls))
+                has_amt  = bool(pat_amt.search(ls))
+                if has_date and not has_amt and idx + 1 < len(raw):
+                    nxt = raw[idx + 1]
+                    if pat_amt.search(nxt) and not pat_tx.search(nxt):
+                        joined.append(ls + ' ' + nxt)
+                        skip_next = True
+                        continue
+                joined.append(ls)
+            return joined
+
+        def _procesar_lineas(lineas):
+            movs = []
+            for ls in _normalizar_y_unir(lineas):
+                lu = ls.upper()
+                if any(sw in lu for sw in _TDC_REAL_STOP):
+                    return movs, True
+                if "TOTAL IMPORTES" in lu:
+                    if len(pat_amt.findall(ls)) >= 2:
+                        return movs, True
+                    continue
+                # Saltar solo si NO tiene patrón de fecha — ruido OCR de columnas adyacentes
+                if any(sk in lu for sk in _TDC_SKIP) and not pat_tx.search(ls):
+                    continue
+                m = pat_tx.search(ls)
+                if not m:
+                    continue
+                try:
+                    fecha = self._ec_parse_fecha(m.group(2))
+                    if isinstance(fecha, str):
+                        continue
+                except Exception:
+                    continue
+                desc_raw = m.group(3).strip()
+                amounts  = list(re.finditer(r'([\d,]+\.\d{2})', desc_raw))
+                if not amounts:
+                    continue
+                last_m   = amounts[-1]
+                try:
+                    amount = float(last_m.group(1).replace(",", ""))
+                except ValueError:
+                    continue   # monto corrupto por OCR
+                prefix   = desc_raw[:last_m.start()]
+                is_abono = bool(pat_neg.search(prefix))
+                dep = amount if is_abono else 0.0
+                ret = 0.0   if is_abono else amount
+                movs.append((fecha, _limpiar(prefix), dep, ret))
+            return movs, False
+
+        # Primero intentar texto extraíble (PDF digital)
+        if texto.strip():
+            movs, _ = _procesar_lineas(texto.splitlines())
+            if movs:
+                return movs
+
+        # OCR fallback para PDFs imagen
+        if ruta is None:
+            return []
+        try:
+            from pdf2image import convert_from_path
+            import pytesseract
+        except ImportError:
+            return []
+
+        movimientos = []
+        try:
+            imgs = convert_from_path(ruta, dpi=200)
+        except Exception:
+            return []
+        for img in imgs:
+            text = pytesseract.image_to_string(img, config='--psm 6')
+            movs, stop = _procesar_lineas(text.splitlines())
+            movimientos.extend(movs)
+            if stop:
+                break
+        return movimientos
 
     def _ec_parsear_bbva(self, texto, tablas, variante="BBVA Débito"):
         """Parser BBVA: usa tablas pdfplumber cuando existen,
@@ -3817,9 +4156,11 @@ class WorkspaceWindow(tk.Toplevel):
         from datetime import date as _date
 
         MESES = {
-            "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
-            "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
-            "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+            "enero": 1, "ene": 1, "febrero": 2, "feb": 2, "marzo": 3, "mar": 3,
+            "abril": 4, "abr": 4, "mayo": 5, "may": 5, "junio": 6, "jun": 6,
+            "julio": 7, "jul": 7, "agosto": 8, "ago": 8,
+            "septiembre": 9, "sep": 9, "sept": 9, "octubre": 10, "oct": 10,
+            "noviembre": 11, "nov": 11, "diciembre": 12, "dic": 12,
         }
         year_m = re.search(r"\b(20\d{2})\b", texto)
         anio = int(year_m.group(1)) if year_m else 2026
@@ -4005,6 +4346,7 @@ class WorkspaceWindow(tk.Toplevel):
             for dia, rows in blocks:
                 # Unir lineas y corregir splits de palabras al borde de columna
                 bt = " ".join(rows)
+                bt = re.sub(r"\bDESTI\s+NATARIO\b", "DESTINATARIO", bt, flags=re.I)
                 bt = re.sub(r"\bCON\s+CEPTO\s*:", "CONCEPTO:", bt)
                 bt = re.sub(r"\bINST\s+ITUCION\b", "INSTITUCION", bt, flags=re.I)
                 bt = re.sub(r"\(\s*DA\s+TO\s+NO\b", "(DATO NO", bt, flags=re.I)
@@ -4034,7 +4376,7 @@ class WorkspaceWindow(tk.Toplevel):
 
                 # DESTINATARIO
                 dest_m = re.search(
-                    r"DESTINATARIO:(.+?)(?=\s*\(?DATO\s+NO|\s+RFC\s+DEST|\s+ND\s+CVE|$)",
+                    r"DESTINATARIO\s*[:\|]\s*(.+?)(?=\s*(?:\(?DATO\s+NO|RFC\s+DEST|ND\s+CVE|CVE\s*RASTREO|CONCEPTO|$))",
                     bt, re.IGNORECASE)
                 dest = ""
                 if dest_m:
@@ -4045,7 +4387,7 @@ class WorkspaceWindow(tk.Toplevel):
 
                 # CONCEPTO (maximo 80 chars para evitar arrastrar CFDI/firmas)
                 conc_m = re.search(
-                    r"CONCEPTO:(.+?)(?=\s+HORA:|\s+CVE\s+RASTREO:|\s+M[eé]todo|$)",
+                    r"CONCEPTO\s*[:\|]\s*(.+?)(?=\s*(?:HORA|CVE\s+RASTREO|M[eé]todo|RFC|$))",
                     bt, re.IGNORECASE)
                 concepto = conc_m.group(1).strip()[:80] if conc_m else ""
 
@@ -6550,6 +6892,56 @@ class WorkspaceWindow(tk.Toplevel):
         ttk.Button(self._vd_barra, text="💾  Guardar como...",
             command=self._vd_guardar_como).pack(side="right", padx=4, pady=6)
 
+        # ── Vista previa inline ──
+        tab.rowconfigure(6, weight=1)
+        vd_visor_wrap = ttk.Frame(tab, style="Tarjeta.TFrame")
+        vd_visor_wrap.grid(row=6, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        vd_visor_wrap.columnconfigure(0, weight=1)
+        vd_visor_wrap.rowconfigure(1, weight=1)
+        ttk.Label(vd_visor_wrap, text="👁  Vista previa del resultado",
+                  style="Tarjeta.TLabel",
+                  font=("Segoe UI", 9, "bold")).grid(
+            row=0, column=0, sticky="w", padx=10, pady=(6, 2))
+        _vd_tv_frame = tk.Frame(vd_visor_wrap, bg=COLOR_FONDO)
+        _vd_tv_frame.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
+        _vd_tv_frame.columnconfigure(0, weight=1)
+        _vd_tv_frame.rowconfigure(0, weight=1)
+        self._vd_tv = ttk.Treeview(_vd_tv_frame, show="headings", height=6)
+        _vd_vsb = ttk.Scrollbar(_vd_tv_frame, orient="vertical",   command=self._vd_tv.yview)
+        _vd_hsb = ttk.Scrollbar(_vd_tv_frame, orient="horizontal", command=self._vd_tv.xview)
+        self._vd_tv.configure(yscrollcommand=_vd_vsb.set, xscrollcommand=_vd_hsb.set)
+        self._vd_tv.grid(row=0, column=0, sticky="nsew")
+        _vd_vsb.grid(row=0, column=1, sticky="ns")
+        _vd_hsb.grid(row=1, column=0, sticky="ew")
+
+    def _vd_cargar_visor_inline(self, path):
+        tv = getattr(self, "_vd_tv", None)
+        if tv is None:
+            return
+        for item in tv.get_children():
+            tv.delete(item)
+        if not path or not os.path.isfile(path):
+            return
+        try:
+            import openpyxl as _opxl
+            wb = _opxl.load_workbook(path, data_only=True, read_only=True)
+            ws = wb.active
+            all_rows = list(ws.iter_rows(values_only=True))
+            wb.close()
+            if not all_rows:
+                return
+            headers = [str(c) if c is not None else "" for c in all_rows[0]]
+            tv["columns"] = headers
+            tv["show"] = "headings"
+            for h in headers:
+                tv.heading(h, text=h)
+                tv.column(h, width=140, anchor="w", stretch=True)
+            for row in all_rows[1:51]:
+                vals = [str(c) if c is not None else "" for c in row]
+                tv.insert("", "end", values=vals)
+        except Exception as _e:
+            self._log(f"  ⚠ Vista previa: {_e}", True)
+
     def _vd_elegir_archivo(self, var):
         init = self.carpeta.get() or os.getcwd()
         if not os.path.isdir(init):
@@ -6895,6 +7287,7 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._vd_lbl_archivo.config, {"text": nombre})
             self.after(0, self._log, f"✅ Póliza generada: {nombre}", True)
             self.after(0, self._vd_abrir_en_visor, OUT, carpeta_sal)
+            self.after(0, self._vd_cargar_visor_inline, OUT)
 
         except Exception as e:
             import traceback as _tb2
@@ -6905,6 +7298,641 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, messagebox.showerror, "Error al generar póliza",
                 f"{e}\n\n{_tb2.format_exc()[-500:]}")
 
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # MÓDULO: VENTAS DEL DÍA (grupo: Póliza + Conciliación)
+    # ─────────────────────────────────────────────────────────────────────────
+    def _tab_ventas_grupo(self, nb):
+        """Pestaña contenedora: une Ventas del Día y Control de Despacho vs Ventas."""
+        outer = ttk.Frame(nb)
+        nb.add(outer, text="  ⛽ Ventas del Día  ")
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(0, weight=1)
+
+        inner_nb = ttk.Notebook(outer)
+        inner_nb.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+
+        self._tab_ventas_dia(inner_nb)   # sub-pestaña: Generar Póliza (sin modificar)
+        self._tab_vd_conc(inner_nb)      # sub-pestaña: Control de Despacho vs Ventas
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # MÓDULO: CONTROL DE DESPACHO vs VENTAS DEL DÍA
+    # ─────────────────────────────────────────────────────────────────────────
+    def _tab_vd_conc(self, nb):
+        import os, threading
+        from tkinter import filedialog, messagebox as mb
+
+        tab = ttk.Frame(nb)
+        nb.add(tab, text="  📊 Despachos vs Ventas  ")
+        tab.columnconfigure(0, weight=1)
+
+        # ── Encabezado ────────────────────────────────────────────────────────
+        hdr = tk.Frame(tab, bg="#B45309", height=40)
+        hdr.grid(row=0, column=0, sticky="ew")
+        tk.Label(hdr, text="📊  CONTROL DE DESPACHO vs VENTAS DEL DÍA",
+                 bg="#B45309", fg="white",
+                 font=("Segoe UI", 11, "bold")).pack(side="left", padx=14, pady=8)
+
+        # ── Selección de archivos ──────────────────────────────────────────────
+        card = ttk.Frame(tab, style="Tarjeta.TFrame")
+        card.grid(row=1, column=0, sticky="ew", padx=8, pady=(8, 4))
+        card.columnconfigure(1, weight=1)
+
+        self._vdc_despachos = tk.StringVar(value="")
+        self._vdc_ventas    = tk.StringVar(value="")
+        self._vdc_resultado_path = None
+
+        ttk.Label(card, text="📊 Control de Despachos (.xlsx):", width=32,
+                  style="Tarjeta.TLabel").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 4))
+        ttk.Entry(card, textvariable=self._vdc_despachos).grid(
+            row=0, column=1, sticky="ew", padx=6, pady=(10, 4))
+        ttk.Button(card, text="Elegir...",
+                   command=lambda: self._vdc_elegir_archivo(self._vdc_despachos)).grid(
+            row=0, column=2, padx=(0, 10), pady=(10, 4))
+
+        ttk.Label(card, text="📋 Ventas del Día (.xlsx):", width=32,
+                  style="Tarjeta.TLabel").grid(row=1, column=0, sticky="w", padx=10, pady=(4, 10))
+        ttk.Entry(card, textvariable=self._vdc_ventas).grid(
+            row=1, column=1, sticky="ew", padx=6, pady=(4, 10))
+        ttk.Button(card, text="Elegir...",
+                   command=lambda: self._vdc_elegir_archivo(self._vdc_ventas)).grid(
+            row=1, column=2, padx=(0, 10), pady=(4, 10))
+
+        # ── Botón generar ─────────────────────────────────────────────────────
+        ttk.Button(tab, text="⚡  Generar Conciliación",
+                   command=self._vdc_generar,
+                   style="Accent.TButton").grid(row=2, column=0, pady=6)
+
+        # ── Barra de progreso ─────────────────────────────────────────────────
+        _vdc_pb_frame = tk.Frame(tab, bg=COLOR_FONDO)
+        _vdc_pb_frame.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 2))
+        _vdc_pb_frame.grid_remove()
+        self._vdc_pb_frame = _vdc_pb_frame
+        self._vdc_pb = FunkyProgressBar(_vdc_pb_frame, maximum=100, height=70)
+        self._vdc_pb.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self._vdc_pb_lbl = ttk.Label(_vdc_pb_frame, text="0 %", width=8,
+                                     style="Tarjeta.TLabel")
+        self._vdc_pb_lbl.pack(side="left")
+
+        # ── Barra inferior resultado ───────────────────────────────────────────
+        self._vdc_barra = ttk.Frame(tab, style="Tarjeta.TFrame")
+        self._vdc_barra.grid(row=4, column=0, sticky="ew", padx=8, pady=(0, 6))
+
+        ttk.Label(self._vdc_barra, text="📄 Resultado:", style="Tarjeta.TLabel").pack(
+            side="left", padx=(10, 4), pady=8)
+        self._vdc_lbl_archivo = ttk.Label(self._vdc_barra, text="—",
+                                          style="Tarjeta.TLabel", foreground="#6B7280")
+        self._vdc_lbl_archivo.pack(side="left", padx=4, pady=8)
+        ttk.Button(self._vdc_barra, text="📂  Abrir",
+                   command=self._vdc_abrir).pack(side="right", padx=4, pady=6)
+        ttk.Button(self._vdc_barra, text="💾  Guardar como...",
+                   command=self._vdc_guardar_como).pack(side="right", padx=4, pady=6)
+
+        # ── Vista previa (Treeview) ────────────────────────────────────────────
+        tab.rowconfigure(5, weight=1)
+        visor_wrap = ttk.Frame(tab, style="Tarjeta.TFrame")
+        visor_wrap.grid(row=5, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        visor_wrap.columnconfigure(0, weight=1)
+        visor_wrap.rowconfigure(1, weight=1)
+
+        ttk.Label(visor_wrap, text="👁  Vista previa del resultado",
+                  style="Tarjeta.TLabel",
+                  font=("Segoe UI", 9, "bold")).grid(
+            row=0, column=0, sticky="w", padx=10, pady=(6, 2))
+
+        tv_frame = tk.Frame(visor_wrap, bg=COLOR_FONDO)
+        tv_frame.grid(row=1, column=0, sticky="nsew", padx=6, pady=(0, 6))
+        tv_frame.columnconfigure(0, weight=1)
+        tv_frame.rowconfigure(0, weight=1)
+
+        self._vdc_tv = ttk.Treeview(tv_frame, show="headings", height=6)
+        vsb = ttk.Scrollbar(tv_frame, orient="vertical",   command=self._vdc_tv.yview)
+        hsb = ttk.Scrollbar(tv_frame, orient="horizontal", command=self._vdc_tv.xview)
+        self._vdc_tv.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        self._vdc_tv.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+        hsb.grid(row=1, column=0, sticky="ew")
+
+    def _vdc_cargar_visor(self, path):
+        tv = getattr(self, "_vdc_tv", None)
+        if tv is None:
+            return
+        for item in tv.get_children():
+            tv.delete(item)
+        if not path or not __import__("os").path.isfile(path):
+            return
+        try:
+            import openpyxl as _opxl
+            wb = _opxl.load_workbook(path, data_only=True, read_only=True)
+            ws = wb.active
+            all_rows = list(ws.iter_rows(values_only=True))
+            wb.close()
+            if not all_rows:
+                return
+            headers = [str(c) if c is not None else "" for c in all_rows[0]]
+            tv["columns"] = headers
+            tv["show"] = "headings"
+            for h in headers:
+                tv.heading(h, text=h)
+                tv.column(h, width=140, anchor="w", stretch=True)
+            for row in all_rows[1:51]:
+                vals = [str(c) if c is not None else "" for c in row]
+                tv.insert("", "end", values=vals)
+            self._log(f"  Vista previa: {min(len(all_rows)-1, 50)} fila(s).")
+        except Exception as _e:
+            self._log(f"  ⚠ Vista previa no disponible: {_e}", True)
+
+    def _vdc_elegir_archivo(self, var):
+        from tkinter import filedialog
+        ruta = filedialog.askopenfilename(
+            title="Seleccionar archivo Excel",
+            filetypes=[("Excel", "*.xlsx *.xls"), ("Todos", "*.*")]
+        )
+        if ruta:
+            var.set(ruta)
+
+    def _vdc_abrir(self):
+        import os
+        if self._vdc_resultado_path and os.path.exists(self._vdc_resultado_path):
+            os.startfile(self._vdc_resultado_path)
+        else:
+            from tkinter import messagebox
+            messagebox.showwarning("Sin resultado", "Primero genera la conciliación.")
+
+    def _vdc_guardar_como(self):
+        import os, shutil
+        from tkinter import filedialog, messagebox
+        if not self._vdc_resultado_path or not os.path.exists(self._vdc_resultado_path):
+            messagebox.showwarning("Sin resultado", "Primero genera la conciliación.")
+            return
+        destino = filedialog.asksaveasfilename(
+            title="Guardar conciliación como...",
+            defaultextension=".xlsx",
+            filetypes=[("Excel", "*.xlsx")],
+            initialfile=os.path.basename(self._vdc_resultado_path),
+        )
+        if destino:
+            shutil.copy2(self._vdc_resultado_path, destino)
+            self._log(f"💾 Guardado en: {destino}")
+
+    def _vdc_generar(self):
+        from tkinter import messagebox
+        desp = self._vdc_despachos.get().strip()
+        vd   = self._vdc_ventas.get().strip()
+        if not desp or not vd:
+            messagebox.showwarning("Faltan archivos",
+                "Selecciona el Control de Despachos y el archivo de Ventas del Día.")
+            return
+        self._vdc_lbl_archivo.config(text="Generando...")
+        self._vdc_pb_frame.grid()
+        self._pb_iniciar(self._vdc_pb, self._vdc_pb_lbl)
+        import threading
+        threading.Thread(target=self._vdc_generar_hilo, args=(desp, vd), daemon=True).start()
+
+    def _vdc_generar_hilo(self, desp_path, vd_path):
+        import os, tempfile
+        from datetime import datetime
+        from collections import defaultdict
+        try:
+            import openpyxl
+            from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter
+        except ImportError as e:
+            self.after(0, self._pb_error, self._vdc_pb, self._vdc_pb_lbl)
+            self.after(0, self._vdc_pb_frame.grid_remove)
+            self.after(0, self._log, f"❌ Falta librería: {e}", True)
+            return
+
+        try:
+            self.after(0, self._log, "📂 Leyendo Control de Despachos...")
+            wb1 = openpyxl.load_workbook(desp_path, read_only=True, data_only=True)
+            hoja1 = wb1.sheetnames[0]
+            rows1 = list(wb1[hoja1].iter_rows(values_only=True))
+            wb1.close()
+
+            self.after(0, self._log, "📂 Leyendo Ventas del Día...")
+            wb2 = openpyxl.load_workbook(vd_path, read_only=True, data_only=True)
+            hoja2 = wb2.sheetnames[0]
+            rows2 = list(wb2[hoja2].iter_rows(values_only=True))
+            wb2.close()
+        except Exception as e:
+            self.after(0, self._pb_error, self._vdc_pb, self._vdc_pb_lbl)
+            self.after(0, self._vdc_pb_frame.grid_remove)
+            self.after(0, self._log, f"❌ Error al leer archivos: {e}", True)
+            return
+
+        try:
+            # ── Procesar Despachos ─────────────────────────────────────────────
+            dia = defaultdict(lambda: {"GS_sub":0.0,"GP_sub":0.0,"GD_sub":0.0,
+                                       "iva":0.0,"ieps":0.0,"importe":0.0,"uuids":set()})
+            data = defaultdict(lambda: {"nombre":"","fechas":set(),
+                "GS":{"sub":0.0,"iva":0.0,"ieps":0.0,"tot":0.0},
+                "GP":{"sub":0.0,"iva":0.0,"ieps":0.0,"tot":0.0},
+                "GD":{"sub":0.0,"iva":0.0,"ieps":0.0,"tot":0.0},
+            })
+            sin_uuid = defaultdict(lambda: {
+                "GS":{"sub":0.0,"iva":0.0,"ieps":0.0,"tot":0.0,"n":0},
+                "GP":{"sub":0.0,"iva":0.0,"ieps":0.0,"tot":0.0,"n":0},
+                "GD":{"sub":0.0,"iva":0.0,"ieps":0.0,"tot":0.0,"n":0},
+            })
+
+            for r in rows1[1:]:
+                if not r or r[0] is None: continue
+                try: dt = datetime.strptime(str(r[0])[:10], "%Y-%m-%d").date()
+                except: continue
+                prod = str(r[3]).strip().upper() if r[3] else ""
+                if prod not in ("GS","GP","GD"): continue
+                sub=float(r[6] or 0); iva=float(r[7] or 0)
+                ieps=float(r[8] or 0); imp=float(r[9] or 0)
+                cliente=str(r[16]).strip() if r[16] else "SIN CLIENTE"
+                uuid=str(r[22]).strip() if r[22] else "-----"
+                rfc=str(r[23]).strip() if r[23] else "SIN-RFC"
+                nombre=str(r[24]).strip() if r[24] else ""
+                d=dia[dt]
+                d[f"{prod}_sub"]+=sub; d["iva"]+=iva
+                d["ieps"]+=ieps; d["importe"]+=imp; d["uuids"].add(uuid)
+                if uuid == "-----":
+                    s=sin_uuid[(cliente,dt)][prod]
+                    s["sub"]+=sub; s["iva"]+=iva; s["ieps"]+=ieps; s["tot"]+=imp; s["n"]+=1
+                else:
+                    k=(rfc,uuid); e=data[k]
+                    e["nombre"]=nombre; e["fechas"].add(dt)
+                    e[prod]["sub"]+=sub; e[prod]["iva"]+=iva
+                    e[prod]["ieps"]+=ieps; e[prod]["tot"]+=imp
+
+            # ── Procesar Ventas del Día ────────────────────────────────────────
+            venta = {}
+            for r in rows2[3:]:
+                if not r or r[1] is None: continue
+                fecha = r[1]
+                if isinstance(fecha, datetime): fecha = fecha.date()
+                else: continue
+                venta[fecha] = {
+                    "GS":float(r[29] or 0),"GP":float(r[30] or 0),"GD":float(r[31] or 0),
+                    "IVA":float(r[32] or 0),"IEPS":float(r[33] or 0),"TOTAL":float(r[35] or 0)
+                }
+
+            fechas = sorted(dia.keys())
+            self.after(0, self._log, f"✅ {len(fechas)} días encontrados en Despachos.")
+
+            # ── Estilos ────────────────────────────────────────────────────────
+            MF = '#,##0.00'
+            F_WHITE = PatternFill("solid", fgColor="FFFFFF")
+            def fill(c): return PatternFill("solid", fgColor=c)
+            thin = Side(style="thin", color="CCCCCC")
+            bord = Border(left=thin, right=thin, top=thin, bottom=thin)
+            al_c = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            al_r = Alignment(horizontal="right",  vertical="center")
+            al_l = Alignment(horizontal="left",   vertical="center")
+
+            F_HDR=fill("1E3A8A"); F_GS=fill("DBEAFE"); F_GP=fill("D1FAE5"); F_GD=fill("FEF9C3")
+            F_TOT=fill("FFC000"); F_OK=fill("C6EFCE"); F_WRN=fill("FFEB9C"); F_ERR=fill("FFC7CE")
+            F_IVA=fill("FCE7F3"); F_UUID=fill("F1F5F9"); F_RFC=fill("E0F2FE")
+            F_DARK=fill("111827"); F_GRAY=fill("374151")
+            F_SIN=fill("FFF7ED"); F_SIN_H=fill("EA580C")
+            F_SIN_TOT=fill("F97316"); F_SIN_ROW=fill("FFEDD5")
+            F_TITULO=fill("0F172A")
+
+            def cw(ws, row, col, val=None, fi=None, al=None, fmt=None, bold=False, sz=9, fc="000000"):
+                c = ws.cell(row=row, column=col, value=val)
+                c.fill = fi if fi is not None else F_WHITE
+                c.font = Font(color=fc, bold=bold, size=sz)
+                if al:  c.alignment = al
+                if fmt: c.number_format = fmt
+                c.border = bord
+                return c
+
+            def mw(ws, r, c1, c2, val, fi, bold=False, sz=9, fc="000000", al=None):
+                ws.merge_cells(start_row=r, start_column=c1, end_row=r, end_column=c2)
+                cell = ws.cell(r, c1, val)
+                cell.fill = fi; cell.font = Font(color=fc, bold=bold, size=sz)
+                cell.border = bord; cell.alignment = al or al_l
+                for ci in range(c1+1, c2+1):
+                    ws.cell(r, ci).fill = fi; ws.cell(r, ci).border = bord
+
+            wb = openpyxl.Workbook()
+
+            # ══ HOJA 1 — CONCILIACIÓN DIARIA ══════════════════════════════════
+            ws = wb.active; ws.title = "Conciliación"
+            mw(ws,1,1,18,"CONTROL DE DESPACHO vs VENTAS DEL DÍA",F_HDR,bold=True,sz=12,fc="FFFFFF",al=al_c)
+            ws.row_dimensions[1].height = 26
+            for s,e,txt,fi in [(1,1,"FECHA",F_HDR),(2,8,"CONTROL DE DESPACHOS",F_DARK),
+                                (9,13,"VENTAS DEL DÍA",F_GRAY),(14,18,"DIFERENCIAS",F_HDR)]:
+                if s<e: mw(ws,2,s,e,txt,fi,bold=True,sz=9,fc="FFFFFF",al=al_c)
+                else:   cw(ws,2,s,val=txt,fi=fi,al=al_c,bold=True,sz=9,fc="FFFFFF")
+            ws.row_dimensions[2].height = 18
+            cols3 = [
+                ("Fecha",12,F_HDR,"FFFFFF"),
+                ("G-Super\nSubtotal",14,F_GS,"1E3A8A"),("G-Premium\nSubtotal",14,F_GP,"166534"),
+                ("G-Diesel\nSubtotal",14,F_GD,"92400E"),
+                ("IVA\nUnificado",14,F_IVA,"9D174D"),("IEPS\nUnificado",14,F_IVA,"9D174D"),
+                ("TOTAL\nImporte",15,F_DARK,"FFFFFF"),("UUIDs\n#",9,F_UUID,"374151"),
+                ("GS\n(VtaDía)",13,F_GS,"1E3A8A"),("GP\n(VtaDía)",13,F_GP,"166534"),
+                ("GD\n(VtaDía)",13,F_GD,"92400E"),
+                ("IVA\n(VtaDía)",13,F_IVA,"9D174D"),("IEPS\n(VtaDía)",13,F_IVA,"9D174D"),
+                ("Dif\nGS",12,F_HDR,"FFFFFF"),("Dif\nGP",12,F_HDR,"FFFFFF"),
+                ("Dif\nGD",12,F_HDR,"FFFFFF"),("Dif\nIVA",12,F_HDR,"FFFFFF"),
+                ("DIF\nTOTAL",13,F_HDR,"FFFFFF"),
+            ]
+            for i,(h,w,fi,fc) in enumerate(cols3,1):
+                c=ws.cell(3,i,h); c.fill=fi; c.font=Font(color=fc,bold=True,size=8)
+                c.alignment=al_c; c.border=bord
+                ws.column_dimensions[get_column_letter(i)].width=w
+            ws.row_dimensions[3].height = 34
+
+            ROW = 4; tots = defaultdict(float)
+            total_dias = len(fechas)
+            for idx, fecha in enumerate(fechas):
+                self.after(0, self._pb_step, self._vdc_pb, self._vdc_pb_lbl)
+                d=dia[fecha]; v=venta.get(fecha,{})
+                gs_s=d["GS_sub"]; gp_s=d["GP_sub"]; gd_s=d["GD_sub"]
+                iva_u=d["iva"]; ieps_u=d["ieps"]; tot=d["importe"]
+                v_gs=v.get("GS",0); v_gp=v.get("GP",0); v_gd=v.get("GD",0)
+                v_iva=v.get("IVA",0); v_ieps=v.get("IEPS",0); v_tot=v.get("TOTAL",0)
+                dif_gs=round(gs_s-v_gs,2); dif_gp=round(gp_s-v_gp,2)
+                dif_gd=round(gd_s-v_gd,2); dif_iva=round(iva_u-v_iva,2)
+                dif_tot=round(tot-v_tot,2)
+                fi_d=F_OK if abs(dif_tot)<1 else F_WRN if abs(dif_tot)<1000 else F_ERR
+                vals_row = [
+                    (fecha.strftime("%d/%m/%Y"),None),(gs_s,F_GS),(gp_s,F_GP),(gd_s,F_GD),
+                    (iva_u,F_IVA),(ieps_u,F_IVA),(tot,F_DARK),(len(d["uuids"]),F_UUID),
+                    (v_gs,F_GS),(v_gp,F_GP),(v_gd,F_GD),(v_iva,F_IVA),(v_ieps,F_IVA),
+                    (dif_gs,fi_d),(dif_gp,fi_d),(dif_gd,fi_d),(dif_iva,fi_d),(dif_tot,fi_d),
+                ]
+                fcs_r = ["000000","1E3A8A","166534","92400E","9D174D","9D174D","FFFFFF","374151",
+                         "1E3A8A","166534","92400E","9D174D","9D174D",
+                         "000000","000000","000000","000000","000000"]
+                fmts_r = [None,MF,MF,MF,MF,MF,MF,"#,##0",MF,MF,MF,MF,MF,MF,MF,MF,MF,MF]
+                for i,((val,fi),fc,fmt) in enumerate(zip(vals_row,fcs_r,fmts_r),1):
+                    cw(ws,ROW,i,val=val,fi=fi,al=al_c if i in(1,8) else al_r,fmt=fmt,sz=9,fc=fc)
+                for k,kv in [("gs",gs_s),("gp",gp_s),("gd",gd_s),("iva",iva_u),
+                              ("ieps",ieps_u),("tot",tot),("vgs",v_gs),("vgp",v_gp),
+                              ("vgd",v_gd),("viva",v_iva),("vieps",v_ieps),("vtot",v_tot)]:
+                    tots[k]+=kv
+                ws.row_dimensions[ROW].height=15; ROW+=1
+
+            tv = ["TOTAL",tots["gs"],tots["gp"],tots["gd"],tots["iva"],tots["ieps"],tots["tot"],
+                  sum(len(dia[f]["uuids"]) for f in fechas),
+                  tots["vgs"],tots["vgp"],tots["vgd"],tots["viva"],tots["vieps"],
+                  round(tots["gs"]-tots["vgs"],2),round(tots["gp"]-tots["vgp"],2),
+                  round(tots["gd"]-tots["vgd"],2),round(tots["iva"]-tots["viva"],2),
+                  round(tots["tot"]-tots["vtot"],2)]
+            for i,v in enumerate(tv,1):
+                c=ws.cell(ROW,i,v); c.fill=F_TOT; c.font=Font(bold=True,size=9)
+                c.border=bord; c.alignment=al_l if i==1 else al_r
+                if 2<=i<=18: c.number_format=MF if i!=8 else "#,##0"
+            ws.row_dimensions[ROW].height=22; ws.freeze_panes="B4"
+
+            # ══ HOJA 2 — DETALLE UUID ══════════════════════════════════════════
+            ws2 = wb.create_sheet("Detalle UUID")
+            for i,w in enumerate([20,30,42,14,15,13,13,15],1):
+                ws2.column_dimensions[get_column_letter(i)].width=w
+
+            colores_alt = [fill("EFF6FF"),fill("F0FFFE"),fill("FFFBEB"),fill("FDF4FF"),fill("FFF1F2")]
+            PRODS = [
+                ("GS","G-SUPER",   fill("1D4ED8"),F_GS,"1D4ED8"),
+                ("GP","G-PREMIUM", fill("15803D"),F_GP,"14532D"),
+                ("GD","G-DIESEL",  fill("92400E"),F_GD,"451A03"),
+            ]
+            CUR = 1
+            grand_total = {"GS":defaultdict(float),"GP":defaultdict(float),"GD":defaultdict(float)}
+
+            mw(ws2,CUR,1,8,"TABLA DE UUIDs",F_TITULO,bold=True,sz=14,fc="FFFFFF",al=al_c)
+            ws2.row_dimensions[CUR].height=34; CUR+=1
+
+            self.after(0, self._pb_step, self._vdc_pb, self._vdc_pb_lbl)
+
+            for prod,label,fi_hdr,fi_prod,fc_txt in PRODS:
+                mw(ws2,CUR,1,8,f"  ▌ TABLA {label}",fi_hdr,bold=True,sz=12,fc="FFFFFF",al=al_l)
+                ws2.row_dimensions[CUR].height=28; CUR+=1
+
+                claves_sin = sorted(
+                    [(cli,dt) for (cli,dt) in sin_uuid if sin_uuid[(cli,dt)][prod]["n"]>0],
+                    key=lambda x:(x[0],x[1])
+                )
+                if claves_sin:
+                    mw(ws2,CUR,1,8,"  ⚠  SIN COMPROBANTE FISCAL (UUID = -----)",
+                       F_SIN_H,bold=True,sz=9,fc="FFFFFF",al=al_l)
+                    ws2.row_dimensions[CUR].height=20; CUR+=1
+                    for i,h in enumerate(["Cliente (col Q)","—","— SIN UUID —",
+                                          "Fecha","Subtotal","IVA","IEPS","TOTAL"],1):
+                        c=ws2.cell(CUR,i,h); c.fill=F_SIN
+                        c.font=Font(color="92400E",bold=True,size=8)
+                        c.alignment=al_c; c.border=bord
+                    ws2.row_dimensions[CUR].height=16; CUR+=1
+                    prev_cli=None; cli_tots=defaultdict(float); sin_grand=defaultdict(float)
+                    for (cli,dt) in claves_sin:
+                        if prev_cli is not None and cli!=prev_cli:
+                            mw(ws2,CUR,1,3,f"  Subtotal  {prev_cli}",F_RFC,bold=True,sz=8,fc="7C2D12",al=al_l)
+                            cw(ws2,CUR,4,fi=F_RFC)
+                            for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
+                                cw(ws2,CUR,ci,val=cli_tots[kk],fi=F_RFC,al=al_r,fmt=MF,bold=True,sz=8,fc="7C2D12")
+                            for k in ["sub","iva","ieps","tot"]: cli_tots[k]=0.0
+                            ws2.row_dimensions[CUR].height=14; CUR+=1
+                        prev_cli=cli; s=sin_uuid[(cli,dt)][prod]
+                        cw(ws2,CUR,1,val=cli,fi=F_SIN_ROW,al=al_l,sz=8,fc="7C2D12")
+                        cw(ws2,CUR,2,val="— SIN NOMBRE —",fi=F_SIN_ROW,al=al_l,sz=8,fc="9A3412")
+                        cw(ws2,CUR,3,val="— SIN COMPROBANTE FISCAL —",fi=F_SIN_ROW,al=al_c,sz=8,fc="9A3412")
+                        cw(ws2,CUR,4,val=dt.strftime("%d/%m/%Y"),fi=F_SIN_ROW,al=al_c,sz=8)
+                        cw(ws2,CUR,5,val=s["sub"],fi=F_SIN_ROW,al=al_r,fmt=MF,sz=8)
+                        cw(ws2,CUR,6,val=s["iva"],fi=F_SIN_ROW,al=al_r,fmt=MF,sz=8)
+                        cw(ws2,CUR,7,val=s["ieps"],fi=F_SIN_ROW,al=al_r,fmt=MF,sz=8)
+                        cw(ws2,CUR,8,val=s["tot"],fi=F_SIN_ROW,al=al_r,fmt=MF,sz=8)
+                        for k,kv in [("sub",s["sub"]),("iva",s["iva"]),("ieps",s["ieps"]),("tot",s["tot"])]:
+                            cli_tots[k]+=kv; sin_grand[k]+=kv
+                        ws2.row_dimensions[CUR].height=13; CUR+=1
+                    if prev_cli:
+                        mw(ws2,CUR,1,3,f"  Subtotal  {prev_cli}",F_RFC,bold=True,sz=8,fc="7C2D12",al=al_l)
+                        cw(ws2,CUR,4,fi=F_RFC)
+                        for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
+                            cw(ws2,CUR,ci,val=cli_tots[kk],fi=F_RFC,al=al_r,fmt=MF,bold=True,sz=8,fc="7C2D12")
+                        ws2.row_dimensions[CUR].height=14; CUR+=1
+                    mw(ws2,CUR,1,4,f"  TOTAL SIN COMPROBANTE — {label}",F_SIN_TOT,bold=True,sz=9,fc="FFFFFF",al=al_l)
+                    for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
+                        cw(ws2,CUR,ci,val=sin_grand[kk],fi=F_SIN_TOT,al=al_r,fmt=MF,bold=True,sz=9,fc="FFFFFF")
+                    ws2.row_dimensions[CUR].height=18; CUR+=1
+                    gt=grand_total[prod]
+                    for k in ["sub","iva","ieps","tot"]: gt[f"sin_{k}"]+=sin_grand[k]
+
+                mw(ws2,CUR,1,8,"  CON COMPROBANTE FISCAL (CFDI / UUID)",F_HDR,bold=True,sz=9,fc="FFFFFF",al=al_l)
+                ws2.row_dimensions[CUR].height=16; CUR+=1
+                for i,h in enumerate(["RFC","Nombre / Razón Social","UUID / Folio Fiscal",
+                                       "Fechas","Subtotal","IVA","IEPS","TOTAL"],1):
+                    c=ws2.cell(CUR,i,h); c.fill=fi_prod
+                    c.font=Font(color=fc_txt,bold=True,size=9); c.alignment=al_c; c.border=bord
+                ws2.row_dimensions[CUR].height=16; CUR+=1
+
+                claves = sorted([(rfc,uuid) for (rfc,uuid),e in data.items() if e[prod]["tot"]>0],
+                                 key=lambda x:(x[0],x[1]))
+                rfc_col={}; cidx=0; prev_rfc=None; rfc_tots=defaultdict(float); gt=grand_total[prod]
+                for (rfc,uuid) in claves:
+                    e=data[(rfc,uuid)]
+                    if rfc not in rfc_col: rfc_col[rfc]=colores_alt[cidx % len(colores_alt)]; cidx+=1
+                    if prev_rfc is not None and rfc!=prev_rfc:
+                        mw(ws2,CUR,1,4,f"  Subtotal  {prev_rfc}",F_RFC,bold=True,sz=8,fc="1E40AF",al=al_l)
+                        for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
+                            cw(ws2,CUR,ci,val=rfc_tots[kk],fi=F_RFC,al=al_r,fmt=MF,bold=True,sz=8,fc="1E40AF")
+                        for k in ["sub","iva","ieps","tot"]: rfc_tots[k]=0.0
+                        ws2.row_dimensions[CUR].height=14; CUR+=1
+                    prev_rfc=rfc; fi_r=rfc_col[rfc]
+                    sub=e[prod]["sub"]; iva=e[prod]["iva"]; ieps=e[prod]["ieps"]; tot_v=e[prod]["tot"]
+                    fechas_str=", ".join(sorted(f.strftime("%d/%m") for f in e["fechas"]))
+                    for i,val in enumerate([rfc,e["nombre"],uuid,fechas_str,sub,iva,ieps,tot_v],1):
+                        c=ws2.cell(CUR,i,val); c.fill=fi_r; c.font=Font(size=8)
+                        c.border=bord; c.alignment=al_l if i<=4 else al_r
+                        if i>4: c.number_format=MF
+                    for k,kv in [("sub",sub),("iva",iva),("ieps",ieps),("tot",tot_v)]:
+                        rfc_tots[k]+=kv; gt[k]+=kv
+                    ws2.row_dimensions[CUR].height=13; CUR+=1
+                if prev_rfc:
+                    mw(ws2,CUR,1,4,f"  Subtotal  {prev_rfc}",F_RFC,bold=True,sz=8,fc="1E40AF",al=al_l)
+                    for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
+                        cw(ws2,CUR,ci,val=rfc_tots[kk],fi=F_RFC,al=al_r,fmt=MF,bold=True,sz=8,fc="1E40AF")
+                    ws2.row_dimensions[CUR].height=14; CUR+=1
+                mw(ws2,CUR,1,4,f"  TOTAL CON COMPROBANTE — {label}",fill("166534"),bold=True,sz=9,fc="FFFFFF",al=al_l)
+                for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
+                    cw(ws2,CUR,ci,val=gt.get(kk,0),fi=fill("166534"),al=al_r,fmt=MF,bold=True,sz=9,fc="FFFFFF")
+                ws2.row_dimensions[CUR].height=18; CUR+=1
+                gran_sub=gt.get("sub",0)+gt.get("sin_sub",0)
+                gran_iva=gt.get("iva",0)+gt.get("sin_iva",0)
+                gran_ieps=gt.get("ieps",0)+gt.get("sin_ieps",0)
+                gran_tot=gt.get("tot",0)+gt.get("sin_tot",0)
+                mw(ws2,CUR,1,4,f"  ★ GRAN TOTAL {label}",F_TOT,bold=True,sz=11,al=al_l)
+                for ci,v in enumerate([gran_sub,gran_iva,gran_ieps,gran_tot],5):
+                    cw(ws2,CUR,ci,val=v,fi=F_TOT,al=al_r,fmt=MF,bold=True,sz=11)
+                ws2.row_dimensions[CUR].height=26; CUR+=2
+
+            ws2.freeze_panes="A2"
+
+            # ══ HOJA 3 — RESUMEN ══════════════════════════════════════════════
+            ws3 = wb.create_sheet("Resumen")
+            for i,w in enumerate([30,18,18,18,14,16],1):
+                ws3.column_dimensions[get_column_letter(i)].width=w
+            mw(ws3,1,1,6,"RESUMEN — CONTROL DE DESPACHO vs VENTAS DEL DÍA",F_HDR,bold=True,sz=13,fc="FFFFFF",al=al_c)
+            ws3.row_dimensions[1].height=32
+
+            tot_gs=tots["gs"]; tot_gp=tots["gp"]; tot_gd=tots["gd"]
+            tot_iva=tots["iva"]; tot_ieps=tots["ieps"]; tot_imp=tots["tot"]
+            v_tot_gs=tots["vgs"]; v_tot_gp=tots["vgp"]; v_tot_gd=tots["vgd"]
+            v_tot_iva=tots["viva"]; v_tot_ieps=tots["vieps"]; v_tot_total=tots["vtot"]
+            uuid_gs=len({(r,u) for (r,u),e in data.items() if e["GS"]["tot"]>0})
+            uuid_gp=len({(r,u) for (r,u),e in data.items() if e["GP"]["tot"]>0})
+            uuid_gd=len({(r,u) for (r,u),e in data.items() if e["GD"]["tot"]>0})
+            uuid_total=len(data); rfc_total=len({r for (r,u) in data.keys()})
+            TTOT=max(tot_gs+tot_gp+tot_gd,1)
+
+            sin_resumen = defaultdict(lambda:{"GS":0.0,"GP":0.0,"GD":0.0,"n":0})
+            for (cli,dt),pd in sin_uuid.items():
+                for pr in ("GS","GP","GD"):
+                    sin_resumen[cli][pr]+=pd[pr]["tot"]; sin_resumen[cli]["n"]+=pd[pr]["n"]
+
+            R=3
+            mw(ws3,R,1,6,"VENTAS POR PRODUCTO",F_DARK,bold=True,sz=10,fc="FFFFFF",al=al_l)
+            ws3.row_dimensions[R].height=22; R+=1
+            for i,h in enumerate(["Producto","Subtotal Despachos","Ventas del Día","Diferencia","% Total","CFDIs"],1):
+                cw(ws3,R,i,val=h,fi=F_HDR,al=al_c,bold=True,sz=8,fc="FFFFFF")
+            ws3.row_dimensions[R].height=16; R+=1
+            for lbl,desp,pol,nuuid,fi_r in [
+                    ("G-Super (GS)",tot_gs,v_tot_gs,uuid_gs,F_GS),
+                    ("G-Premium (GP)",tot_gp,v_tot_gp,uuid_gp,F_GP),
+                    ("G-Diesel (GD)",tot_gd,v_tot_gd,uuid_gd,F_GD)]:
+                dif=round(desp-pol,2); fi_dif=F_OK if abs(dif)<1 else F_WRN if abs(dif)<500 else F_ERR
+                cw(ws3,R,1,val=lbl,fi=fi_r,al=al_l,sz=9)
+                cw(ws3,R,2,val=desp,fi=fi_r,al=al_r,fmt=MF,sz=9)
+                cw(ws3,R,3,val=pol,fi=fi_r,al=al_r,fmt=MF,sz=9)
+                cw(ws3,R,4,val=dif,fi=fi_dif,al=al_r,fmt=MF,bold=True,sz=9)
+                cw(ws3,R,5,val=desp/TTOT,fi=fi_r,al=al_r,fmt="0.0%",sz=9)
+                cw(ws3,R,6,val=nuuid,fi=fi_r,al=al_r,fmt="#,##0",sz=9)
+                ws3.row_dimensions[R].height=16; R+=1
+            TTOT_r=tot_gs+tot_gp+tot_gd; VTOT_r=v_tot_gs+v_tot_gp+v_tot_gd
+            dif_sub=round(TTOT_r-VTOT_r,2)
+            fi_dt=F_OK if abs(dif_sub)<1 else F_WRN if abs(dif_sub)<500 else F_ERR
+            cw(ws3,R,1,val="TOTAL",fi=F_TOT,al=al_l,bold=True,sz=10)
+            cw(ws3,R,2,val=TTOT_r,fi=F_TOT,al=al_r,fmt=MF,bold=True,sz=10)
+            cw(ws3,R,3,val=VTOT_r,fi=F_TOT,al=al_r,fmt=MF,bold=True,sz=10)
+            cw(ws3,R,4,val=dif_sub,fi=fi_dt,al=al_r,fmt=MF,bold=True,sz=10)
+            cw(ws3,R,5,val=1.0,fi=F_TOT,al=al_r,fmt="0.0%",bold=True,sz=10)
+            cw(ws3,R,6,val=uuid_total,fi=F_TOT,al=al_r,fmt="#,##0",bold=True,sz=10)
+            ws3.row_dimensions[R].height=22; R+=2
+
+            sin_tot_gs=sin_tot_gp=sin_tot_gd=sin_tot_n=0
+            mw(ws3,R,1,6,"⚠  SIN COMPROBANTE FISCAL — POR CLIENTE (col Q)",F_SIN_H,bold=True,sz=10,fc="FFFFFF",al=al_l)
+            ws3.row_dimensions[R].height=22; R+=1
+            for i,h in enumerate(["Cliente (col Q)","G-Super","G-Premium","G-Diesel","TOTAL","# Tx"],1):
+                cw(ws3,R,i,val=h,fi=F_SIN,al=al_c,bold=True,sz=8,fc="92400E")
+            ws3.row_dimensions[R].height=16; R+=1
+            for cli in sorted(sin_resumen.keys()):
+                d=sin_resumen[cli]; tc=d["GS"]+d["GP"]+d["GD"]
+                cw(ws3,R,1,val=cli,fi=F_SIN_ROW,al=al_l,sz=9,fc="7C2D12")
+                cw(ws3,R,2,val=d["GS"],fi=F_SIN_ROW,al=al_r,fmt=MF,sz=9)
+                cw(ws3,R,3,val=d["GP"],fi=F_SIN_ROW,al=al_r,fmt=MF,sz=9)
+                cw(ws3,R,4,val=d["GD"],fi=F_SIN_ROW,al=al_r,fmt=MF,sz=9)
+                cw(ws3,R,5,val=tc,fi=F_SIN_ROW,al=al_r,fmt=MF,bold=True,sz=9)
+                cw(ws3,R,6,val=d["n"],fi=F_SIN_ROW,al=al_r,fmt="#,##0",sz=9)
+                sin_tot_gs+=d["GS"]; sin_tot_gp+=d["GP"]; sin_tot_gd+=d["GD"]; sin_tot_n+=d["n"]
+                ws3.row_dimensions[R].height=16; R+=1
+            cw(ws3,R,1,val="TOTAL SIN COMPROBANTE",fi=F_SIN_TOT,al=al_l,bold=True,sz=10,fc="FFFFFF")
+            cw(ws3,R,2,val=sin_tot_gs,fi=F_SIN_TOT,al=al_r,fmt=MF,bold=True,sz=10,fc="FFFFFF")
+            cw(ws3,R,3,val=sin_tot_gp,fi=F_SIN_TOT,al=al_r,fmt=MF,bold=True,sz=10,fc="FFFFFF")
+            cw(ws3,R,4,val=sin_tot_gd,fi=F_SIN_TOT,al=al_r,fmt=MF,bold=True,sz=10,fc="FFFFFF")
+            cw(ws3,R,5,val=sin_tot_gs+sin_tot_gp+sin_tot_gd,fi=F_SIN_TOT,al=al_r,fmt=MF,bold=True,sz=10,fc="FFFFFF")
+            cw(ws3,R,6,val=sin_tot_n,fi=F_SIN_TOT,al=al_r,fmt="#,##0",bold=True,sz=10,fc="FFFFFF")
+            ws3.row_dimensions[R].height=22; R+=2
+
+            mw(ws3,R,1,6,"IMPUESTOS",F_DARK,bold=True,sz=10,fc="FFFFFF",al=al_l)
+            ws3.row_dimensions[R].height=22; R+=1
+            for i,h in enumerate(["Concepto","Despachos","Ventas del Día","Diferencia","",""],1):
+                cw(ws3,R,i,val=h,fi=F_HDR,al=al_c,bold=True,sz=8,fc="FFFFFF")
+            ws3.row_dimensions[R].height=16; R+=1
+            for lbl,desp,pol in [("IVA 16%",tot_iva,v_tot_iva),("IEPS",tot_ieps,v_tot_ieps),
+                                  ("TOTAL con impuestos",tot_imp,v_tot_total)]:
+                dif=round(desp-pol,2); fi_dif=F_OK if abs(dif)<1 else F_WRN if abs(dif)<500 else F_ERR
+                is_tot="TOTAL" in lbl; fi_r=F_TOT if is_tot else fill("FCE7F3")
+                cw(ws3,R,1,val=lbl,fi=fi_r,al=al_l,bold=is_tot,sz=9)
+                cw(ws3,R,2,val=desp,fi=fi_r,al=al_r,fmt=MF,bold=is_tot,sz=9)
+                cw(ws3,R,3,val=pol,fi=fi_r,al=al_r,fmt=MF,bold=is_tot,sz=9)
+                cw(ws3,R,4,val=dif,fi=fi_dif,al=al_r,fmt=MF,bold=True,sz=9)
+                cw(ws3,R,5,fi=fi_r); cw(ws3,R,6,fi=fi_r)
+                ws3.row_dimensions[R].height=16; R+=1
+            R+=1
+            mw(ws3,R,1,6,"MÉTRICAS",F_DARK,bold=True,sz=10,fc="FFFFFF",al=al_l)
+            ws3.row_dimensions[R].height=22; R+=1
+            F_LIGHT=fill("F8FAFC")
+            for lbl,val,fi_v in [
+                    ("Total CFDIs únicos",uuid_total,F_GS),
+                    ("   ↳ G-Super",uuid_gs,F_GS),("   ↳ G-Premium",uuid_gp,F_GP),
+                    ("   ↳ G-Diesel",uuid_gd,F_GD),("Clientes únicos (RFC)",rfc_total,F_UUID),
+                    ("Tx sin comprobante",sin_tot_n,F_SIN),("Días conciliados",len(fechas),F_UUID)]:
+                cw(ws3,R,1,val=lbl,fi=F_LIGHT,al=al_l,sz=9)
+                cw(ws3,R,2,val=val,fi=fi_v,al=al_r,fmt="#,##0",bold=True,sz=11)
+                for ci in range(3,7): cw(ws3,R,ci,fi=F_LIGHT)
+                ws3.row_dimensions[R].height=18; R+=1
+
+            wb.move_sheet("Resumen", offset=-2)
+
+            # ── Guardar ────────────────────────────────────────────────────────
+            carpeta_sal = os.path.dirname(desp_path)
+            base = os.path.splitext(os.path.basename(desp_path))[0]
+            OUT = os.path.join(carpeta_sal, f"Conciliacion_DespachoVentas_{base}.xlsx")
+            wb.save(OUT)
+            nombre = os.path.basename(OUT)
+
+            self._vdc_resultado_path = OUT
+            self.after(0, self._pb_detener, self._vdc_pb, self._vdc_pb_lbl)
+            self.after(0, self._vdc_pb_frame.grid_remove)
+            self.after(0, self._vdc_lbl_archivo.config, {"text": nombre})
+            self.after(0, self._log, f"✅ Conciliación generada: {nombre}")
+            self.after(0, self._vdc_cargar_visor, OUT)
+
+        except Exception as e:
+            import traceback as _tb
+            self.after(0, self._pb_error, self._vdc_pb, self._vdc_pb_lbl)
+            self.after(0, self._vdc_pb_frame.grid_remove)
+            self.after(0, self._log, f"❌ Error: {e}", True)
+            self.after(0, self._vdc_lbl_archivo.config, {"text": "Error"})
+            from tkinter import messagebox
+            self.after(0, messagebox.showerror, "Error",
+                       f"{e}\n\n{_tb.format_exc()[-500:]}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # MÓDULO: CONCILIACIÓN CONTROL DE DESPACHO VS SAT
@@ -8331,6 +9359,8 @@ class WorkspaceWindow(tk.Toplevel):
     # ══════════════════════════════════════════════════════════════════════
     _CBA_ACENTO   = "#6B3FA0"
     _CBA_ACENTO_L = "#EDE7F6"
+    _DEP_ACENTO   = "#1565C0"
+    _DEP_ACENTO_L = "#E3F2FD"
 
     def _tab_conc_banco_aux(self, nb):
         outer = ttk.Frame(nb)
@@ -8647,7 +9677,7 @@ class WorkspaceWindow(tk.Toplevel):
                     if abs(b["deposito"] - a["monto"]) <= 0.05:
                         try: delta = abs((b["fecha"] - a["fecha"]).days)
                         except: delta = 0
-                        if delta <= 2 and delta < best_d: best, best_d = j, delta
+                        if delta < best_d: best, best_d = j, delta
                 if best is not None:
                     used_dep.add(best); used_cargo.add(i)
                     aux_cargo[i]["match"] = deposits[best]; deposits[best]["match_aux"] = a
@@ -8661,7 +9691,7 @@ class WorkspaceWindow(tk.Toplevel):
                     if abs(b["retiro"] - a["monto"]) <= 0.05:
                         try: delta = abs((b["fecha"] - a["fecha"]).days)
                         except: delta = 0
-                        if delta <= 2 and delta < best_d: best, best_d = j, delta
+                        if delta < best_d: best, best_d = j, delta
                 if best is not None:
                     used_ret.add(best); used_abono.add(i)
                     aux_abono[i]["match"] = retiros[best]; retiros[best]["match_aux"] = a
@@ -8927,6 +9957,475 @@ class WorkspaceWindow(tk.Toplevel):
         except Exception as e:
             messagebox.showerror("Error al guardar",
                 f"No se pudo guardar:\n{e}", parent=self)
+
+    # ════════════════════════════════════════════════════════════════════════════
+    # MÓDULO: DEPÓSITOS BANCARIOS
+    # ════════════════════════════════════════════════════════════════════════════
+
+    def _tab_depositos_bancarios(self, nb):
+        outer = ttk.Frame(nb)
+        nb.add(outer, text="  🏦 Depósitos Bancarios  ")
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
+
+        self._dep_ruta_bbva    = tk.StringVar(value="")
+        self._dep_ruta_banorte = tk.StringVar(value="")
+        self._dep_ruta_inbursa = tk.StringVar(value="")
+        self._dep_wb           = None
+        self._dep_resultado    = None
+        self._dep_wb_name      = ""
+        self._dep_wb_dir       = ""
+
+        # ── Panel de controles ──────────────────────────────────────────────────
+        ctrl = tk.Frame(outer, bg=COLOR_FONDO)
+        ctrl.grid(row=0, column=0, sticky="ew")
+        ctrl.columnconfigure(0, weight=1)
+
+        hdr = tk.Frame(ctrl, bg=COLOR_FONDO)
+        hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(8, 4))
+        tk.Label(hdr, text="Depósitos Bancarios  —  BBVA · Banorte · Inbursa",
+                 bg=COLOR_FONDO, fg=self._DEP_ACENTO,
+                 font=("Segoe UI", 12, "bold")).pack(side="left")
+
+        # Selectores de archivo (3 bancos)
+        fsel = tk.Frame(ctrl, bg=COLOR_FONDO)
+        fsel.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 4))
+        fsel.columnconfigure(1, weight=1)
+        fsel.columnconfigure(4, weight=1)
+        fsel.columnconfigure(7, weight=1)
+
+        bancos_cfg = [
+            ("🟦 BBVA (.xlsx):",    "_dep_lbl_bbva",    self._dep_elegir_bbva,    "#0D47A1", 0),
+            ("🟥 Banorte (.xlsx):", "_dep_lbl_banorte", self._dep_elegir_banorte, "#B71C1C", 3),
+            ("🟧 Inbursa (.xlsx):", "_dep_lbl_inbursa", self._dep_elegir_inbursa, "#BF360C", 6),
+        ]
+        for lbl_txt, lbl_attr, cmd, fg_sel, c0 in bancos_cfg:
+            tk.Label(fsel, text=lbl_txt, bg=COLOR_FONDO, fg=COLOR_TEXTO,
+                     font=("Segoe UI", 9, "bold")).grid(
+                     row=0, column=c0, sticky="w", padx=(12 if c0 > 0 else 0, 4))
+            lbl = tk.Label(fsel, text="Sin seleccionar",
+                bg=COLOR_BLANCO, fg="#999999", font=("Segoe UI", 9),
+                relief="sunken", padx=6, pady=2, cursor="hand2")
+            lbl.grid(row=0, column=c0+1, sticky="ew", padx=(0, 4))
+            lbl.bind("<Button-1>", lambda e, c=cmd: c())
+            setattr(self, lbl_attr, lbl)
+            ttk.Button(fsel, text="📂", width=3,
+                       command=cmd).grid(row=0, column=c0+2, padx=(0, 4))
+
+        # Botón generar
+        btn_row = tk.Frame(ctrl, bg=COLOR_FONDO)
+        btn_row.grid(row=2, column=0, sticky="ew", padx=16, pady=(4, 4))
+        btn_row.columnconfigure(0, weight=1)
+        self._dep_btn_gen = tk.Button(btn_row,
+            text="  ⚙ Generar Póliza de Depósitos",
+            bg=self._DEP_ACENTO, fg=COLOR_BLANCO,
+            font=("Segoe UI", 10, "bold"), relief="flat",
+            padx=16, pady=8, cursor="hand2",
+            activebackground="#0D47A1",
+            command=self._dep_generar)
+        self._dep_btn_gen.grid(row=0, column=0, sticky="ew")
+
+        # Barra de progreso
+        self._dep_pb_frame = tk.Frame(ctrl, bg=COLOR_FONDO)
+        self._dep_pb_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 2))
+        self._dep_pb_frame.grid_remove()
+        self._dep_pb = FunkyProgressBar(self._dep_pb_frame, maximum=100, height=14)
+        self._dep_pb.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self._dep_pb_lbl = ttk.Label(self._dep_pb_frame, text="", width=10,
+            foreground=self._DEP_ACENTO, font=("Segoe UI", 8, "bold"))
+        self._dep_pb_lbl.pack(side="left")
+
+        # Barra de resultado
+        tb = tk.Frame(ctrl, bg=COLOR_BLANCO,
+                      highlightbackground="#BBDEFB", highlightthickness=1)
+        tb.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 6))
+        tk.Label(tb, text="Resultado:", bg=COLOR_BLANCO, fg=COLOR_TEXTO,
+                 font=("Segoe UI", 8)).pack(side="left", padx=(10, 2), pady=3)
+        self._dep_lbl_arch = tk.Label(tb, text="---", bg=COLOR_BLANCO,
+            fg=self._DEP_ACENTO, font=("Segoe UI", 8, "bold"))
+        self._dep_lbl_arch.pack(side="left", padx=(0, 10), pady=3)
+        self._dep_btn_guardar = ttk.Button(tb, text="💾 Guardar como",
+            command=self._dep_guardar_como, state="disabled")
+        self._dep_btn_guardar.pack(side="right", padx=(6, 2), pady=3)
+        self._dep_btn_abrir = ttk.Button(tb, text="📂 Abrir en Excel",
+            command=self._dep_abrir, state="disabled")
+        self._dep_btn_abrir.pack(side="right", padx=6, pady=3)
+
+        # ── Área de trabajo ─────────────────────────────────────────────────────
+        ttk.Separator(outer, orient="horizontal").grid(row=0, column=0, sticky="sew")
+
+        work = tk.Frame(outer, bg=COLOR_FONDO)
+        work.grid(row=1, column=0, sticky="nsew")
+        work.columnconfigure(0, weight=1)
+        work.rowconfigure(2, weight=1)
+
+        lbl_area = tk.Frame(work, bg=self._DEP_ACENTO)
+        lbl_area.grid(row=0, column=0, columnspan=2, sticky="ew")
+        tk.Label(lbl_area, text="  Área de Trabajo  —  Vista previa de póliza",
+                 bg=self._DEP_ACENTO, fg=COLOR_BLANCO,
+                 font=("Segoe UI", 9, "bold")).pack(side="left", pady=4)
+        self._dep_lbl_resumen = tk.Label(lbl_area, text="",
+            bg=self._DEP_ACENTO, fg="#90CAF9", font=("Segoe UI", 8))
+        self._dep_lbl_resumen.pack(side="right", padx=10)
+
+        # Leyenda de colores por banco
+        leyenda_bar = tk.Frame(work, bg=COLOR_FONDO)
+        leyenda_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(3, 1))
+        for txt_l, bg_l, fg_l in [
+                ("█ BBVA",    "#C5DCF5", "#0D47A1"),
+                ("█ Inbursa", "#FFE0B5", "#BF360C"),
+                ("█ Banorte", "#FFCCCC", "#B71C1C")]:
+            tk.Label(leyenda_bar, text=f"  {txt_l}  ",
+                     bg=bg_l, fg=fg_l, font=("Segoe UI", 8),
+                     relief="flat", padx=4, pady=1).pack(side="left", padx=2)
+
+        # Treeview
+        cols_tree = ("Fecha", "Banco", "Descripción", "Cta. Cargo", "Cta. Abono", "Monto")
+        self._dep_tree = ttk.Treeview(work, columns=cols_tree,
+                                       show="headings", selectmode="browse")
+        col_w   = {"Fecha": 90, "Banco": 80, "Descripción": 310,
+                   "Cta. Cargo": 140, "Cta. Abono": 180, "Monto": 110}
+        col_anc = {"Fecha": "center", "Banco": "center", "Descripción": "w",
+                   "Cta. Cargo": "center", "Cta. Abono": "w", "Monto": "e"}
+        for c in cols_tree:
+            self._dep_tree.heading(c, text=c)
+            self._dep_tree.column(c, width=col_w.get(c, 100),
+                minwidth=60, anchor=col_anc.get(c, "w"), stretch=True)
+        self._dep_tree.grid(row=2, column=0, sticky="nsew")
+
+        self._dep_tree.tag_configure("bbva",     foreground="#0D47A1", background="#DDEEFF")
+        self._dep_tree.tag_configure("bbva_alt", foreground="#0D47A1", background="#C5DCF5")
+        self._dep_tree.tag_configure("inbu",     foreground="#BF360C", background="#FFF0DC")
+        self._dep_tree.tag_configure("inbu_alt", foreground="#BF360C", background="#FFE0B5")
+        self._dep_tree.tag_configure("bnrt",     foreground="#B71C1C", background="#FFE4E4")
+        self._dep_tree.tag_configure("bnrt_alt", foreground="#B71C1C", background="#FFCCCC")
+
+        vsb = ttk.Scrollbar(work, orient="vertical",   command=self._dep_tree.yview)
+        hsb = ttk.Scrollbar(work, orient="horizontal", command=self._dep_tree.xview)
+        self._dep_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        vsb.grid(row=2, column=1, sticky="ns")
+        hsb.grid(row=3, column=0, sticky="ew")
+
+    def _dep_elegir_bbva(self):
+        self.focus_force(); self.update()
+        ruta = filedialog.askopenfilename(parent=self,
+            title="Estado de cuenta BBVA (.xlsx)",
+            filetypes=[("Excel", "*.xlsx *.xlsm"), ("Todos", "*.*")])
+        if ruta:
+            self._dep_ruta_bbva.set(ruta)
+            self._dep_lbl_bbva.config(text=os.path.basename(ruta), fg="#0D47A1")
+
+    def _dep_elegir_banorte(self):
+        self.focus_force(); self.update()
+        ruta = filedialog.askopenfilename(parent=self,
+            title="Estado de cuenta Banorte (.xlsx)",
+            filetypes=[("Excel", "*.xlsx *.xlsm"), ("Todos", "*.*")])
+        if ruta:
+            self._dep_ruta_banorte.set(ruta)
+            self._dep_lbl_banorte.config(text=os.path.basename(ruta), fg="#B71C1C")
+
+    def _dep_elegir_inbursa(self):
+        self.focus_force(); self.update()
+        ruta = filedialog.askopenfilename(parent=self,
+            title="Estado de cuenta Inbursa (.xlsx)",
+            filetypes=[("Excel", "*.xlsx *.xlsm"), ("Todos", "*.*")])
+        if ruta:
+            self._dep_ruta_inbursa.set(ruta)
+            self._dep_lbl_inbursa.config(text=os.path.basename(ruta), fg="#BF360C")
+
+    def _dep_generar(self):
+        archivos = {}
+        if self._dep_ruta_bbva.get():    archivos["BBVA"]    = self._dep_ruta_bbva.get()
+        if self._dep_ruta_banorte.get(): archivos["BANORTE"] = self._dep_ruta_banorte.get()
+        if self._dep_ruta_inbursa.get(): archivos["INBURSA"] = self._dep_ruta_inbursa.get()
+        if not archivos:
+            messagebox.showwarning("Sin archivos",
+                "Selecciona al menos un estado de cuenta.", parent=self)
+            return
+        self._dep_btn_gen.config(state="disabled")
+        self._dep_btn_abrir.config(state="disabled")
+        self._dep_btn_guardar.config(state="disabled")
+        self._dep_pb_frame.grid()
+        self._dep_pb.reset()
+        self._dep_pb_lbl.config(text="0%")
+        self._dep_lbl_resumen.config(text="")
+        for item in self._dep_tree.get_children():
+            self._dep_tree.delete(item)
+        import threading
+        threading.Thread(target=self._dep_hilo, args=(archivos,), daemon=True).start()
+
+    def _dep_hilo(self, archivos):
+        import re as _re, tempfile as _tmp, os as _os
+        try:
+            import openpyxl
+            from openpyxl.styles import PatternFill, Font, Alignment
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            self.after(0, self._log, "Falta openpyxl — pip install openpyxl", True)
+            self.after(0, lambda: self._dep_btn_gen.config(state="normal"))
+            self.after(0, self._dep_pb_frame.grid_remove)
+            return
+
+        def _log(msg, err=False): self.after(0, self._log, msg, err)
+        def _pb(v, lbl=""):
+            self.after(0, self._dep_pb.set_value, v)
+            self.after(0, self._dep_pb_lbl.config, {"text": lbl or f"{v}%"})
+
+        CARGOS = {
+            "BANORTE": ("102-01-0001-0001", "Banorte"),
+            "BBVA":    ("102-01-0001-0003", "BBVA"),
+            "INBURSA": ("102-01-0001-0002", "INBURSA"),
+        }
+        ABONOS = [
+            {"col":12,"cuenta":"106-01-0001-0010","nombre":"DEPOSITO EN TRANSITO T AMERICAN EXPRESS"},
+            {"col":13,"cuenta":"106-01-0001-0005","nombre":"DEPOSITO EN TRANSITO  EFECTIVALE"},
+            {"col":14,"cuenta":"106-01-0001-0009","nombre":"DEPOSITO EN TRANSITO  TICKET CARD EDENRED"},
+            {"col":15,"cuenta":"101-01-0001",      "nombre":"Fondo Fijo de Caja"},
+            {"col":16,"cuenta":"106-01-0001-0011", "nombre":"DEPOSITO EN TRANSITO T BANORTE"},
+            {"col":17,"cuenta":"106-01-0001-0003", "nombre":"DEPOSITO EN TRANSITO  SMARTBT - SHELL FLEET"},
+            {"col":18,"cuenta":"106-01-0001-0013", "nombre":"BBVA"},
+            {"col":19,"cuenta":"106-01-0001-0012", "nombre":"DEPOSITO EN TRANSITO T INBURSA"},
+        ]
+        COL_ABONO_IDX = {a["col"]: a for a in ABONOS}
+        CARGO_COL = {"BBVA": 9, "BANORTE": 8, "INBURSA": 10}
+        CARGO_CTA = {"BBVA": "102-01-0001-0003", "BANORTE": "102-01-0001-0001", "INBURSA": "102-01-0001-0002"}
+
+        def _clf_bbva(desc, monto): return 18
+        def _clf_inbursa(desc, monto):
+            return 19 if "INBURED" in desc.upper() else None
+        def _clf_banorte(desc, monto):
+            d = desc.upper()
+            if "DEP. CH." in d or "CHEQUE SBC" in d: return None
+            if "COMPENSACION DESFASE" in d: return None
+            if "SPEI RECIBIDO" in d and "SERVICIOS FELUSA" in d: return None
+            if "SHELL" in d or "SMARTBT" in d: return 17
+            if "AMERICAN EXPRESS" in d or "BCO:0124" in d or "CITI MEXICO" in d:
+                m = _re.search(r"HR LIQ:\s*(\d{2}):", desc)
+                return 17 if (int(m.group(1)) if m else 0) >= 12 else 12
+            if "EFECTIVALE" in d or "EFE8908015L3" in d or "BCO:0014" in d or (
+                    "SANTANDER" in d and "SPEI RECIBIDO" in d): return 13
+            if "EDENRED" in d or "HSBCPGMD" in d or "BCO:0021" in d: return 14
+            if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d: return 15
+            if "07277262C" in d or "07277262D" in d: return 16
+            return None
+
+        CLSF = {"BBVA": _clf_bbva, "BANORTE": _clf_banorte, "INBURSA": _clf_inbursa}
+
+        def leer_banco(ruta, banco):
+            wb = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+            wb.close()
+            ini = 2
+            for i, r in enumerate(rows):
+                if r and str(r[0]).strip().lower() == "fecha":
+                    ini = i + 1; break
+            ok, nc = [], []
+            fn = CLSF[banco]
+            for r in rows[ini:]:
+                if not r or r[0] is None: continue
+                fecha = r[0]
+                if not hasattr(fecha, "day"): continue
+                desc  = str(r[1] or "").strip()
+                monto = r[2]
+                if not monto or monto <= 0: continue
+                col_ab = fn(desc, monto)
+                if col_ab is None:
+                    nc.append({"fecha":fecha,"banco":banco,"desc":desc[:80],"monto":monto})
+                else:
+                    ok.append({"fecha":fecha,"banco":banco,"ref":f"DEPOSITOS {banco}",
+                               "desc":desc,"monto":monto,
+                               "col_cargo":CARGO_COL[banco],"col_abono":col_ab})
+            return ok, nc
+
+        try:
+            todos_ok, todos_nc = [], []
+            n_bancos = len(archivos)
+            for i, (banco, ruta) in enumerate(archivos.items()):
+                _log(f"Leyendo {banco}: {_os.path.basename(ruta)}")
+                _pb(int(i/n_bancos*55), f"Leyendo {banco}...")
+                ok, nc = leer_banco(ruta, banco)
+                todos_ok.extend(ok); todos_nc.extend(nc)
+                total_m = sum(r["monto"] for r in ok)
+                _log(f"  {banco}: {len(ok)} clasificados (${total_m:,.2f})")
+                if nc: _log(f"  {banco}: {len(nc)} sin clasificar — omitidos")
+
+            if not todos_ok:
+                _log("Sin depósitos clasificables.", True)
+                self.after(0, lambda: self._dep_btn_gen.config(state="normal"))
+                self.after(0, self._dep_pb_frame.grid_remove)
+                return
+
+            _log("Generando Excel..."); _pb(60, "Generando...")
+
+            F_FECHA=PatternFill("solid",fgColor="FFC000"); F_REF=PatternFill("solid",fgColor="7030A0")
+            F_CONC=PatternFill("solid",fgColor="00B050");  F_ERROR=PatternFill("solid",fgColor="843C0C")
+            F_ADMIN=PatternFill("solid",fgColor="D0D6DC"); F_BANCO=PatternFill("solid",fgColor="BDD7EE")
+            F_ABONO=PatternFill("solid",fgColor="FFE699"); F_GRAY2=PatternFill("solid",fgColor="BFBFBF")
+            F_TIPO=PatternFill("solid",fgColor="E2EFDA");  F_NONE=PatternFill(fill_type=None)
+            FILLS_BANCO={
+                "BBVA":   (PatternFill("solid",fgColor="DDEEFF"),PatternFill("solid",fgColor="C5DCF5")),
+                "INBURSA":(PatternFill("solid",fgColor="FFF0DC"),PatternFill("solid",fgColor="FFE0B5")),
+                "BANORTE":(PatternFill("solid",fgColor="FFE4E4"),PatternFill("solid",fgColor="FFCCCC")),
+            }
+            FMT_N="#,##0.00"; FMT_D="DD/MM/YYYY"
+            AC=Alignment(horizontal="center",vertical="center")
+            AL=Alignment(horizontal="left",  vertical="center")
+            AR=Alignment(horizontal="right", vertical="center")
+            ACW=Alignment(horizontal="center",vertical="center",wrap_text=True)
+
+            def fnt(bold=False,color="000000"):
+                return Font(name="Aptos Narrow",size=11,bold=bold,color=color)
+            def sc(ws,row,col,value=None,font=None,fill=None,align=None,nf=None):
+                c=ws.cell(row=row,column=col,value=value)
+                if font: c.font=font
+                if fill: c.fill=fill
+                if align: c.alignment=align
+                if nf: c.number_format=nf
+                return c
+
+            wb_o=openpyxl.Workbook(); ws_p=wb_o.active; ws_p.title="POLIZA"
+            for idx in range(21): sc(ws_p,1,idx+1,idx,fnt(),F_NONE,AC)
+            for pi,banco in [(8,"BANORTE"),(9,"BBVA"),(10,"INBURSA")]:
+                sc(ws_p,2,pi+1,CARGOS[banco][0],fnt(),F_GRAY2,AC)
+            for a in ABONOS: sc(ws_p,2,a["col"]+1,a["cuenta"],fnt(),F_GRAY2,AC)
+            for col,lbl,fill,font in [
+                (1,"TIPO DE POLIZA",F_TIPO,fnt()),(2,"Fecha",F_FECHA,fnt(bold=True,color="FFFFFF")),
+                (3,"REFERENCIA",F_REF,fnt(bold=True,color="FFFFFF")),(4,"CONCEPTO",F_CONC,fnt(bold=True,color="FFFFFF")),
+                (5,"ERROR",F_ERROR,fnt(bold=True,color="FFFFFF")),(6,"UIDD",F_ADMIN,fnt(bold=True,color="FFFFFF")),
+                (7,"NUM POLIZA",F_ADMIN,fnt(bold=True,color="FFFFFF")),(8,"PROCESADO",F_ADMIN,fnt(bold=True,color="FFFFFF"))]:
+                sc(ws_p,3,col,lbl,font,fill,AC)
+            for pi,banco in [(8,"BANORTE"),(9,"BBVA"),(10,"INBURSA")]:
+                sc(ws_p,3,pi+1,CARGOS[banco][1],fnt(bold=True,color="FFFFFF"),F_BANCO,AC)
+            sc(ws_p,3,12,"TOTAL CARGOS",fnt(color="FF0000"),F_NONE,AC)
+            for a in ABONOS: sc(ws_p,3,a["col"]+1,a["nombre"],fnt(bold=True),F_ABONO,ACW)
+            sc(ws_p,3,21,"TOTAL ABONOS",fnt(color="FF0000"),F_NONE,AC)
+            sc(ws_p,3,22,"DIFERENCIA",  fnt(color="FF0000"),F_NONE,AC)
+
+            orden_b={"BBVA":0,"INBURSA":1,"BANORTE":2}
+            reg_s=sorted(todos_ok,key=lambda x:(orden_b[x["banco"]],x["fecha"]))
+            for fn_num,r in enumerate(reg_s,start=4):
+                f1,f2=FILLS_BANCO[r["banco"]]; fr=f1 if fn_num%2==0 else f2
+                fd=fnt(); m=r["monto"]
+                def dat(col,val,nfmt=None,al=AC,_row=fn_num,_fr=fr,_fd=fd):
+                    c=sc(ws_p,_row,col,val,_fd,_fr,al,nfmt); return c
+                dat(1,"I"); dat(2,r["fecha"],FMT_D)
+                dat(3,r["ref"],al=AL); dat(4,r["ref"],al=AL)
+                for col in [5,6,7,8]: dat(col,None)
+                dat(r["col_cargo"]+1,m,FMT_N,AR)
+                dat(12,m,FMT_N,AR)
+                dat(r["col_abono"]+1,m,FMT_N,AR)
+                dat(21,m,FMT_N,AR)
+                cd=ws_p.cell(row=fn_num,column=22,
+                    value=f"={get_column_letter(12)}{fn_num}-{get_column_letter(21)}{fn_num}")
+                cd.font=fd; cd.fill=fr; cd.alignment=AR; cd.number_format=FMT_N
+
+            for cn,w in {1:14.4,2:13.0,3:36.9,4:26.3,5:6.7,6:5.3,7:11.3,8:11.6,
+                         9:16.0,10:16.0,11:16.0,12:16.3,13:32.0,14:26.0,15:30.0,
+                         16:18.0,17:28.0,18:32.0,19:12.0,20:28.0,21:14.1,22:12.6}.items():
+                ws_p.column_dimensions[get_column_letter(cn)].width=w
+            ws_p.freeze_panes="B4"
+
+            wc=wb_o.create_sheet("CUENTAS"); fp=fnt()
+            sc(wc,1,1,"CARGOS",fp,F_NONE,Alignment(horizontal="center"))
+            sc(wc,1,4,"ABONOS",fp,F_NONE,Alignment(horizontal="center"))
+            sc(wc,2,1,"N° Cuenta",fp,F_NONE); sc(wc,2,2,"Banco",fp,F_NONE)
+            sc(wc,2,4,"N° Cuenta",fp,F_NONE); sc(wc,2,5,"Nombre del Deposito",fp,F_NONE)
+            for i,(banco,(cta,nom)) in enumerate(CARGOS.items(),start=3):
+                sc(wc,i,1,cta,fp,F_NONE); sc(wc,i,2,nom,fp,F_NONE)
+            for i,a in enumerate(ABONOS,start=3):
+                sc(wc,i,4,a["cuenta"],fp,F_NONE); sc(wc,i,5,a["nombre"],fp,F_NONE)
+            for cn,w in {1:16.3,2:10.0,4:16.3,5:42.9}.items():
+                wc.column_dimensions[get_column_letter(cn)].width=w
+
+            _pb(90,"Guardando...")
+            tmp=_tmp.NamedTemporaryFile(suffix=".xlsx",delete=False,prefix="DEPOSITOS_BANCARIOS_")
+            wb_o.save(tmp.name); tmp.close()
+            self._dep_wb=wb_o; self._dep_resultado=tmp.name
+            from datetime import datetime as _dt
+            mes=_dt.now().strftime("%Y-%m")
+            self._dep_wb_name=f"DEPOSITOS BANCARIOS {mes}.xlsx"
+            self._dep_wb_dir=_os.path.expanduser("~\\Desktop")
+            _pb(100,"¡Listo!")
+
+            total_g=sum(r["monto"] for r in todos_ok)
+            bbva_n=sum(1 for r in todos_ok if r["banco"]=="BBVA")
+            bnrt_n=sum(1 for r in todos_ok if r["banco"]=="BANORTE")
+            inbu_n=sum(1 for r in todos_ok if r["banco"]=="INBURSA")
+            res=(f"  BBVA:{bbva_n}  Inbursa:{inbu_n}  Banorte:{bnrt_n}  "
+                 f"Total:{len(todos_ok)} movs  ${total_g:,.2f}")
+            self.after(0,self._dep_lbl_resumen.config,{"text":res})
+            self.after(0,self._dep_cargar_visor,reg_s,COL_ABONO_IDX,CARGO_CTA)
+            self.after(0,self._dep_lbl_arch.config,{"text":self._dep_wb_name})
+            self.after(0,self._dep_btn_abrir.config,{"state":"normal"})
+            self.after(0,self._dep_btn_guardar.config,{"state":"normal"})
+            _log(f"✅ Listo — {len(todos_ok)} movimientos | Total: ${total_g:,.2f}")
+            if todos_nc: _log(f"⚠  {len(todos_nc)} movimientos no clasificados (omitidos)")
+
+        except Exception as exc:
+            import traceback as _tb
+            _log(f"Error: {exc}", True)
+            _log(_tb.format_exc(), True)
+        finally:
+            self.after(0, lambda: self._dep_btn_gen.config(state="normal"))
+            self.after(500, self._dep_pb_frame.grid_remove)
+
+    def _dep_cargar_visor(self, registros, col_abono_idx, cargo_cta):
+        for item in self._dep_tree.get_children():
+            self._dep_tree.delete(item)
+        TAG_MAP = {
+            "BBVA":    ("bbva",    "bbva_alt"),
+            "INBURSA": ("inbu",    "inbu_alt"),
+            "BANORTE": ("bnrt",    "bnrt_alt"),
+        }
+        cnt = {"BBVA": 0, "INBURSA": 0, "BANORTE": 0}
+        for r in registros:
+            banco = r["banco"]
+            cnt[banco] += 1
+            t1, t2 = TAG_MAP[banco]
+            tag = t1 if cnt[banco] % 2 == 1 else t2
+            fecha_s = r["fecha"].strftime("%d/%m/%Y") if hasattr(r["fecha"],"strftime") else str(r["fecha"])
+            ab = col_abono_idx.get(r["col_abono"], {})
+            ab_nom = ab.get("nombre","")[:30]
+            self._dep_tree.insert("","end", values=(
+                fecha_s, banco, r["desc"][:55],
+                cargo_cta.get(banco,""), ab_nom,
+                f"${r['monto']:,.2f}"
+            ), tags=(tag,))
+
+    def _dep_abrir(self):
+        ruta = getattr(self, "_dep_resultado", None)
+        if ruta and os.path.exists(ruta):
+            import subprocess
+            try: subprocess.Popen(["start","",ruta], shell=True)
+            except Exception: pass
+
+    def _dep_guardar_como(self):
+        wb = getattr(self, "_dep_wb", None)
+        if wb is None:
+            messagebox.showwarning("Sin datos","Primero genera la póliza.",parent=self)
+            return
+        self.focus_force(); self.update()
+        ruta = filedialog.asksaveasfilename(
+            parent=self,
+            title="Guardar póliza de depósitos como...",
+            initialdir=getattr(self,"_dep_wb_dir",os.getcwd()),
+            initialfile=getattr(self,"_dep_wb_name","DEPOSITOS BANCARIOS.xlsx"),
+            defaultextension=".xlsx",
+            filetypes=[("Excel","*.xlsx"),("Todos","*.*")],
+        )
+        if not ruta: return
+        try:
+            wb.save(ruta)
+            self._dep_resultado=ruta
+            self._dep_wb_dir=os.path.dirname(ruta)
+            self._dep_wb_name=os.path.basename(ruta)
+            self._dep_lbl_arch.config(text=os.path.basename(ruta))
+            self._dep_btn_guardar.config(state="disabled")
+            messagebox.showinfo("Guardado",f"Archivo guardado en:\n{ruta}",parent=self)
+        except Exception as e:
+            messagebox.showerror("Error al guardar",f"No se pudo guardar:\n{e}",parent=self)
+
 
 class App(TkinterDnD.Tk if _DND_OK else tk.Tk):
     _CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auxiliar_config.json")

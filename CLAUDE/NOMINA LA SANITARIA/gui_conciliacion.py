@@ -9968,9 +9968,10 @@ class WorkspaceWindow(tk.Toplevel):
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
 
-        self._dep_ruta_bbva    = tk.StringVar(value="")
-        self._dep_ruta_banorte = tk.StringVar(value="")
-        self._dep_ruta_inbursa = tk.StringVar(value="")
+        self._dep_ruta_bbva       = tk.StringVar(value="")
+        self._dep_ruta_banorte    = tk.StringVar(value="")
+        self._dep_ruta_inbursa    = tk.StringVar(value="")
+        self._dep_ruta_plantilla  = tk.StringVar(value="")
         self._dep_wb           = None
         self._dep_resultado    = None
         self._dep_wb_name      = ""
@@ -10012,6 +10013,22 @@ class WorkspaceWindow(tk.Toplevel):
             ttk.Button(fsel, text="📂", width=3,
                        command=cmd).grid(row=0, column=c0+2, padx=(0, 4))
 
+        # Selector plantilla
+        fsel.columnconfigure(1, weight=1)  # ya estaba, reforzar expansión col 1
+        tk.Label(fsel, text="📋 PLANTILLA DE DEPOSITOS:",
+                 bg=COLOR_FONDO, fg=COLOR_TEXTO,
+                 font=("Segoe UI", 9, "bold")).grid(
+                 row=1, column=0, sticky="w", padx=(0, 4), pady=(6, 0))
+        self._dep_lbl_plantilla = tk.Label(fsel, text="Sin seleccionar",
+            bg=COLOR_BLANCO, fg="#999999", font=("Segoe UI", 9),
+            relief="sunken", padx=6, pady=2, cursor="hand2")
+        self._dep_lbl_plantilla.grid(row=1, column=1, columnspan=7,
+            sticky="ew", padx=(0, 4), pady=(6, 0))
+        self._dep_lbl_plantilla.bind("<Button-1>", lambda e: self._dep_elegir_plantilla())
+        ttk.Button(fsel, text="📂", width=3,
+                   command=self._dep_elegir_plantilla).grid(
+                   row=1, column=8, padx=(0, 4), pady=(6, 0))
+
         # Botón generar
         btn_row = tk.Frame(ctrl, bg=COLOR_FONDO)
         btn_row.grid(row=2, column=0, sticky="ew", padx=16, pady=(4, 4))
@@ -10050,6 +10067,24 @@ class WorkspaceWindow(tk.Toplevel):
         self._dep_btn_abrir = ttk.Button(tb, text="📂 Abrir en Excel",
             command=self._dep_abrir, state="disabled")
         self._dep_btn_abrir.pack(side="right", padx=6, pady=3)
+
+        # Sección "Estados de cuenta marcados"
+        self._dep_marc_frame = tk.Frame(ctrl, bg="#E8F5E9",
+            highlightbackground="#A5D6A7", highlightthickness=1)
+        self._dep_marc_frame.grid(row=5, column=0, sticky="ew", padx=16, pady=(0, 6))
+        self._dep_marc_frame.grid_remove()
+        tk.Label(self._dep_marc_frame,
+                 text="  🗸 Estados de cuenta marcados  —  filas incluidas en la póliza",
+                 bg="#E8F5E9", fg="#1B5E20",
+                 font=("Segoe UI", 8, "bold")).pack(side="left", pady=4, padx=(4, 8))
+        self._dep_marc_btns = {}
+        for _bco, _fg in [("BBVA","#1E40AF"),("BANORTE","#991B1B"),("INBURSA","#166534")]:
+            _btn = ttk.Button(self._dep_marc_frame,
+                text=f"💾 {_bco}",
+                command=lambda b=_bco: self._dep_guardar_marcado(b),
+                state="disabled")
+            _btn.pack(side="left", padx=4, pady=4)
+            self._dep_marc_btns[_bco] = _btn
 
         # ── Área de trabajo ─────────────────────────────────────────────────────
         ttk.Separator(outer, orient="horizontal").grid(row=0, column=0, sticky="sew")
@@ -10133,6 +10168,15 @@ class WorkspaceWindow(tk.Toplevel):
             self._dep_ruta_inbursa.set(ruta)
             self._dep_lbl_inbursa.config(text=os.path.basename(ruta), fg="#BF360C")
 
+    def _dep_elegir_plantilla(self):
+        self.focus_force(); self.update()
+        ruta = filedialog.askopenfilename(parent=self,
+            title="Plantilla de Depósitos (.xlsx)",
+            filetypes=[("Excel", "*.xlsx *.xlsm"), ("Todos", "*.*")])
+        if ruta:
+            self._dep_ruta_plantilla.set(ruta)
+            self._dep_lbl_plantilla.config(text=os.path.basename(ruta), fg="#1565C0")
+
     def _dep_generar(self):
         archivos = {}
         if self._dep_ruta_bbva.get():    archivos["BBVA"]    = self._dep_ruta_bbva.get()
@@ -10146,9 +10190,10 @@ class WorkspaceWindow(tk.Toplevel):
         self._dep_btn_abrir.config(state="disabled")
         self._dep_btn_guardar.config(state="disabled")
         self._dep_pb_frame.grid()
-        self._dep_pb.reset()
+        self._pb_iniciar(self._dep_pb, self._dep_pb_lbl)
         self._dep_pb_lbl.config(text="0%")
         self._dep_lbl_resumen.config(text="")
+        self._dep_marc_frame.grid_remove()
         for item in self._dep_tree.get_children():
             self._dep_tree.delete(item)
         import threading
@@ -10168,13 +10213,13 @@ class WorkspaceWindow(tk.Toplevel):
 
         def _log(msg, err=False): self.after(0, self._log, msg, err)
         def _pb(v, lbl=""):
-            self.after(0, self._dep_pb.set_value, v)
+            self.after(0, self._dep_pb.__setitem__, "value", v)
             self.after(0, self._dep_pb_lbl.config, {"text": lbl or f"{v}%"})
 
         CARGOS = {
             "BANORTE": ("102-01-0001-0001", "Banorte"),
-            "BBVA":    ("102-01-0001-0003", "BBVA"),
-            "INBURSA": ("102-01-0001-0002", "INBURSA"),
+            "BBVA":    ("102-01-0001-0002", "BBVA"),
+            "INBURSA": ("102-01-0001-0005", "INBURSA"),
         }
         ABONOS = [
             {"col":12,"cuenta":"106-01-0001-0010","nombre":"DEPOSITO EN TRANSITO T AMERICAN EXPRESS"},
@@ -10188,9 +10233,16 @@ class WorkspaceWindow(tk.Toplevel):
         ]
         COL_ABONO_IDX = {a["col"]: a for a in ABONOS}
         CARGO_COL = {"BBVA": 9, "BANORTE": 8, "INBURSA": 10}
-        CARGO_CTA = {"BBVA": "102-01-0001-0003", "BANORTE": "102-01-0001-0001", "INBURSA": "102-01-0001-0002"}
+        CARGO_CTA = {"BBVA": "102-01-0001-0002", "BANORTE": "102-01-0001-0001", "INBURSA": "102-01-0001-0005"}
 
-        def _clf_bbva(desc, monto): return 18
+        def _clf_bbva(desc, monto):
+            d = desc.upper()
+            if "AMEX" in d: return 12
+            if ("VENTAS PUNTOS TDC" in d or "VENTAS CREDITO" in d
+                    or "TERMINALES PUNTO DE VENTA" in d
+                    or "VENTAS TDC INTER" in d or "TDC INTER" in d): return 18
+            if "DEPOSITO EN EFECTIVO" in d or "DEP.EFECTIVO" in d or "DEP EN EFECTIVO" in d: return 15
+            return None
         def _clf_inbursa(desc, monto):
             return 19 if "INBURED" in desc.upper() else None
         def _clf_banorte(desc, monto):
@@ -10206,7 +10258,14 @@ class WorkspaceWindow(tk.Toplevel):
                     "SANTANDER" in d and "SPEI RECIBIDO" in d): return 13
             if "EDENRED" in d or "HSBCPGMD" in d or "BCO:0021" in d: return 14
             if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d: return 15
-            if "07277262C" in d or "07277262D" in d: return 16
+            if "07277262C" in d or "07277262D" in d or (
+                    "SERV" in d and _re.search(r'\d{5,}[CD]', d)):
+                if "AMERICAN" in d: return 12
+                if "EFECTIVALE" in d: return 13
+                if "EDENRED" in d or "TICKET" in d: return 14
+                if "SHELL" in d or "SMARTBT" in d: return 17
+                if "INBURSA" in d: return 19
+                return 16
             return None
 
         CLSF = {"BBVA": _clf_bbva, "BANORTE": _clf_banorte, "INBURSA": _clf_inbursa}
@@ -10222,7 +10281,7 @@ class WorkspaceWindow(tk.Toplevel):
                     ini = i + 1; break
             ok, nc = [], []
             fn = CLSF[banco]
-            for r in rows[ini:]:
+            for _fi, r in enumerate(rows[ini:], start=ini+1):
                 if not r or r[0] is None: continue
                 fecha = r[0]
                 if not hasattr(fecha, "day"): continue
@@ -10235,7 +10294,8 @@ class WorkspaceWindow(tk.Toplevel):
                 else:
                     ok.append({"fecha":fecha,"banco":banco,"ref":f"DEPOSITOS {banco}",
                                "desc":desc,"monto":monto,
-                               "col_cargo":CARGO_COL[banco],"col_abono":col_ab})
+                               "col_cargo":CARGO_COL[banco],"col_abono":col_ab,
+                               "fila_excel":_fi})
             return ok, nc
 
         try:
@@ -10264,9 +10324,9 @@ class WorkspaceWindow(tk.Toplevel):
             F_ABONO=PatternFill("solid",fgColor="FFE699"); F_GRAY2=PatternFill("solid",fgColor="BFBFBF")
             F_TIPO=PatternFill("solid",fgColor="E2EFDA");  F_NONE=PatternFill(fill_type=None)
             FILLS_BANCO={
-                "BBVA":   (PatternFill("solid",fgColor="DDEEFF"),PatternFill("solid",fgColor="C5DCF5")),
-                "INBURSA":(PatternFill("solid",fgColor="FFF0DC"),PatternFill("solid",fgColor="FFE0B5")),
-                "BANORTE":(PatternFill("solid",fgColor="FFE4E4"),PatternFill("solid",fgColor="FFCCCC")),
+                "BBVA":   (PatternFill("solid",fgColor="EFF6FF"),PatternFill("solid",fgColor="DBEAFE")),
+                "INBURSA":(PatternFill("solid",fgColor="F0FDF4"),PatternFill("solid",fgColor="DCFCE7")),
+                "BANORTE":(PatternFill("solid",fgColor="FFF1F2"),PatternFill("solid",fgColor="FFE4E6")),
             }
             FMT_N="#,##0.00"; FMT_D="DD/MM/YYYY"
             AC=Alignment(horizontal="center",vertical="center")
@@ -10348,6 +10408,48 @@ class WorkspaceWindow(tk.Toplevel):
             self._dep_wb_dir=_os.path.expanduser("~\\Desktop")
             _pb(100,"¡Listo!")
 
+            # ── Generar estados de cuenta marcados ──────────────────────────────
+            try:
+                from openpyxl.styles import Border as _Bdr, Side as _Sd
+                _BANK_STYLE = {
+                    "BBVA":    ("A9C9EF","004481"),
+                    "BANORTE": ("FBBDBD","C8102E"),
+                    "INBURSA": ("C8E6C9","1B5E20"),
+                }
+                self._dep_marcados = {}
+                _log("Marcando estados de cuenta...")
+                for banco, ruta in archivos.items():
+                    filas = {r["fila_excel"] for r in todos_ok if r["banco"]==banco}
+                    if not filas: continue
+                    fondo, ctxt = _BANK_STYLE.get(banco, ("CCCCCC","333333"))
+                    _fill = PatternFill("solid", fgColor=fondo)
+                    _s = _Sd(style="thin", color=ctxt)
+                    _brd = _Bdr(left=_s, right=_s, top=_s, bottom=_s)
+                    wb_m = openpyxl.load_workbook(ruta)
+                    ws_m = wb_m.active
+                    for fila in sorted(filas):
+                        for col in range(1, ws_m.max_column+1):
+                            cell = ws_m.cell(row=fila, column=col)
+                            cell.fill = _fill
+                            cell.border = _brd
+                            old_f = cell.font
+                            cell.font = Font(
+                                name=old_f.name or "Calibri",
+                                size=old_f.size or 11,
+                                bold=True,
+                                color=ctxt,
+                                italic=old_f.italic,
+                            )
+                    tmp_m = _tmp.NamedTemporaryFile(
+                        suffix=".xlsx", delete=False,
+                        prefix=f"MARCADO_{banco}_")
+                    wb_m.save(tmp_m.name); tmp_m.close()
+                    self._dep_marcados[banco] = (tmp_m.name, len(filas))
+                    _log(f"  Marcado {banco}: {len(filas)} filas")
+                self.after(0, self._dep_mostrar_marcados)
+            except Exception as _em:
+                _log(f"⚠ No se pudo generar marcados: {_em}")
+
             total_g=sum(r["monto"] for r in todos_ok)
             bbva_n=sum(1 for r in todos_ok if r["banco"]=="BBVA")
             bnrt_n=sum(1 for r in todos_ok if r["banco"]=="BANORTE")
@@ -10425,6 +10527,57 @@ class WorkspaceWindow(tk.Toplevel):
             messagebox.showinfo("Guardado",f"Archivo guardado en:\n{ruta}",parent=self)
         except Exception as e:
             messagebox.showerror("Error al guardar",f"No se pudo guardar:\n{e}",parent=self)
+
+    def _dep_mostrar_marcados(self):
+        """Muestra la sección de estados de cuenta marcados con botones por banco."""
+        marcados = getattr(self, "_dep_marcados", {})
+        # Limpiar botones previos y ocultar sección
+        for w in list(self._dep_marc_frame.winfo_children()):
+            if isinstance(w, ttk.Button):
+                w.destroy()
+        if not marcados:
+            self._dep_marc_frame.grid_remove()
+            return
+        # Redibujar botones por banco disponible
+        _COLORS = {"BBVA":"🟦","BANORTE":"🟥","INBURSA":"🟩"}
+        for banco, (ruta, n) in marcados.items():
+            ico = _COLORS.get(banco, "💾")
+            btn = ttk.Button(
+                self._dep_marc_frame,
+                text=f"{ico} Guardar {banco} marcado ({n} movs)",
+                command=lambda b=banco, r=ruta, c=n: self._dep_guardar_marcado(b, r, c),
+            )
+            btn.pack(side="left", padx=4, pady=4)
+        self._dep_marc_btns = {}  # reset dict (ya no se usa directamente)
+        self._dep_marc_frame.grid()
+
+    def _dep_guardar_marcado(self, banco, ruta_tmp, n_filas):
+        """Abre diálogo para guardar el estado de cuenta marcado de un banco."""
+        import shutil
+        from datetime import datetime as _dt
+        mes = _dt.now().strftime("%Y-%m")
+        nombre = f"ESTADO {banco} marcado {mes}.xlsx"
+        self.focus_force(); self.update()
+        destino = filedialog.asksaveasfilename(
+            parent=self,
+            title=f"Guardar estado de cuenta {banco} marcado...",
+            initialdir=getattr(self, "_dep_wb_dir", os.getcwd()),
+            initialfile=nombre,
+            defaultextension=".xlsx",
+            filetypes=[("Excel","*.xlsx"),("Todos","*.*")],
+        )
+        if not destino:
+            return
+        try:
+            shutil.copy2(ruta_tmp, destino)
+            messagebox.showinfo(
+                "Guardado",
+                f"Estado de cuenta {banco} marcado guardado en:\n{destino}\n"
+                f"({n_filas} movimientos incluidos en la póliza resaltados)",
+                parent=self,
+            )
+        except Exception as e:
+            messagebox.showerror("Error al guardar", f"No se pudo guardar:\n{e}", parent=self)
 
 
 class App(TkinterDnD.Tk if _DND_OK else tk.Tk):
@@ -10585,6 +10738,102 @@ class App(TkinterDnD.Tk if _DND_OK else tk.Tk):
         self.lb_ws.delete(0, "end")
         for n in orden:
             if not n.startswith("_"):
+                self.lb_ws.insert("end", n)
+
+    def _guardar_modulos(self, nombre, mods):
+        import json as _j
+        self._cfg.setdefault(nombre, {})["modulos"] = mods
+        if "_orden" not in self._cfg:
+            self._cfg["_orden"] = [k for k in self._cfg if not k.startswith("_")]
+        try:
+            with open(self._CONFIG, "w", encoding="utf-8") as f:
+                _j.dump(self._cfg, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _abrir_seleccionada(self):
+        sel = self.lb_ws.curselection()
+        if not sel:
+            return
+        nombre = self.lb_ws.get(sel[0])
+        if nombre in self.workspaces and self.workspaces[nombre].winfo_exists():
+            self.workspaces[nombre].lift()
+            return
+        cfg_e = self._cfg.get(nombre, {})
+        ws = None
+        try:
+            ws = WorkspaceWindow(self, nombre=nombre,
+                                 modulos=cfg_e.get("modulos", []),
+                                 modulos_disponibles=cfg_e.get("modulos_disponibles", None),
+                                 on_modulos_change=lambda _ws_nombre, mods: self._guardar_modulos(nombre, mods))
+        except Exception as _e:
+            import traceback as _tb
+            import os as _os
+            _log_path = _os.path.join(_os.path.dirname(__file__), "debug_launcher.txt")
+            try:
+                with open(_log_path, "a", encoding="utf-8") as _lf:
+                    _lf.write(f"ERROR abriendo workspace '{nombre}':\n{_tb.format_exc()}\n")
+            except Exception:
+                pass
+            # Destruir ventana parcial si quedó creada
+            if ws is not None:
+                try:
+                    ws.destroy()
+                except Exception:
+                    pass
+            from tkinter import messagebox as _mb
+            _mb.showerror("Error", f"No se pudo abrir '{nombre}':\n{_e}", parent=self._launcher_top)
+            return
+        self.workspaces[nombre] = ws
+        ws.protocol("WM_DELETE_WINDOW", lambda n=nombre: self._cerrar_workspace(n))
+        # Log de apertura exitosa
+        import os as _os, time as _t
+        try:
+            _log_path = _os.path.join(_os.path.dirname(__file__), "debug_launcher.txt")
+            with open(_log_path, "a", encoding="utf-8") as _lf:
+                _lf.write(f"{_t.strftime('%H:%M:%S')} workspace abierto OK: '{nombre}'\n")
+        except Exception:
+            pass
+        self._launcher_top.wm_attributes("-alpha", 0.0)   # ocultar launcher
+
+    def _cerrar_workspace(self, nombre):
+        if nombre in self.workspaces:
+            try:
+                self.workspaces[nombre].destroy()
+            except Exception:
+                pass
+            del self.workspaces[nombre]
+        abiertos = [w for w in self.workspaces.values() if w.winfo_exists()]
+        if not abiertos:
+            self._launcher_top.wm_attributes("-alpha", 1.0)
+            self._launcher_top.lift()
+            self._launcher_top.focus_force()
+
+    def _nueva_empresa(self):
+        dlg = tk.Toplevel(self._launcher_top)
+        dlg.title("Nueva empresa")
+        dlg.geometry("340x130")
+        dlg.resizable(False, False)
+        dlg.configure(bg=COLOR_FONDO)
+        dlg.transient(self._launcher_top)
+        dlg.grab_set()
+        ttk.Label(dlg, text="Nombre de la empresa:").pack(pady=(18, 4))
+        var = tk.StringVar()
+        ent = ttk.Entry(dlg, textvariable=var, width=32)
+        ent.pack(pady=4)
+        ent.focus_set()
+
+        def _ok():
+            n = var.get().strip()
+            if not n:
+                return
+            if n not in self._cfg:
+                self._cfg[n] = {"modulos": []}
+                if "_orden" not in self._cfg:
+                    self._cfg["_orden"] = []
+                if n not in self._cfg["_orden"]:
+                    self._cfg["_orden"].append(n)
+                self._guardar_modulos(n, [])
                 self.lb_ws.insert("end", n)
 
     def _guardar_modulos(self, nombre, mods):

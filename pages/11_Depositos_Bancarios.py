@@ -62,8 +62,21 @@ def _hora_citi(desc: str) -> int:
 
 
 def clasificar_bbva(desc: str, monto: float):
-    """BBVA: todos los depósitos → BBVA transit (col 18)."""
-    return 18
+    """
+    BBVA: solo incluye depósitos de terminales punto de venta.
+      VENTA NAL. AMEX                    → col 12 (AMEX transit)
+      VENTAS CREDITO / TERMINALES PV     → col 18 (BBVA transit)
+      VENTAS TDC INTER                   → col 18 (BBVA transit)
+      Cualquier otra descripción         → None  (no clasificado)
+    """
+    d = desc.upper()
+    if "VENTA NAL. AMEX" in d or "VENTA NAL AMEX" in d:
+        return 12
+    if "VENTAS CREDITO" in d or "TERMINALES PUNTO DE VENTA" in d:
+        return 18
+    if "VENTAS TDC INTER" in d or "TDC INTER" in d:
+        return 18
+    return None
 
 
 def clasificar_inbursa(desc: str, monto: float):

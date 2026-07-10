@@ -584,4 +584,3 @@ if st.session_state.dep_result:
 
 else:
     st.info("⬆️ Sube al menos un archivo de depósito para continuar.")
-nullnullnullnullnullnullnullnullnullnullnull

@@ -360,7 +360,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
                  font=fnt(bold=True, color=BANCO_COLOR[r["banco"]]),
                  fill=fill_row, align=A_CTR, border=BORDER)
         dat(2, r["fecha"], num_fmt=FMT_DATE)
-        dat(3, r["desc"],  align=A_LEFT)
+        dat(3, r["ref"],   align=A_LEFT)
         dat(4, r["ref"],   align=A_LEFT)
         for col in [5, 6, 7, 8]: dat(col, None)
         dat(r["col_cargo"] + 1, monto, num_fmt=FMT_NUM, align=A_RIGHT)

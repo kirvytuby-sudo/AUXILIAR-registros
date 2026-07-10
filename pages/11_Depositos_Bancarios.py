@@ -233,28 +233,28 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     FONT_NAME = "Aptos Narrow"
     FONT_SIZE = 11
 
-    F_ADMIN   = PatternFill("solid", fgColor="0A1628")
-    F_H_BBVA  = PatternFill("solid", fgColor="004481")
-    F_H_BNT   = PatternFill("solid", fgColor="C8102E")
-    F_H_INB   = PatternFill("solid", fgColor="006341")
-    F_H_TCARG = PatternFill("solid", fgColor="FF6900")
-    F_H_AMEX  = PatternFill("solid", fgColor="1A1F71")
-    F_H_EFEC  = PatternFill("solid", fgColor="E31837")
-    F_H_EDEN  = PatternFill("solid", fgColor="FF4713")
-    F_H_CAJA  = PatternFill("solid", fgColor="FFB300")
-    F_H_BNTTR = PatternFill("solid", fgColor="7A0019")
-    F_H_SHLL  = PatternFill("solid", fgColor="FBCE07")
-    F_H_BBVAT = PatternFill("solid", fgColor="072146")
-    F_H_INBTR = PatternFill("solid", fgColor="004C2F")
-    F_H_TABON = PatternFill("solid", fgColor="1D6F42")
-    F_H_DIFF  = PatternFill("solid", fgColor="5B2C6F")
-    F_GRAY2   = PatternFill("solid", fgColor="1C2833")
-    F_BBVA_1  = PatternFill("solid", fgColor="D6E4F7")
-    F_BBVA_2  = PatternFill("solid", fgColor="A9C9EF")
+    F_ADMIN   = PatternFill("solid", fgColor="4B5563")
+    F_H_BBVA  = PatternFill("solid", fgColor="2563EB")
+    F_H_BNT   = PatternFill("solid", fgColor="DC2626")
+    F_H_INB   = PatternFill("solid", fgColor="059669")
+    F_H_TCARG = PatternFill("solid", fgColor="D97706")
+    F_H_AMEX  = PatternFill("solid", fgColor="4F46E5")
+    F_H_EFEC  = PatternFill("solid", fgColor="E11D48")
+    F_H_EDEN  = PatternFill("solid", fgColor="EA580C")
+    F_H_CAJA  = PatternFill("solid", fgColor="F59E0B")
+    F_H_BNTTR = PatternFill("solid", fgColor="B91C1C")
+    F_H_SHLL  = PatternFill("solid", fgColor="CA8A04")
+    F_H_BBVAT = PatternFill("solid", fgColor="1D4ED8")
+    F_H_INBTR = PatternFill("solid", fgColor="047857")
+    F_H_TABON = PatternFill("solid", fgColor="15803D")
+    F_H_DIFF  = PatternFill("solid", fgColor="7C3AED")
+    F_GRAY2   = PatternFill("solid", fgColor="374151")
+    F_BBVA_1  = PatternFill("solid", fgColor="EFF6FF")
+    F_BBVA_2  = PatternFill("solid", fgColor="DBEAFE")
     F_BNT_1   = PatternFill("solid", fgColor="FDDEDE")
-    F_BNT_2   = PatternFill("solid", fgColor="FBBDBD")
-    F_INB_1   = PatternFill("solid", fgColor="E8F6EE")
-    F_INB_2   = PatternFill("solid", fgColor="C6E9D5")
+    F_BNT_2   = PatternFill("solid", fgColor="FFE4E6")
+    F_INB_1   = PatternFill("solid", fgColor="F0FDF4")
+    F_INB_2   = PatternFill("solid", fgColor="DCFCE7")
     F_NONE    = PatternFill(fill_type=None)
 
     _S = Side(style="thin", color="999999")
@@ -340,7 +340,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         "INBURSA": (F_INB_1,  F_INB_2),
         "BANORTE": (F_BNT_1,  F_BNT_2),
     }
-    BANCO_COLOR = {"BBVA": "004481", "BANORTE": "C8102E", "INBURSA": "006341"}
+    BANCO_COLOR = {"BBVA": "2563EB", "BANORTE": "DC2626", "INBURSA": "059669"}
     BANCO_ABREV = {"BBVA": "BBV", "BANORTE": "BNT", "INBURSA": "INB"}
 
     for fila_num, r in enumerate(registros_sorted, start=4):
@@ -372,7 +372,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         col_U = get_column_letter(21)
         c_diff = ws.cell(row=fila_num, column=22,
                          value=f"={col_L}{fila_num}-{col_U}{fila_num}")
-        c_diff.font   = fnt(bold=True, color="5B2C6F")
+        c_diff.font   = fnt(bold=True, color="7C3AED")
         c_diff.fill   = fill_row
         c_diff.border = BORDER
         c_diff.alignment  = A_RIGHT
@@ -394,10 +394,10 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         wc = wb.create_sheet("CUENTAS")
         fn_th  = fnt(bold=True, color="FFFFFF")
         fn_row = fnt(color="000000")
-        F_TH_C = PatternFill("solid", fgColor="0A1628")
-        F_TH_A = PatternFill("solid", fgColor="1D6F42")
-        F_ROW1 = PatternFill("solid", fgColor="D6E4F7")
-        F_ROW2 = PatternFill("solid", fgColor="E8F6EE")
+        F_TH_C = PatternFill("solid", fgColor="4B5563")
+        F_TH_A = PatternFill("solid", fgColor="15803D")
+        F_ROW1 = PatternFill("solid", fgColor="EFF6FF")
+        F_ROW2 = PatternFill("solid", fgColor="F0FDF4")
         A_L  = Alignment(horizontal="left",   vertical="center")
         A_C2 = Alignment(horizontal="center", vertical="center")
 

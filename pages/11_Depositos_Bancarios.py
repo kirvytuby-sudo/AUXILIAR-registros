@@ -242,11 +242,13 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     # Hoja POLIZA
     # ══════════════════════════════════════════════════════════════════════════
     if plantilla is not None:
-        # Cargar la plantilla y limpiar filas de datos (fila 4 en adelante)
+        # Cargar la plantilla y limpiar TODAS las filas (1 en adelante).
+        # La plantilla solo tiene 11 cols (TOTAL CARGOS=col9, TOTAL ABONOS=col10),
+        # pero el reporte necesita 22 cols con cuentas separadas → regenerar cabeceras.
         wb = openpyxl.load_workbook(plantilla)
         ws = wb["POLIZA"] if "POLIZA" in wb.sheetnames else wb.active
         max_row = ws.max_row
-        for row_idx in range(4, max_row + 1):
+        for row_idx in range(1, max_row + 1):
             for col_idx in range(1, ws.max_column + 1):
                 ws.cell(row=row_idx, column=col_idx).value = None
     else:
@@ -254,59 +256,59 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         ws = wb.active
         ws.title = "POLIZA"
 
-        # ── FILA 1: índices de columna (0-20) ──
-        for pol_idx in range(21):
-            set_cell(ws, 1, pol_idx + 1,
-                     value=pol_idx,
-                     font=fnt(color="000000"),
-                     fill=F_NONE, align=A_CTR)
+    # ── FILA 1: índices de columna (0-20) ── [siempre se escribe]
+    for pol_idx in range(21):
+        set_cell(ws, 1, pol_idx + 1,
+                 value=pol_idx,
+                 font=fnt(color="000000"),
+                 fill=F_NONE, align=A_CTR)
 
-        # ── FILA 2: números de cuenta (solo en cols de banco y tránsito) ──
-        for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
-            set_cell(ws, 2, pol_idx + 1,
-                     value=CARGOS[banco][0],
-                     font=fnt(color="000000"),
-                     fill=F_GRAY2, align=A_CTR)
-        for a in ABONOS:
-            set_cell(ws, 2, a["col"] + 1,
-                     value=a["cuenta"],
-                     font=fnt(color="000000"),
-                     fill=F_GRAY2, align=A_CTR)
+    # ── FILA 2: números de cuenta (cols de banco y tránsito) ──
+    for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
+        set_cell(ws, 2, pol_idx + 1,
+                 value=CARGOS[banco][0],
+                 font=fnt(color="000000"),
+                 fill=F_GRAY2, align=A_CTR)
+    for a in ABONOS:
+        set_cell(ws, 2, a["col"] + 1,
+                 value=a["cuenta"],
+                 font=fnt(color="000000"),
+                 fill=F_GRAY2, align=A_CTR)
 
-        # ── FILA 3: etiquetas de columna con colores del template ──
-        headers_admin = [
-            (1,  "TIPO DE POLIZA", F_TIPO,  fnt(color="000000")),
-            (2,  "Fecha",          F_FECHA, fnt(bold=True, color="FFFFFF")),
-            (3,  "REFERENCIA",     F_REF,   fnt(bold=True, color="FFFFFF")),
-            (4,  "CONCEPTO",       F_CONC,  fnt(bold=True, color="FFFFFF")),
-            (5,  "ERROR",          F_ERROR, fnt(bold=True, color="FFFFFF")),
-            (6,  "UIDD",           F_ADMIN, fnt(bold=True, color="FFFFFF")),
-            (7,  "NUM POLIZA",     F_ADMIN, fnt(bold=True, color="FFFFFF")),
-            (8,  "PROCESADO",      F_ADMIN, fnt(bold=True, color="FFFFFF")),
-        ]
-        for col, lbl, fill, font in headers_admin:
-            set_cell(ws, 3, col, value=lbl, font=font, fill=fill, align=A_CTR)
+    # ── FILA 3: etiquetas de columna con colores del template ──
+    headers_admin = [
+        (1,  "TIPO DE POLIZA", F_TIPO,  fnt(color="000000")),
+        (2,  "Fecha",          F_FECHA, fnt(bold=True, color="FFFFFF")),
+        (3,  "REFERENCIA",     F_REF,   fnt(bold=True, color="FFFFFF")),
+        (4,  "CONCEPTO",       F_CONC,  fnt(bold=True, color="FFFFFF")),
+        (5,  "ERROR",          F_ERROR, fnt(bold=True, color="FFFFFF")),
+        (6,  "UIDD",           F_ADMIN, fnt(bold=True, color="FFFFFF")),
+        (7,  "NUM POLIZA",     F_ADMIN, fnt(bold=True, color="FFFFFF")),
+        (8,  "PROCESADO",      F_ADMIN, fnt(bold=True, color="FFFFFF")),
+    ]
+    for col, lbl, fill, font in headers_admin:
+        set_cell(ws, 3, col, value=lbl, font=font, fill=fill, align=A_CTR)
 
-        for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
-            set_cell(ws, 3, pol_idx + 1,
-                     value=CARGOS[banco][1].strip(),
-                     font=fnt(bold=True, color="FFFFFF"),
-                     fill=F_BANCO, align=A_CTR)
+    for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
+        set_cell(ws, 3, pol_idx + 1,
+                 value=CARGOS[banco][1].strip(),
+                 font=fnt(bold=True, color="FFFFFF"),
+                 fill=F_BANCO, align=A_CTR)
 
-        set_cell(ws, 3, 12, value="TOTAL CARGOS",
-                 font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
+    set_cell(ws, 3, 12, value="TOTAL CARGOS",
+             font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
 
-        for a in ABONOS:
-            set_cell(ws, 3, a["col"] + 1,
-                     value=a["nombre"],
-                     font=fnt(bold=True, color="000000"),
-                     fill=F_ABONO, align=A_CTR_W)
+    for a in ABONOS:
+        set_cell(ws, 3, a["col"] + 1,
+                 value=a["nombre"],
+                 font=fnt(bold=True, color="000000"),
+                 fill=F_ABONO, align=A_CTR_W)
 
-        set_cell(ws, 3, 21, value="TOTAL ABONOS",
-                 font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
+    set_cell(ws, 3, 21, value="TOTAL ABONOS",
+             font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
 
-        set_cell(ws, 3, 22, value="DIFERENCIA",
-                 font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
+    set_cell(ws, 3, 22, value="DIFERENCIA",
+             font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
 
     # ── FILAS DE DATOS (desde fila 4) ──
     # Orden: BBVA → INBURSA → BANORTE, y dentro de cada banco por fecha

@@ -9968,9 +9968,10 @@ class WorkspaceWindow(tk.Toplevel):
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
 
-        self._dep_ruta_bbva    = tk.StringVar(value="")
-        self._dep_ruta_banorte = tk.StringVar(value="")
-        self._dep_ruta_inbursa = tk.StringVar(value="")
+        self._dep_ruta_bbva       = tk.StringVar(value="")
+        self._dep_ruta_banorte    = tk.StringVar(value="")
+        self._dep_ruta_inbursa    = tk.StringVar(value="")
+        self._dep_ruta_plantilla  = tk.StringVar(value="")
         self._dep_wb           = None
         self._dep_resultado    = None
         self._dep_wb_name      = ""
@@ -10011,6 +10012,22 @@ class WorkspaceWindow(tk.Toplevel):
             setattr(self, lbl_attr, lbl)
             ttk.Button(fsel, text="📂", width=3,
                        command=cmd).grid(row=0, column=c0+2, padx=(0, 4))
+
+        # Selector plantilla
+        fsel.columnconfigure(1, weight=1)  # ya estaba, reforzar expansión col 1
+        tk.Label(fsel, text="📋 PLANTILLA DE DEPOSITOS:",
+                 bg=COLOR_FONDO, fg=COLOR_TEXTO,
+                 font=("Segoe UI", 9, "bold")).grid(
+                 row=1, column=0, sticky="w", padx=(0, 4), pady=(6, 0))
+        self._dep_lbl_plantilla = tk.Label(fsel, text="Sin seleccionar",
+            bg=COLOR_BLANCO, fg="#999999", font=("Segoe UI", 9),
+            relief="sunken", padx=6, pady=2, cursor="hand2")
+        self._dep_lbl_plantilla.grid(row=1, column=1, columnspan=7,
+            sticky="ew", padx=(0, 4), pady=(6, 0))
+        self._dep_lbl_plantilla.bind("<Button-1>", lambda e: self._dep_elegir_plantilla())
+        ttk.Button(fsel, text="📂", width=3,
+                   command=self._dep_elegir_plantilla).grid(
+                   row=1, column=8, padx=(0, 4), pady=(6, 0))
 
         # Botón generar
         btn_row = tk.Frame(ctrl, bg=COLOR_FONDO)
@@ -10133,6 +10150,15 @@ class WorkspaceWindow(tk.Toplevel):
             self._dep_ruta_inbursa.set(ruta)
             self._dep_lbl_inbursa.config(text=os.path.basename(ruta), fg="#BF360C")
 
+    def _dep_elegir_plantilla(self):
+        self.focus_force(); self.update()
+        ruta = filedialog.askopenfilename(parent=self,
+            title="Plantilla de Depósitos (.xlsx)",
+            filetypes=[("Excel", "*.xlsx *.xlsm"), ("Todos", "*.*")])
+        if ruta:
+            self._dep_ruta_plantilla.set(ruta)
+            self._dep_lbl_plantilla.config(text=os.path.basename(ruta), fg="#1565C0")
+
     def _dep_generar(self):
         archivos = {}
         if self._dep_ruta_bbva.get():    archivos["BBVA"]    = self._dep_ruta_bbva.get()
@@ -10190,7 +10216,12 @@ class WorkspaceWindow(tk.Toplevel):
         CARGO_COL = {"BBVA": 9, "BANORTE": 8, "INBURSA": 10}
         CARGO_CTA = {"BBVA": "102-01-0001-0003", "BANORTE": "102-01-0001-0001", "INBURSA": "102-01-0001-0002"}
 
-        def _clf_bbva(desc, monto): return 18
+        def _clf_bbva(desc, monto):
+            d = desc.upper()
+            if "VENTA NAL. AMEX" in d or "VENTA NAL AMEX" in d: return 12
+            if "VENTAS CREDITO" in d or "TERMINALES PUNTO DE VENTA" in d: return 18
+            if "VENTAS TDC INTER" in d or "TDC INTER" in d: return 18
+            return None
         def _clf_inbursa(desc, monto):
             return 19 if "INBURED" in desc.upper() else None
         def _clf_banorte(desc, monto):
@@ -10206,7 +10237,14 @@ class WorkspaceWindow(tk.Toplevel):
                     "SANTANDER" in d and "SPEI RECIBIDO" in d): return 13
             if "EDENRED" in d or "HSBCPGMD" in d or "BCO:0021" in d: return 14
             if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d: return 15
-            if "07277262C" in d or "07277262D" in d: return 16
+            if "07277262C" in d or "07277262D" in d or (
+                    "SERV" in d and _re.search(r'\d{5,}[CD]', d)):
+                if "AMERICAN" in d: return 12
+                if "EFECTIVALE" in d: return 13
+                if "EDENRED" in d or "TICKET" in d: return 14
+                if "SHELL" in d or "SMARTBT" in d: return 17
+                if "INBURSA" in d: return 19
+                return 16
             return None
 
         CLSF = {"BBVA": _clf_bbva, "BANORTE": _clf_banorte, "INBURSA": _clf_inbursa}

@@ -131,7 +131,7 @@ def clasificar_banorte(desc: str, monto: float):
         return 15
 
     # TPV Banorte (SERVICIOS FELUSA terminales C/D) + Servicios Río de la Plata
-    if "07277262C" in d or "07277262D" in d or "RIO DE LA PLATA" in d:
+    if "07277262C" in d or "07277262D" in d or ("SERV" in d and "RIO DE LA PLATA" in d):
         return 16
 
     # No clasificado

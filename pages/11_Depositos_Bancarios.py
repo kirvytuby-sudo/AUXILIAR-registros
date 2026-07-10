@@ -521,11 +521,16 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 st.divider()
 
+# ─── Inicializar session state ────────────────────────────────────────────────
+if "dep_result" not in st.session_state:
+    st.session_state.dep_result = None
+
+# ─── Botón Generar ────────────────────────────────────────────────────────────
 if st.button("⚙️ Generar Póliza", type="primary",
              disabled=not any([file_bbva, file_banorte, file_inbursa])):
 
     todos_ok, todos_nc = [], []
-    archivos_bytes = {}     # guarda bytes de cada banco para marcar después
+    archivos_bytes = {}
     progress = st.progress(0)
 
     archivos = [
@@ -536,8 +541,8 @@ if st.button("⚙️ Generar Póliza", type="primary",
 
     for i, (f, banco, ico) in enumerate(archivos):
         if f:
-            raw = f.read()               # leer bytes una sola vez
-            archivos_bytes[banco] = raw  # guardar para marcar después
+            raw = f.read()
+            archivos_bytes[banco] = raw
             with st.spinner(f"{ico} Leyendo {banco}..."):
                 try:
                     ok, nc = leer_banco(BytesIO(raw), banco)
@@ -550,80 +555,107 @@ if st.button("⚙️ Generar Póliza", type="primary",
         progress.progress((i + 1) / 3)
 
     if todos_ok:
-        import pandas as pd
-
-        # ── Resumen ──
-        st.subheader("📊 Resumen")
-        df_ok = pd.DataFrame(todos_ok)
-        total_general = df_ok["monto"].sum()
-
-        sc = st.columns(4)
-        for ci, (banco, ico) in enumerate([("BBVA","🟦"),("BANORTE","🟥"),("INBURSA","🟧")]):
-            sub = df_ok[df_ok["banco"] == banco]
-            sc[ci].metric(f"{ico} {banco}",
-                          f"${sub['monto'].sum():,.2f}",
-                          f"{len(sub)} mov.")
-        sc[3].metric("💰 TOTAL", f"${total_general:,.2f}", f"{len(df_ok)} mov.")
-
-        # ── Vista previa ──
-        st.subheader("📋 Vista previa")
-        abono_nombre = {a["col"]: a["nombre"][:30] for a in ABONOS}
-        cargo_nombre = {9: "BANORTE (102-01)", 10: "BBVA (102-03)", 11: "INBURSA (102-02)"}
-
-        preview_rows = []
-        orden = {"BBVA": 0, "BANORTE": 1, "INBURSA": 2}
-        for r in sorted(todos_ok, key=lambda x: (x["fecha"], orden[x["banco"]])):
-            preview_rows.append({
-                "Fecha":       r["fecha"].strftime("%d/%m/%Y") if hasattr(r["fecha"], "strftime") else str(r["fecha"]),
-                "Banco":       r["banco"],
-                "Cargo":       cargo_nombre.get(r["col_cargo"] + 1, str(r["col_cargo"])),
-                "Abono":       abono_nombre.get(r["col_abono"], str(r["col_abono"])),
-                "Monto":       r["monto"],
-                "Descripción": r["desc"][:55],
-            })
-
-        st.dataframe(
-            pd.DataFrame(preview_rows).style.format({"Monto": "${:,.2f}"}),
-            use_container_width=True,
-            height=400,
-        )
-
-        # ── No clasificados ──
-        if todos_nc:
-            st.subheader(f"⚠️ Sin clasificar ({len(todos_nc)} movimientos — no incluidos)")
-            df_nc = pd.DataFrame(todos_nc)
-            df_nc["fecha"] = df_nc["fecha"].apply(
-                lambda x: x.strftime("%d/%m/%Y") if hasattr(x, "strftime") else str(x))
-            st.dataframe(df_nc.style.format({"monto": "${:,.2f}"}),
-                         use_container_width=True)
-
-        # ── Descargar ──
-        st.subheader("💾 Descargar")
+        # Generar póliza
         excel_bytes = generar_excel(todos_ok, plantilla=file_plantilla)
         nombre_archivo = f"DEPOSITOS BANCARIOS {datetime.now().strftime('%Y-%m')}.xlsx"
-        st.download_button(
-            label="📥 Descargar Póliza Excel",
-            data=excel_bytes,
-            file_name=nombre_archivo,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary",
-        )
 
-        # ── Estados de cuenta marcados ──
-        st.subheader("🖍️ Estados de cuenta marcados")
-        st.caption("Las filas incluidas en la póliza aparecen resaltadas en verde.")
+        # Generar estados de cuenta marcados
+        marked = {}
         for _, banco, ico in archivos:
             if banco in archivos_bytes:
                 filas = {r["fila_excel"] for r in todos_ok if r["banco"] == banco}
                 if filas:
-                    marked_bytes = marcar_estado_cuenta(archivos_bytes[banco], filas)
-                    st.download_button(
-                        label=f"{ico} Descargar {banco} marcado  ({len(filas)} movimientos incluidos)",
-                        data=marked_bytes,
-                        file_name=f"MARCADO_{banco}_{datetime.now().strftime('%Y-%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"dl_marcado_{banco}",
-                    )
+                    marked[banco] = {
+                        "ico":   ico,
+                        "bytes": marcar_estado_cuenta(archivos_bytes[banco], filas),
+                        "n":     len(filas),
+                    }
+
+        # Guardar todo en session_state para persistir entre reruns
+        st.session_state.dep_result = {
+            "todos_ok":       todos_ok,
+            "todos_nc":       todos_nc,
+            "excel_bytes":    excel_bytes,
+            "nombre_archivo": nombre_archivo,
+            "marked":         marked,
+        }
+    else:
+        st.session_state.dep_result = None
+
+# ─── Mostrar resultados (persiste aunque se haga clic en descarga) ─────────────
+if st.session_state.dep_result:
+    import pandas as pd
+    res        = st.session_state.dep_result
+    todos_ok   = res["todos_ok"]
+    todos_nc   = res["todos_nc"]
+
+    # ── Resumen ──
+    st.subheader("📊 Resumen")
+    df_ok = pd.DataFrame(todos_ok)
+    total_general = df_ok["monto"].sum()
+
+    sc = st.columns(4)
+    for ci, (banco, ico) in enumerate([("BBVA","🟦"),("BANORTE","🟥"),("INBURSA","🟧")]):
+        sub = df_ok[df_ok["banco"] == banco]
+        sc[ci].metric(f"{ico} {banco}",
+                      f"${sub['monto'].sum():,.2f}",
+                      f"{len(sub)} mov.")
+    sc[3].metric("💰 TOTAL", f"${total_general:,.2f}", f"{len(df_ok)} mov.")
+
+    # ── Vista previa ──
+    st.subheader("📋 Vista previa")
+    abono_nombre = {a["col"]: a["nombre"][:30] for a in ABONOS}
+    cargo_nombre = {9: "BANORTE (102-01)", 10: "BBVA (102-03)", 11: "INBURSA (102-02)"}
+
+    preview_rows = []
+    orden = {"BBVA": 0, "BANORTE": 1, "INBURSA": 2}
+    for r in sorted(todos_ok, key=lambda x: (x["fecha"], orden[x["banco"]])):
+        preview_rows.append({
+            "Fecha":       r["fecha"].strftime("%d/%m/%Y") if hasattr(r["fecha"], "strftime") else str(r["fecha"]),
+            "Banco":       r["banco"],
+            "Cargo":       cargo_nombre.get(r["col_cargo"] + 1, str(r["col_cargo"])),
+            "Abono":       abono_nombre.get(r["col_abono"], str(r["col_abono"])),
+            "Monto":       r["monto"],
+            "Descripción": r["desc"][:55],
+        })
+
+    st.dataframe(
+        pd.DataFrame(preview_rows).style.format({"Monto": "${:,.2f}"}),
+        use_container_width=True,
+        height=400,
+    )
+
+    # ── No clasificados ──
+    if todos_nc:
+        st.subheader(f"⚠️ Sin clasificar ({len(todos_nc)} movimientos — no incluidos)")
+        df_nc = pd.DataFrame(todos_nc)
+        df_nc["fecha"] = df_nc["fecha"].apply(
+            lambda x: x.strftime("%d/%m/%Y") if hasattr(x, "strftime") else str(x))
+        st.dataframe(df_nc.style.format({"monto": "${:,.2f}"}),
+                     use_container_width=True)
+
+    # ── Descargar póliza ──
+    st.subheader("💾 Descargar")
+    st.download_button(
+        label="📥 Descargar Póliza Excel",
+        data=res["excel_bytes"],
+        file_name=res["nombre_archivo"],
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary",
+    )
+
+    # ── Estados de cuenta marcados ──
+    if res["marked"]:
+        st.subheader("🖍️ Estados de cuenta marcados")
+        st.caption("Las filas incluidas en la póliza aparecen resaltadas en verde.")
+        for banco, info in res["marked"].items():
+            st.download_button(
+                label=f"{info['ico']} Descargar {banco} marcado  ({info['n']} movimientos incluidos)",
+                data=info["bytes"],
+                file_name=f"MARCADO_{banco}_{datetime.now().strftime('%Y-%m')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"dl_marcado_{banco}",
+            )
 
 else:
     st.info("⬆️ Sube al menos un archivo de depósito para continuar.")

@@ -130,10 +130,20 @@ def clasificar_banorte(desc: str, monto: float):
     if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d:
         return 15
 
-    # TPV Banorte: código fijo FELUSA + cualquier "SERV ... <dígitos>C/D"
+    # SERV <NOMBRE> <DÍGITOS>C/D — terminal TPV; clasificar por nombre en descripción
     if "07277262C" in d or "07277262D" in d or (
             "SERV" in d and re.search(r'\d{5,}[CD]', d)):
-        return 16
+        if "AMERICAN" in d:
+            return 12   # DEPOSITO EN TRANSITO T AMERICAN EXPRESS
+        if "EFECTIVALE" in d:
+            return 13   # DEPOSITO EN TRANSITO EFECTIVALE
+        if "EDENRED" in d or "TICKET" in d:
+            return 14   # DEPOSITO EN TRANSITO TICKET CARD EDENRED
+        if "SHELL" in d or "SMARTBT" in d:
+            return 17   # DEPOSITO EN TRANSITO SMARTBT - SHELL FLEET
+        if "INBURSA" in d:
+            return 19   # DEPOSITO EN TRANSITO T INBURSA
+        return 16       # DEPOSITO EN TRANSITO T BANORTE (default)
 
     # No clasificado
     return None

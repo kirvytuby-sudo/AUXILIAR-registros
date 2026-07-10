@@ -10218,9 +10218,11 @@ class WorkspaceWindow(tk.Toplevel):
 
         def _clf_bbva(desc, monto):
             d = desc.upper()
-            if "VENTA NAL. AMEX" in d or "VENTA NAL AMEX" in d: return 12
-            if "VENTAS CREDITO" in d or "TERMINALES PUNTO DE VENTA" in d: return 18
-            if "VENTAS TDC INTER" in d or "TDC INTER" in d: return 18
+            if "AMEX" in d: return 12
+            if ("VENTAS PUNTOS TDC" in d or "VENTAS CREDITO" in d
+                    or "TERMINALES PUNTO DE VENTA" in d
+                    or "VENTAS TDC INTER" in d or "TDC INTER" in d): return 18
+            if "DEPOSITO EN EFECTIVO" in d or "DEP.EFECTIVO" in d or "DEP EN EFECTIVO" in d: return 15
             return None
         def _clf_inbursa(desc, monto):
             return 19 if "INBURED" in desc.upper() else None

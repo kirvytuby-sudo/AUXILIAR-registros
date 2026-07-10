@@ -156,7 +156,7 @@ def leer_banco(file_obj, banco: str) -> tuple[list, list]:
     fn = CLASIFICADORES[banco]
     col_cargo = CARGO_COL[banco]
 
-    for r in rows[inicio:]:
+    for idx, r in enumerate(rows[inicio:], start=inicio):
         if not r or r[0] is None:
             continue
         fecha = r[0]
@@ -180,9 +180,26 @@ def leer_banco(file_obj, banco: str) -> tuple[list, list]:
                 "monto":      monto,
                 "col_cargo":  col_cargo,
                 "col_abono":  col_abono,
+                "fila_excel": idx + 1,   # fila 1-based en el Excel original
             })
 
     return ok, sin_clasif
+
+
+def marcar_estado_cuenta(file_bytes: bytes, filas_usadas: set) -> bytes:
+    """
+    Carga el estado de cuenta y marca en verde las filas incluidas en la póliza.
+    Devuelve el archivo modificado como bytes.
+    """
+    wb = openpyxl.load_workbook(BytesIO(file_bytes))
+    ws = wb.active
+    fill_verde = PatternFill("solid", fgColor="C6EFCE")   # verde "bueno" de Excel
+    for fila in sorted(filas_usadas):
+        for col in range(1, ws.max_column + 1):
+            ws.cell(row=fila, column=col).fill = fill_verde
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 # ─── Generación del Excel (respetando formato del template) ───────────────────
@@ -484,6 +501,7 @@ if st.button("⚙️ Generar Póliza", type="primary",
              disabled=not any([file_bbva, file_banorte, file_inbursa])):
 
     todos_ok, todos_nc = [], []
+    archivos_bytes = {}     # guarda bytes de cada banco para marcar después
     progress = st.progress(0)
 
     archivos = [
@@ -494,9 +512,11 @@ if st.button("⚙️ Generar Póliza", type="primary",
 
     for i, (f, banco, ico) in enumerate(archivos):
         if f:
+            raw = f.read()               # leer bytes una sola vez
+            archivos_bytes[banco] = raw  # guardar para marcar después
             with st.spinner(f"{ico} Leyendo {banco}..."):
                 try:
-                    ok, nc = leer_banco(f, banco)
+                    ok, nc = leer_banco(BytesIO(raw), banco)
                     todos_ok.extend(ok)
                     todos_nc.extend(nc)
                     st.success(f"{ico} {banco}: **{len(ok)}** depósitos clasificados"
@@ -564,6 +584,22 @@ if st.button("⚙️ Generar Póliza", type="primary",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary",
         )
+
+        # ── Estados de cuenta marcados ──
+        st.subheader("🖍️ Estados de cuenta marcados")
+        st.caption("Las filas incluidas en la póliza aparecen resaltadas en verde.")
+        for _, banco, ico in archivos:
+            if banco in archivos_bytes:
+                filas = {r["fila_excel"] for r in todos_ok if r["banco"] == banco}
+                if filas:
+                    marked_bytes = marcar_estado_cuenta(archivos_bytes[banco], filas)
+                    st.download_button(
+                        label=f"{ico} Descargar {banco} marcado  ({len(filas)} movimientos incluidos)",
+                        data=marked_bytes,
+                        file_name=f"MARCADO_{banco}_{datetime.now().strftime('%Y-%m')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"dl_marcado_{banco}",
+                    )
 
 else:
     st.info("⬆️ Sube al menos un archivo de depósito para continuar.")

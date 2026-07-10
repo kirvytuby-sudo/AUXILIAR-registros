@@ -251,7 +251,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     F_GRAY2   = PatternFill("solid", fgColor="374151")
     F_BBVA_1  = PatternFill("solid", fgColor="EFF6FF")
     F_BBVA_2  = PatternFill("solid", fgColor="DBEAFE")
-    F_BNT_1   = PatternFill("solid", fgColor="FDDEDE")
+    F_BNT_1   = PatternFill("solid", fgColor="FFF1F2")
     F_BNT_2   = PatternFill("solid", fgColor="FFE4E6")
     F_INB_1   = PatternFill("solid", fgColor="F0FDF4")
     F_INB_2   = PatternFill("solid", fgColor="DCFCE7")

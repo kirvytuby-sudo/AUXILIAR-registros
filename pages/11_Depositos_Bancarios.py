@@ -242,19 +242,34 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     FONT_NAME = "Aptos Narrow"
     FONT_SIZE = 11
 
-    # ── Fills exactos del template (RGB hex) ──
-    # Theme colors aproximados con los colores reales del Office default:
-    F_TIPO    = PatternFill("solid", fgColor="E2EFDA")   # theme:6 tint:0.599 ≈ verde claro
-    F_FECHA   = PatternFill("solid", fgColor="FFC000")   # amber exacto del template
-    F_REF     = PatternFill("solid", fgColor="7030A0")   # purple exacto
-    F_CONC    = PatternFill("solid", fgColor="00B050")   # green exacto
-    F_ERROR   = PatternFill("solid", fgColor="843C0C")   # theme:5 tint:-0.249 ≈ naranja oscuro
-    F_ADMIN   = PatternFill("solid", fgColor="D0D6DC")   # theme:3 tint:0.749 ≈ azul gris claro
-    F_BANCO   = PatternFill("solid", fgColor="BDD7EE")   # celeste para columnas de cargo
-    F_ABONO   = PatternFill("solid", fgColor="FFE699")   # amarillo claro para columnas de abono
-    F_GRAY2   = PatternFill("solid", fgColor="BFBFBF")   # theme:0 tint:-0.249 ≈ gris (fila 2)
-    # Sin fill
+    # ── Paleta profesional ──
+    F_ADMIN   = PatternFill("solid", fgColor="1E3A8A")
+    F_H_BBVA  = PatternFill("solid", fgColor="1565C0")
+    F_H_BNT   = PatternFill("solid", fgColor="B71C1C")
+    F_H_INB   = PatternFill("solid", fgColor="E65100")
+    F_H_TCARG = PatternFill("solid", fgColor="880E4F")
+    F_H_AMEX  = PatternFill("solid", fgColor="311B92")
+    F_H_EFEC  = PatternFill("solid", fgColor="004D40")
+    F_H_EDEN  = PatternFill("solid", fgColor="1B5E20")
+    F_H_CAJA  = PatternFill("solid", fgColor="F57F17")
+    F_H_BNTTR = PatternFill("solid", fgColor="8D1A1A")
+    F_H_SHLL  = PatternFill("solid", fgColor="1A3C1A")
+    F_H_BBVAT = PatternFill("solid", fgColor="0D47A1")
+    F_H_INBTR = PatternFill("solid", fgColor="BF360C")
+    F_H_TABON = PatternFill("solid", fgColor="1B5E20")
+    F_H_DIFF  = PatternFill("solid", fgColor="4A148C")
+    F_GRAY2   = PatternFill("solid", fgColor="37474F")
+    F_BBVA_1  = PatternFill("solid", fgColor="E3F2FD")
+    F_BBVA_2  = PatternFill("solid", fgColor="BBDEFB")
+    F_BNT_1   = PatternFill("solid", fgColor="FFEBEE")
+    F_BNT_2   = PatternFill("solid", fgColor="FFCDD2")
+    F_INB_1   = PatternFill("solid", fgColor="FFF3E0")
+    F_INB_2   = PatternFill("solid", fgColor="FFE0B2")
     F_NONE    = PatternFill(fill_type=None)
+    _S = Side(style="thin", color="AAAAAA")
+    BORDER = Border(left=_S, right=_S, top=_S, bottom=_S)
+    _SH = Side(style="medium", color="888888")
+    BORDER_H = Border(left=_SH, right=_SH, top=_SH, bottom=_SH)
 
     # ── Fuentes ──
     def fnt(bold=False, color="000000", size=None, italic=False):
@@ -272,12 +287,13 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     FMT_DATE = 'DD/MM/YYYY'
 
     def set_cell(ws, row, col, value=None, font=None, fill=F_NONE,
-                 align=A_CTR, num_format=None):
+                 align=A_CTR, num_format=None, border=None):
         c = ws.cell(row=row, column=col, value=value)
-        if font:    c.font = font
-        if fill:    c.fill = fill
-        if align:   c.alignment = align
+        if font:      c.font = font
+        if fill:      c.fill = fill
+        if align:     c.alignment = align
         if num_format: c.number_format = num_format
+        if border:    c.border = border
         return c
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -298,59 +314,33 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         ws = wb.active
         ws.title = "POLIZA"
 
-    # ── FILA 1: índices de columna (0-20) ── [siempre se escribe]
+    # ── FILA 1: índices ──
     for pol_idx in range(21):
-        set_cell(ws, 1, pol_idx + 1,
-                 value=pol_idx,
-                 font=fnt(color="000000"),
-                 fill=F_NONE, align=A_CTR)
+        set_cell(ws, 1, pol_idx + 1, value=pol_idx, font=fnt(color="000000"), fill=F_NONE, align=A_CTR)
 
-    # ── FILA 2: números de cuenta (cols de banco y tránsito) ──
+    # ── FILA 2: números de cuenta ──
+    fnt_cta = fnt(bold=False, color="FFFFFF", size=9, italic=True)
     for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
-        set_cell(ws, 2, pol_idx + 1,
-                 value=CARGOS[banco][0],
-                 font=fnt(color="000000"),
-                 fill=F_GRAY2, align=A_CTR)
+        set_cell(ws, 2, pol_idx + 1, value=CARGOS[banco][0], font=fnt_cta, fill=F_GRAY2, align=A_CTR, border=BORDER)
     for a in ABONOS:
-        set_cell(ws, 2, a["col"] + 1,
-                 value=a["cuenta"],
-                 font=fnt(color="000000"),
-                 fill=F_GRAY2, align=A_CTR)
+        set_cell(ws, 2, a["col"] + 1, value=a["cuenta"], font=fnt_cta, fill=F_GRAY2, align=A_CTR, border=BORDER)
 
-    # ── FILA 3: etiquetas de columna con colores del template ──
-    headers_admin = [
-        (1,  "TIPO DE POLIZA", F_TIPO,  fnt(color="000000")),
-        (2,  "Fecha",          F_FECHA, fnt(bold=True, color="FFFFFF")),
-        (3,  "REFERENCIA",     F_REF,   fnt(bold=True, color="FFFFFF")),
-        (4,  "CONCEPTO",       F_CONC,  fnt(bold=True, color="FFFFFF")),
-        (5,  "ERROR",          F_ERROR, fnt(bold=True, color="FFFFFF")),
-        (6,  "UIDD",           F_ADMIN, fnt(bold=True, color="FFFFFF")),
-        (7,  "NUM POLIZA",     F_ADMIN, fnt(bold=True, color="FFFFFF")),
-        (8,  "PROCESADO",      F_ADMIN, fnt(bold=True, color="FFFFFF")),
-    ]
-    for col, lbl, fill, font in headers_admin:
-        set_cell(ws, 3, col, value=lbl, font=font, fill=fill, align=A_CTR)
+    # ── FILA 3: encabezados con paleta profesional ──
+    fnt_h = lambda: fnt(bold=True, color="FFFFFF")
+    for col, lbl in [(1,"TIPO"),(2,"FECHA"),(3,"REFERENCIA"),(4,"CONCEPTO"),(5,"ERROR"),(6,"UIDD"),(7,"NÚM PÓLIZA"),(8,"PROCESADO")]:
+        set_cell(ws, 3, col, value=lbl, font=fnt_h(), fill=F_ADMIN, align=A_CTR, border=BORDER_H)
 
-    for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
-        set_cell(ws, 3, pol_idx + 1,
-                 value=CARGOS[banco][1].strip(),
-                 font=fnt(bold=True, color="FFFFFF"),
-                 fill=F_BANCO, align=A_CTR)
+    for pol_idx, banco, fill_h in [(8,"BANORTE",F_H_BNT),(9,"BBVA",F_H_BBVA),(10,"INBURSA",F_H_INB)]:
+        set_cell(ws, 3, pol_idx + 1, value=CARGOS[banco][1].strip(), font=fnt_h(), fill=fill_h, align=A_CTR, border=BORDER_H)
 
-    set_cell(ws, 3, 12, value="TOTAL CARGOS",
-             font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
+    set_cell(ws, 3, 12, value="TOTAL CARGOS", font=fnt_h(), fill=F_H_TCARG, align=A_CTR, border=BORDER_H)
 
+    ABONO_FILLS = {12:F_H_AMEX,13:F_H_EFEC,14:F_H_EDEN,15:F_H_CAJA,16:F_H_BNTTR,17:F_H_SHLL,18:F_H_BBVAT,19:F_H_INBTR}
     for a in ABONOS:
-        set_cell(ws, 3, a["col"] + 1,
-                 value=a["nombre"],
-                 font=fnt(bold=True, color="000000"),
-                 fill=F_ABONO, align=A_CTR_W)
+        set_cell(ws, 3, a["col"] + 1, value=a["nombre"], font=fnt_h(), fill=ABONO_FILLS.get(a["col"], F_ADMIN), align=A_CTR_W, border=BORDER_H)
 
-    set_cell(ws, 3, 21, value="TOTAL ABONOS",
-             font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
-
-    set_cell(ws, 3, 22, value="DIFERENCIA",
-             font=fnt(color="FF0000"), fill=F_NONE, align=A_CTR)
+    set_cell(ws, 3, 21, value="TOTAL ABONOS", font=fnt_h(), fill=F_H_TABON, align=A_CTR, border=BORDER_H)
+    set_cell(ws, 3, 22, value="DIFERENCIA",   font=fnt_h(), fill=F_H_DIFF,  align=A_CTR, border=BORDER_H)
 
     # ── FILAS DE DATOS (desde fila 4) ──
     # Orden: BBVA → INBURSA → BANORTE, y dentro de cada banco por fecha
@@ -360,19 +350,8 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         key=lambda x: (orden_banco[x["banco"]], x["fecha"])
     )
 
-    # Color base por banco (tono claro) + alternado más oscuro
-    F_BBVA_1  = PatternFill("solid", fgColor="DDEEFF")   # azul muy claro
-    F_BBVA_2  = PatternFill("solid", fgColor="C5DCF5")   # azul claro alt
-    F_INBU_1  = PatternFill("solid", fgColor="FFF0DC")   # naranja muy claro
-    F_INBU_2  = PatternFill("solid", fgColor="FFE0B5")   # naranja claro alt
-    F_BNT_1   = PatternFill("solid", fgColor="FFE4E4")   # rojo muy claro
-    F_BNT_2   = PatternFill("solid", fgColor="FFCCCC")   # rojo claro alt
-
-    FILLS_BANCO = {
-        "BBVA":    (F_BBVA_1, F_BBVA_2),
-        "INBURSA": (F_INBU_1, F_INBU_2),
-        "BANORTE": (F_BNT_1,  F_BNT_2),
-    }
+    FILLS_BANCO = {"BBVA":(F_BBVA_1,F_BBVA_2),"INBURSA":(F_INB_1,F_INB_2),"BANORTE":(F_BNT_1,F_BNT_2)}
+    BANCO_ABREV = {"BBVA":"BBV","BANORTE":"BNT","INBURSA":"INB"}
 
     for fila_num, r in enumerate(registros_sorted, start=4):
         f1, f2 = FILLS_BANCO[r["banco"]]
@@ -380,46 +359,29 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         fn_dat   = fnt(color="000000")
 
         def dat(col, val, num_fmt=None, align=A_CTR):
-            c = set_cell(ws, fila_num, col, value=val,
-                         font=fn_dat, fill=fill_row, align=align)
+            c = set_cell(ws, fila_num, col, value=val, font=fn_dat, fill=fill_row, align=align, border=BORDER)
             if num_fmt: c.number_format = num_fmt
             return c
 
         monto = r["monto"]
-
-        # A: "I"
-        dat(1,  "I", align=A_CTR)
-        # B: Fecha
+        dat(1, BANCO_ABREV[r["banco"]], align=A_CTR)
         dat(2, r["fecha"], num_fmt=FMT_DATE)
-        # C: Referencia
-        dat(3,  r["ref"], align=A_LEFT)
-        # D: Concepto
-        dat(4,  r["ref"], align=A_LEFT)
-        # E, F, G, H: vacías
-        for col in [5, 6, 7, 8]:
-            dat(col, None)
-
-        # Cargo en columna del banco correspondiente
+        dat(3, r["desc"],  align=A_LEFT)
+        dat(4, r["ref"],   align=A_LEFT)
+        for col in [5, 6, 7, 8]: dat(col, None)
         dat(r["col_cargo"] + 1, monto, num_fmt=FMT_NUM, align=A_RIGHT)
-
-        # TOTAL CARGOS (col 12)
         dat(12, monto, num_fmt=FMT_NUM, align=A_RIGHT)
-
-        # Abono en columna de tránsito correspondiente
         dat(r["col_abono"] + 1, monto, num_fmt=FMT_NUM, align=A_RIGHT)
-
-        # TOTAL ABONOS (col 21)
         dat(21, monto, num_fmt=FMT_NUM, align=A_RIGHT)
-
-        # DIFERENCIA (col 22): fórmula =L{n}-U{n}
         col_L = get_column_letter(12)
         col_U = get_column_letter(21)
-        c_diff = ws.cell(row=fila_num, column=22,
-                         value=f"={col_L}{fila_num}-{col_U}{fila_num}")
-        c_diff.font = fnt(color="000000")
+        c_diff = ws.cell(row=fila_num, column=22, value=f"={col_L}{fila_num}-{col_U}{fila_num}")
+        c_diff.font = fnt(bold=True, color="4A148C")
         c_diff.fill = fill_row
+        c_diff.border = BORDER
         c_diff.alignment = A_RIGHT
         c_diff.number_format = FMT_NUM
+        ws.row_dimensions[fila_num].height = 18
 
     # ── Anchos de columna (siguiendo template) ──
     anchos = {
@@ -449,8 +411,9 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     for col_num, w in anchos.items():
         ws.column_dimensions[get_column_letter(col_num)].width = w
 
-    # Altura fila 3
-    ws.row_dimensions[3].height = 15.0
+    ws.row_dimensions[1].height = 14
+    ws.row_dimensions[2].height = 20
+    ws.row_dimensions[3].height = 36
 
     # freeze_panes: igual al template (B4 → congela fila 3 y col A)
     ws.freeze_panes = "B4"
@@ -460,24 +423,30 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     # ══════════════════════════════════════════════════════════════════════════
     if plantilla is None:
         wc = wb.create_sheet("CUENTAS")
-
-        fn_plain = fnt(color="000000")
-        A_CTR_C  = Alignment(horizontal="center")
-
-        set_cell(wc, 1, 1, "CARGOS", font=fn_plain, fill=F_NONE, align=A_CTR_C)
-        set_cell(wc, 1, 4, "ABONOS", font=fn_plain, fill=F_NONE, align=A_CTR_C)
-        set_cell(wc, 2, 1, "N° Cuenta",           font=fn_plain, fill=F_NONE)
-        set_cell(wc, 2, 2, "Banco",               font=fn_plain, fill=F_NONE)
-        set_cell(wc, 2, 4, "N° Cuenta",           font=fn_plain, fill=F_NONE)
-        set_cell(wc, 2, 5, "Nombre del Deposito", font=fn_plain, fill=F_NONE)
+        fn_th = fnt(bold=True, color="FFFFFF")
+        fn_row = fnt(color="000000")
+        F_TH_C = PatternFill("solid", fgColor="1E3A8A")
+        F_TH_A = PatternFill("solid", fgColor="006064")
+        F_ROW1 = PatternFill("solid", fgColor="EFF6FF")
+        F_ROW2 = PatternFill("solid", fgColor="DBEAFE")
+        A_L2   = Alignment(horizontal="left", vertical="center")
+        A_C2   = Alignment(horizontal="center", vertical="center")
+        for col, lbl, fill in [(1,"CARGOS",F_TH_C),(2,"",F_TH_C),(4,"ABONOS",F_TH_A),(5,"",F_TH_A)]:
+            set_cell(wc, 1, col, lbl, font=fn_th, fill=fill, align=A_C2, border=BORDER_H)
+        for col, lbl, fill in [(1,"N° Cuenta",F_TH_C),(2,"Banco",F_TH_C),(4,"N° Cuenta",F_TH_A),(5,"Nombre",F_TH_A)]:
+            set_cell(wc, 2, col, lbl, font=fn_th, fill=fill, align=A_C2, border=BORDER_H)
         for i, (banco, (cuenta, nombre)) in enumerate(CARGOS.items(), start=3):
-            set_cell(wc, i, 1, cuenta,         font=fn_plain, fill=F_NONE)
-            set_cell(wc, i, 2, nombre.strip(), font=fn_plain, fill=F_NONE)
+            fill = F_ROW1 if i % 2 == 0 else F_ROW2
+            set_cell(wc, i, 1, cuenta, font=fn_row, fill=fill, align=A_L2, border=BORDER)
+            set_cell(wc, i, 2, nombre.strip(), font=fn_row, fill=fill, align=A_L2, border=BORDER)
         for i, a in enumerate(ABONOS, start=3):
-            set_cell(wc, i, 4, a["cuenta"], font=fn_plain, fill=F_NONE)
-            set_cell(wc, i, 5, a["nombre"], font=fn_plain, fill=F_NONE)
-        for col_num, w in {1: 16.3, 2: 10.0, 4: 16.3, 5: 42.9}.items():
+            fill = F_ROW1 if i % 2 == 0 else F_ROW2
+            set_cell(wc, i, 4, a["cuenta"], font=fn_row, fill=fill, align=A_L2, border=BORDER)
+            set_cell(wc, i, 5, a["nombre"], font=fn_row, fill=fill, align=A_L2, border=BORDER)
+        for col_num, w in {1: 20.0, 2: 12.0, 4: 20.0, 5: 48.0}.items():
             wc.column_dimensions[get_column_letter(col_num)].width = w
+        wc.row_dimensions[1].height = 22
+        wc.row_dimensions[2].height = 22
 
     buf = BytesIO()
     wb.save(buf)

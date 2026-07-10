@@ -130,8 +130,8 @@ def clasificar_banorte(desc: str, monto: float):
     if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d:
         return 15
 
-    # TPV Banorte (SERVICIOS FELUSA terminales C/D)
-    if "07277262C" in d or "07277262D" in d:
+    # TPV Banorte (SERVICIOS FELUSA terminales C/D) + Servicios Río de la Plata
+    if "07277262C" in d or "07277262D" in d or "RIO DE LA PLATA" in d:
         return 16
 
     # No clasificado

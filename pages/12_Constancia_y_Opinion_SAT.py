@@ -4,10 +4,14 @@ Genera con un solo botón, para una o varias empresas:
   · Constancia de Situación Fiscal (CSF)
   · Opinión de Cumplimiento de Obligaciones Fiscales (32-D)
 Se autentica en el portal del SAT con la e.firma (FIEL): .cer + .key + contraseña.
-Las credenciales NUNCA se guardan: viven solo en la memoria de la sesión.
+
+Las e.firmas pueden guardarse de forma segura en los SECRETS de Streamlit Cloud
+(cifrados, privados, NUNCA en el repositorio) para no subirlas cada vez.
+Si existe `app_password` en los Secrets, la página pide esa clave para entrar.
 """
 import streamlit as st
 import re
+import base64
 import zipfile
 from io import BytesIO
 from datetime import datetime
@@ -46,20 +50,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="sat-header">
-    <h1>🏛️ Constancia y Opinión SAT</h1>
-    <p>Genera la Constancia de Situación Fiscal y la Opinión de Cumplimiento (32-D)
-       de todas tus empresas con un solo botón, usando la e.firma.</p>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div class="priv-note">🔒 <b>Privacidad:</b> los archivos de la e.firma y las contraseñas
-solo se usan en memoria durante esta sesión para autenticarse con el SAT.
-No se guardan en ningún servidor ni en el repositorio.</div>
-""", unsafe_allow_html=True)
-
 # ─── Dependencia satcfdi ──────────────────────────────────────────────────────
 try:
     from satcfdi.models import Signer
@@ -74,6 +64,48 @@ RFC_RE = re.compile(r"[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}", re.IGNORECASE)
 TIMEOUT_SEG = 150  # tiempo máximo por documento
 
 
+def _get_secret(clave, default=None):
+    """Lee un secret de Streamlit sin tronar si no hay archivo de secrets."""
+    try:
+        return st.secrets.get(clave, default)
+    except Exception:
+        return default
+
+
+# ─── Candado de acceso (si hay app_password en Secrets) ───────────────────────
+_app_pwd = _get_secret("app_password")
+if _app_pwd:
+    if not st.session_state.get("sat_gate_ok"):
+        st.markdown("""
+        <div class="sat-header">
+            <h1>🏛️ Constancia y Opinión SAT</h1>
+            <p>Página protegida — escribe la clave de acceso.</p>
+        </div>""", unsafe_allow_html=True)
+        clave = st.text_input("🔑 Clave de acceso", type="password", key="gate_input")
+        if st.button("Entrar", type="primary"):
+            if clave == _app_pwd:
+                st.session_state["sat_gate_ok"] = True
+                st.rerun()
+            else:
+                st.markdown('<div class="err-box">❌ Clave incorrecta.</div>',
+                            unsafe_allow_html=True)
+        st.stop()
+
+st.markdown("""
+<div class="sat-header">
+    <h1>🏛️ Constancia y Opinión SAT</h1>
+    <p>Genera la Constancia de Situación Fiscal y la Opinión de Cumplimiento (32-D)
+       de todas tus empresas con un solo botón, usando la e.firma.</p>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="priv-note">🔒 <b>Privacidad:</b> las e.firmas guardadas viven cifradas en los
+<b>Secrets</b> de Streamlit Cloud (nunca en GitHub). Las que subas manualmente solo se usan
+en memoria durante esta sesión.</div>
+""", unsafe_allow_html=True)
+
+
 # ─── Utilidades ───────────────────────────────────────────────────────────────
 def _stem(nombre: str) -> str:
     base = nombre.rsplit("/", 1)[-1]
@@ -83,11 +115,7 @@ def _stem(nombre: str) -> str:
 def _info_cer(cer_bytes: bytes):
     """Lee el .cer y regresa (rfc, razon_social, vigencia_fin, tipo)."""
     from satcfdi.models import Certificate
-    cert = Certificate.load_certificate(cer_bytes) if hasattr(Certificate, "load_certificate") else None
-    if cert is None:
-        from OpenSSL import crypto
-        x509 = crypto.load_certificate(crypto.FILETYPE_ASN1, cer_bytes)
-        cert = Certificate(x509)
+    cert = Certificate.load_certificate(cer_bytes)
     rfc = (cert.rfc or "").upper()
     nombre = cert.legal_name or ""
     not_after = cert.certificate.get_notAfter()  # b'AAAAMMDDHHMMSSZ'
@@ -109,7 +137,7 @@ def _emparejar(cers: dict, keys: dict):
         ks = _stem(key_nombre)
         # 1) mismo nombre base
         match = next((c for c in cers if c not in usados and _stem(c) == ks), None)
-        # 2) RFC del cer aparece en el nombre del key (o viceversa)
+        # 2) RFC del cer aparece en el nombre del key
         if not match:
             m = RFC_RE.search(ks.upper())
             rfc_key = m.group(0).upper() if m else None
@@ -192,8 +220,44 @@ def _descargar_documentos(cer_bytes, key_bytes, password):
     return res
 
 
-# ─── 1. Carga de e.firmas ─────────────────────────────────────────────────────
-st.subheader("1️⃣ Sube las e.firmas (.cer y .key)")
+empresas = []          # lista final: guardadas seleccionadas + subidas manualmente
+toml_empresas = {}     # para el generador de Secrets (solo manuales)
+
+# ─── 0. Empresas guardadas en Secrets ─────────────────────────────────────────
+_guardadas = _get_secret("empresas", {}) or {}
+if _guardadas:
+    st.subheader("🔐 Empresas guardadas")
+    st.caption("Estas e.firmas están guardadas en los Secrets de la app — solo marca y genera.")
+    for clave_emp in sorted(_guardadas.keys()):
+        datos = _guardadas[clave_emp]
+        try:
+            cer_b = base64.b64decode(datos["cer_b64"])
+            key_b = base64.b64decode(datos["key_b64"])
+            rfc, nombre, vig, tipo = _info_cer(cer_b)
+        except Exception as e:
+            st.markdown(f'<div class="err-box">❌ <b>{clave_emp}</b>: datos mal guardados en Secrets ({e})</div>',
+                        unsafe_allow_html=True)
+            continue
+        c1, c2 = st.columns([1, 8])
+        with c1:
+            usar = st.checkbox(" ", value=True, key=f"sec_{clave_emp}",
+                               label_visibility="collapsed")
+        with c2:
+            st.markdown(f"""
+            <div class="emp-card">
+                <div class="rfc">🏢 {rfc}</div>
+                <div class="name">{nombre or datos.get('nombre', clave_emp)}</div>
+                <div class="vig">vigente hasta {vig:%d/%m/%Y}</div>
+            </div>""", unsafe_allow_html=True)
+        if usar:
+            empresas.append({"cer": cer_b, "key": key_b,
+                             "pwd": datos.get("password", ""),
+                             "rfc": rfc, "nombre": nombre})
+
+# ─── 1. Carga manual de e.firmas ──────────────────────────────────────────────
+titulo_manual = "➕ Agregar otras empresas (subir .cer y .key)" if _guardadas \
+                else "1️⃣ Sube las e.firmas (.cer y .key)"
+st.subheader(titulo_manual)
 st.caption("Puedes subir los archivos de **varias empresas a la vez** — se emparejan solos.")
 
 archivos = st.file_uploader(
@@ -224,8 +288,7 @@ for nombre_c, info in cers.items():
 
 pares = _emparejar(cers, keys) if (cers and keys) else []
 
-# ─── 2. Empresas detectadas y contraseñas ────────────────────────────────────
-empresas = []
+# ─── 2. Empresas detectadas manualmente y contraseñas ─────────────────────────
 if pares:
     st.subheader("2️⃣ Empresas detectadas")
     misma_pwd = False
@@ -250,6 +313,9 @@ if pares:
                 f"Contraseña e.firma — {info['rfc']}", type="password", key=f"pwd_{i}")
         empresas.append({"cer": info["bytes"], "key": keys[par["key"]],
                          "pwd": pwd or "", "rfc": info["rfc"], "nombre": info["nombre"]})
+        toml_empresas[info["rfc"]] = {"nombre": info["nombre"],
+                                      "cer": info["bytes"], "key": keys[par["key"]],
+                                      "pwd": pwd or ""}
 
     faltan_key = [c for c in cers if c not in {p["cer"] for p in pares}]
     for c in faltan_key:
@@ -259,6 +325,34 @@ elif cers and not keys:
     st.info("Ya subiste los .cer — ahora falta el archivo **.key** de cada empresa.")
 elif keys and not cers:
     st.info("Ya subiste los .key — ahora falta el archivo **.cer** de cada empresa.")
+
+# ─── 2.5 Generador de Secrets (guardar para siempre) ──────────────────────────
+if toml_empresas:
+    with st.expander("💾 Guardar estas empresas para no subirlas cada vez"):
+        st.markdown("""
+Copia el texto de abajo y pégalo en **share.streamlit.io → tu app → ⚙️ Settings → Secrets**
+(agrega las secciones nuevas debajo de lo que ya tengas). La próxima vez, las empresas
+aparecerán arriba ya listas, sin subir archivos ni escribir contraseñas.
+
+⚠️ Hazlo desde una computadora de confianza: el texto incluye tus llaves y contraseñas.
+Los Secrets están cifrados y **nunca** se publican en GitHub.
+""")
+        incluir_pwd = st.checkbox("Incluir contraseñas en el texto", value=True,
+                                  help="Si lo desmarcas, tendrás que escribir la contraseña cada vez (más seguro).")
+        lineas = []
+        if not _get_secret("app_password"):
+            lineas.append('# Clave para entrar a esta página (cámbiala por la tuya):')
+            lineas.append('app_password = "CAMBIA_ESTA_CLAVE"')
+            lineas.append('')
+        for rfc, d in toml_empresas.items():
+            lineas.append(f'[empresas.{rfc}]')
+            lineas.append(f'nombre = "{d["nombre"]}"')
+            lineas.append(f'cer_b64 = "{base64.b64encode(d["cer"]).decode()}"')
+            lineas.append(f'key_b64 = "{base64.b64encode(d["key"]).decode()}"')
+            pwd_txt = d["pwd"] if incluir_pwd else ""
+            lineas.append(f'password = "{pwd_txt}"')
+            lineas.append('')
+        st.code("\n".join(lineas), language="toml")
 
 # ─── 3. Botón único ───────────────────────────────────────────────────────────
 if empresas:
@@ -340,10 +434,14 @@ with st.expander("❓ ¿Qué necesito? / Preguntas frecuentes"):
     st.markdown("""
 - **e.firma (FIEL) vigente** de cada empresa: archivo **.cer**, archivo **.key** y su **contraseña**.
   *No sirve el CSD (certificado de sello digital) ni la Contraseña/CIEC.*
+- **¿Cómo guardo las empresas?** Sube las e.firmas una vez, abre
+  "💾 Guardar estas empresas…", copia el texto y pégalo en
+  **share.streamlit.io → tu app → Settings → Secrets**. Listo: aparecerán siempre.
+- **Protege la app:** agrega `app_password = "tu_clave"` en los Secrets para que
+  esta página pida clave antes de entrar.
 - Los documentos se generan directamente en los portales oficiales del SAT
   (Constancia: `rfcampc.siat.sat.gob.mx` · Opinión 32-D: `ptsc32d.clouda.sat.gob.mx`).
 - Si el SAT está en mantenimiento (frecuente en la noche o en cierres de mes),
   vuelve a intentar más tarde.
 - La **Opinión 32-D** indica si la empresa está al corriente (sentido *positivo* o *negativo*).
-- Nada se guarda: al cerrar o recargar la página, las e.firmas y contraseñas se borran de la memoria.
 """)

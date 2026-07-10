@@ -356,7 +356,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
 
         monto = r["monto"]
         # Col TIPO: negrita con color del banco
-        set_cell(ws, fila_num, 1, value=BANCO_ABREV[r["banco"]],
+        set_cell(ws, fila_num, 1, value="D",
                  font=fnt(bold=True, color=BANCO_COLOR[r["banco"]]),
                  fill=fill_row, align=A_CTR, border=BORDER)
         dat(2, r["fecha"], num_fmt=FMT_DATE)

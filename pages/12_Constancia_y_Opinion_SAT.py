@@ -72,7 +72,43 @@ def _get_secret(clave, default=None):
         return default
 
 
-# ─── Candado de acceso (si hay app_password en Secrets) ───────────────────────
+def _correo_actual():
+    """Correo del usuario que inició sesión en la app (si la app es privada)."""
+    try:
+        u = getattr(st, "user", None)
+        correo = getattr(u, "email", None) if u is not None else None
+        if not correo:
+            u = getattr(st, "experimental_user", None)
+            correo = getattr(u, "email", None) if u is not None else None
+        return (correo or "").strip().lower()
+    except Exception:
+        return ""
+
+
+# ─── Candado 1: lista de correos autorizados (solo KIRVY la edita en Secrets) ──
+_correos_aut = _get_secret("correos_autorizados")
+if _correos_aut:
+    _correo = _correo_actual()
+    _lista = [str(c).strip().lower() for c in _correos_aut]
+    if not _correo or _correo not in _lista:
+        st.markdown("""
+        <div class="sat-header">
+            <h1>🏛️ Constancia y Opinión SAT</h1>
+            <p>Acceso restringido.</p>
+        </div>""", unsafe_allow_html=True)
+        if _correo:
+            st.markdown(f'<div class="err-box">⛔ El correo <b>{_correo}</b> no está '
+                        'autorizado para usar este módulo. Pide al administrador '
+                        'que agregue tu correo a la lista de autorizados.</div>',
+                        unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="warn-box">⚠️ No se pudo identificar tu correo. '
+                        'Este módulo requiere que la app sea <b>privada</b> y que '
+                        'inicies sesión con tu correo invitado.</div>',
+                        unsafe_allow_html=True)
+        st.stop()
+
+# ─── Candado 2: clave de acceso (si hay app_password en Secrets) ───────────────
 _app_pwd = _get_secret("app_password")
 if _app_pwd:
     if not st.session_state.get("sat_gate_ok"):

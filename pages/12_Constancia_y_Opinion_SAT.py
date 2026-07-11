@@ -179,12 +179,15 @@ if _sat_users:
                                 unsafe_allow_html=True)
             st.markdown("---")
             with st.expander("📝 ¿No tienes cuenta? — Solicitar acceso"):
-                sol_nombre = st.text_input("Nombre completo", key="sol_nombre")
-                sol_usuario = st.text_input("Usuario deseado", key="sol_usuario",
-                                            placeholder="sin espacios, minúsculas")
-                sol_pwd1 = st.text_input("Contraseña", type="password", key="sol_pwd1")
-                sol_pwd2 = st.text_input("Confirmar contraseña", type="password", key="sol_pwd2")
-                if st.button("📨 Enviar solicitud", key="btn_sol", use_container_width=True):
+                with st.form("form_solicitud"):
+                    sol_nombre  = st.text_input("Nombre completo")
+                    sol_usuario = st.text_input("Usuario deseado",
+                                                placeholder="sin espacios, minúsculas")
+                    sol_pwd1 = st.text_input("Contraseña", type="password")
+                    sol_pwd2 = st.text_input("Confirmar contraseña", type="password")
+                    _sol_submit = st.form_submit_button("📨 Enviar solicitud",
+                                                        use_container_width=True)
+                if _sol_submit:
                     _u = sol_usuario.strip().lower().replace(" ", "_")
                     if not all([sol_nombre.strip(), _u, sol_pwd1]):
                         st.error("Completa todos los campos.")

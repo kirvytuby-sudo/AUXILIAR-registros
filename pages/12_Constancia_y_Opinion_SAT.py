@@ -118,6 +118,10 @@ if _correos_aut:
 #   name = "KIRVY"
 #   password_hash = "<salt>:<pbkdf2_hex>"   # generado con generar_hash_sat.py
 #
+#   [sat_users.contador]
+#   name = "Contador"
+#   password_hash = "<salt>:<pbkdf2_hex>"
+#
 # Si no existe la sección [sat_users], el candado se omite (modo desarrollo).
 
 def _pw_hash(password: str, salt: str) -> str:
@@ -132,6 +136,11 @@ def _pw_verify(password: str, stored: str) -> bool:
         return hmac.compare_digest(_pw_hash(password, salt), expected)
     except Exception:
         return False
+
+@st.cache_resource
+def _get_pendientes():
+    """Solicitudes de acceso pendientes — singleton compartido entre sesiones."""
+    return {"lista": []}
 
 _sat_users = None
 try:
@@ -168,10 +177,36 @@ if _sat_users:
                 else:
                     st.markdown('<div class="err-box">❌ Usuario o contraseña incorrectos.</div>',
                                 unsafe_allow_html=True)
+            st.markdown("---")
+            with st.expander("📝 ¿No tienes cuenta? — Solicitar acceso"):
+                sol_nombre = st.text_input("Nombre completo", key="sol_nombre")
+                sol_usuario = st.text_input("Usuario deseado", key="sol_usuario",
+                                            placeholder="sin espacios, minúsculas")
+                sol_pwd1 = st.text_input("Contraseña", type="password", key="sol_pwd1")
+                sol_pwd2 = st.text_input("Confirmar contraseña", type="password", key="sol_pwd2")
+                if st.button("📨 Enviar solicitud", key="btn_sol", use_container_width=True):
+                    _u = sol_usuario.strip().lower().replace(" ", "_")
+                    if not all([sol_nombre.strip(), _u, sol_pwd1]):
+                        st.error("Completa todos los campos.")
+                    elif sol_pwd1 != sol_pwd2:
+                        st.error("Las contraseñas no coinciden.")
+                    elif any(r["usuario"] == _u for r in _get_pendientes()["lista"]):
+                        st.warning("Ya hay una solicitud pendiente para ese usuario.")
+                    else:
+                        _s2 = _secrets_mod.token_hex(16)
+                        _get_pendientes()["lista"].append({
+                            "nombre": sol_nombre.strip(),
+                            "usuario": _u,
+                            "password_hash": f"{_s2}:{_pw_hash(sol_pwd1, _s2)}",
+                            "fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                        })
+                        st.success("✅ Solicitud enviada. El administrador la revisará.")
         st.stop()
 
-    # Usuario autenticado — logout en sidebar
+    # Usuario autenticado — sidebar con logout y panel admin
     _auth_display = st.session_state.get("sat_auth_name", "")
+    _auth_user    = st.session_state.get("sat_auth_user", "")
+    _es_admin     = (_auth_user == "kirvy")
     with st.sidebar:
         st.markdown(f"👤 **{_auth_display}**")
         st.caption("Módulo SAT")
@@ -179,6 +214,63 @@ if _sat_users:
             st.session_state.pop("sat_auth_user", None)
             st.session_state.pop("sat_auth_name", None)
             st.rerun()
+
+        if _es_admin:
+            st.markdown("---")
+            st.markdown("**⚙️ Administración**")
+            with st.expander("➕ Crear usuario"):
+                adm_nombre  = st.text_input("Nombre", key="adm_nombre")
+                adm_usuario = st.text_input("Usuario", key="adm_usuario")
+                adm_pwd     = st.text_input("Contraseña", type="password", key="adm_pwd")
+                if st.button("Generar acceso", key="adm_gen", type="primary"):
+                    if all([adm_nombre.strip(), adm_usuario.strip(), adm_pwd]):
+                        _sa = _secrets_mod.token_hex(16)
+                        _ha = f"{_sa}:{_pw_hash(adm_pwd, _sa)}"
+                        st.session_state["adm_toml"] = (
+                            f"[sat_users.{adm_usuario.strip().lower()}]\n"
+                            f'name = "{adm_nombre.strip()}"\n'
+                            f'password_hash = "{_ha}"'
+                        )
+                    else:
+                        st.error("Completa todos los campos.")
+            if st.session_state.get("adm_toml"):
+                st.markdown("**Copia en Secrets de Streamlit Cloud:**")
+                st.code(st.session_state["adm_toml"], language="toml")
+                if st.button("✔ Listo, ya lo agregué", key="adm_done"):
+                    del st.session_state["adm_toml"]
+                    st.rerun()
+
+    # Solicitudes pendientes — solo admin ve esto
+    if _es_admin:
+        _pendientes = _get_pendientes()["lista"]
+        if _pendientes:
+            st.warning(f"📬 **{len(_pendientes)} solicitud(es) de acceso pendiente(s)**")
+            for _i, _req in enumerate(list(_pendientes)):
+                with st.expander(
+                        f"👤 {_req['nombre']} — @{_req['usuario']} — {_req['fecha']}"):
+                    st.code(
+                        f"[sat_users.{_req['usuario']}]\n"
+                        f"name = \"{_req['nombre']}\"\n"
+                        f"password_hash = \"{_req['password_hash']}\"",
+                        language="toml",
+                    )
+                    st.caption(
+                        "Copia el bloque de arriba y agrégalo a "
+                        "Settings → Secrets en Streamlit Cloud, luego aprueba.")
+                    _ca, _cb = st.columns(2)
+                    with _ca:
+                        if st.button("✅ Aprobar — ya lo agregué",
+                                     key=f"apr_{_i}", type="primary",
+                                     use_container_width=True):
+                            _get_pendientes()["lista"].remove(_req)
+                            st.success(f"✅ Usuario '{_req['usuario']}' aprobado.")
+                            st.rerun()
+                    with _cb:
+                        if st.button("❌ Rechazar", key=f"rec_{_i}",
+                                     use_container_width=True):
+                            _get_pendientes()["lista"].remove(_req)
+                            st.info(f"Solicitud de {_req['nombre']} rechazada.")
+                            st.rerun()
 
 st.markdown("""
 <div class="sat-header">

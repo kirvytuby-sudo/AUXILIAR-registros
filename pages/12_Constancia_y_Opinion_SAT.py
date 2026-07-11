@@ -13,6 +13,9 @@ import streamlit as st
 import re
 import base64
 import zipfile
+import hashlib
+import hmac
+import secrets as _secrets_mod
 from io import BytesIO
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturoTimeout
@@ -108,24 +111,74 @@ if _correos_aut:
                         unsafe_allow_html=True)
         st.stop()
 
-# ─── Candado 2: clave de acceso (si hay app_password en Secrets) ───────────────
-_app_pwd = _get_secret("app_password")
-if _app_pwd:
-    if not st.session_state.get("sat_gate_ok"):
+# ─── Candado 2: usuarios con contraseña ───────────────────────────────────────
+# Secrets esperados (en .streamlit/secrets.toml o Streamlit Cloud Secrets):
+#
+#   [sat_users.kirvy]
+#   name = "KIRVY"
+#   password_hash = "<salt>:<pbkdf2_hex>"   # generado con generar_hash_sat.py
+#
+# Si no existe la sección [sat_users], el candado se omite (modo desarrollo).
+
+def _pw_hash(password: str, salt: str) -> str:
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                              salt.encode("utf-8"), 260_000)
+    return dk.hex()
+
+def _pw_verify(password: str, stored: str) -> bool:
+    """stored = '<salt>:<hash_hex>'"""
+    try:
+        salt, expected = stored.split(":", 1)
+        return hmac.compare_digest(_pw_hash(password, salt), expected)
+    except Exception:
+        return False
+
+_sat_users = None
+try:
+    _raw = st.secrets.get("sat_users")
+    if _raw:
+        _sat_users = dict(_raw)
+except Exception:
+    pass
+
+if _sat_users:
+    if not st.session_state.get("sat_auth_user"):
         st.markdown("""
         <div class="sat-header">
             <h1>🏛️ Constancia y Opinión SAT</h1>
-            <p>Página protegida — escribe la clave de acceso.</p>
+            <p>Módulo protegido — inicia sesión para continuar.</p>
         </div>""", unsafe_allow_html=True)
-        clave = st.text_input("🔑 Clave de acceso", type="password", key="gate_input")
-        if st.button("Entrar", type="primary"):
-            if clave == _app_pwd:
-                st.session_state["sat_gate_ok"] = True
-                st.rerun()
-            else:
-                st.markdown('<div class="err-box">❌ Clave incorrecta.</div>',
-                            unsafe_allow_html=True)
+        col_l, col_c, col_r = st.columns([1, 1.2, 1])
+        with col_c:
+            st.markdown("#### 🔐 Acceso al módulo SAT")
+            _usr_input = st.text_input("Usuario", key="sat_login_user",
+                                       placeholder="tu usuario")
+            _pwd_input = st.text_input("Contraseña", type="password",
+                                       key="sat_login_pwd",
+                                       placeholder="••••••••")
+            if st.button("Entrar →", type="primary", use_container_width=True,
+                         key="sat_login_btn"):
+                _datos = _sat_users.get(_usr_input.strip().lower())
+                if _datos and _pw_verify(
+                        _pwd_input, _datos.get("password_hash", "")):
+                    st.session_state["sat_auth_user"] = _usr_input.strip().lower()
+                    st.session_state["sat_auth_name"] = _datos.get(
+                        "name", _usr_input.upper())
+                    st.rerun()
+                else:
+                    st.markdown('<div class="err-box">❌ Usuario o contraseña incorrectos.</div>',
+                                unsafe_allow_html=True)
         st.stop()
+
+    # Usuario autenticado — logout en sidebar
+    _auth_display = st.session_state.get("sat_auth_name", "")
+    with st.sidebar:
+        st.markdown(f"👤 **{_auth_display}**")
+        st.caption("Módulo SAT")
+        if st.button("🚪 Cerrar sesión", key="sat_logout"):
+            st.session_state.pop("sat_auth_user", None)
+            st.session_state.pop("sat_auth_name", None)
+            st.rerun()
 
 st.markdown("""
 <div class="sat-header">

@@ -221,6 +221,54 @@ if _sat_users:
         if _es_admin:
             st.markdown("---")
             st.markdown("**⚙️ Administración**")
+
+            # ── Ver usuarios con acceso ──────────────────────────────────
+            with st.expander("👥 Usuarios con acceso"):
+                if _sat_users:
+                    for _uname, _udata in _sat_users.items():
+                        _udisp = (_udata.get("name", _uname.upper())
+                                  if isinstance(_udata, dict) else _uname.upper())
+                        st.markdown(f"• **{_udisp}** — `{_uname}`")
+                else:
+                    st.caption("Sin usuarios registrados.")
+
+            # ── Quitar usuario ───────────────────────────────────────────
+            with st.expander("🗑️ Quitar usuario"):
+                if _sat_users:
+                    _unames = [u for u in _sat_users if u != "kirvy"]
+                    if _unames:
+                        _usel = st.selectbox("Usuario a quitar", _unames,
+                                             key="adm_quitar_sel")
+                        if st.button("Generar Secrets sin este usuario",
+                                     key="btn_quitar", type="primary"):
+                            _restantes = {k: v for k, v in _sat_users.items()
+                                          if k != _usel}
+                            _lineas = []
+                            for _un, _ud in _restantes.items():
+                                _lineas.append(f"[sat_users.{_un}]")
+                                if isinstance(_ud, dict):
+                                    for _k, _v in _ud.items():
+                                        _lineas.append(f'{_k} = "{_v}"')
+                                _lineas.append("")
+                            st.session_state["adm_quitar_toml"] = "\n".join(_lineas).strip()
+                            st.session_state["adm_quitar_nombre"] = _usel
+                        if st.session_state.get("adm_quitar_toml"):
+                            _qn = st.session_state["adm_quitar_nombre"]
+                            st.warning(
+                                f"Reemplaza **toda** la sección `sat_users` en "
+                                f"Settings → Secrets con este bloque para quitar a **{_qn}**:")
+                            st.code(st.session_state["adm_quitar_toml"], language="toml")
+                            if st.button("✔ Listo, ya lo actualicé",
+                                         key="btn_quitar_done"):
+                                del st.session_state["adm_quitar_toml"]
+                                del st.session_state["adm_quitar_nombre"]
+                                st.rerun()
+                    else:
+                        st.caption("No hay otros usuarios que quitar.")
+                else:
+                    st.caption("Sin usuarios registrados.")
+
+            # ── Crear usuario ────────────────────────────────────────────
             with st.expander("➕ Crear usuario"):
                 adm_nombre  = st.text_input("Nombre", key="adm_nombre")
                 adm_usuario = st.text_input("Usuario", key="adm_usuario")

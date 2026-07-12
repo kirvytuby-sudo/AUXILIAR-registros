@@ -486,6 +486,46 @@ if _guardadas:
                              "pwd": datos.get("password", ""),
                              "rfc": rfc, "nombre": nombre})
 
+    # ── Botón rápido: generar TODAS las empresas guardadas ────────────────────
+    _sin_pwd_g = [c for c in sorted(_guardadas.keys())
+                  if not _guardadas[c].get("password")]
+    if _sin_pwd_g:
+        st.caption(f"⚠️ Falta contraseña guardada en Secrets para: {', '.join(_sin_pwd_g)}")
+    _n_emp = len(_guardadas)
+    if st.button(
+        f"🤖  GENERAR TODAS  —  {_n_emp} empresa{'s' if _n_emp > 1 else ''}",
+        type="primary", use_container_width=True,
+        key="btn_auto_todas", disabled=bool(_sin_pwd_g)
+    ):
+        _auto_list = []
+        for _k in sorted(_guardadas.keys()):
+            _d = _guardadas[_k]
+            try:
+                _cb = base64.b64decode(_d["cer_b64"])
+                _kb = base64.b64decode(_d["key_b64"])
+                _r2, _n2, _v2, _t2 = _info_cer(_cb)
+                _auto_list.append({"cer": _cb, "key": _kb,
+                                   "pwd": _d.get("password", ""),
+                                   "rfc": _r2, "nombre": _n2})
+            except Exception as _ex:
+                st.error(f"Error leyendo {_k}: {_ex}")
+        if _auto_list:
+            _res_auto = []
+            _bar_auto = st.progress(0.0, text="Conectando con el SAT…")
+            for _ia, _ea in enumerate(_auto_list):
+                _bar_auto.progress(
+                    _ia / len(_auto_list),
+                    text=f"🏢 {_ea['rfc']} — generando documentos…")
+                _ra = _descargar_documentos(_ea["cer"], _ea["key"], _ea["pwd"])
+                _ra["rfc"] = _ra["rfc"] or _ea["rfc"]
+                _ra["nombre"] = _ra["nombre"] or _ea["nombre"]
+                _res_auto.append(_ra)
+            _bar_auto.progress(1.0, text="✅ Terminado")
+            st.session_state["sat_resultados"] = _res_auto
+            st.session_state["sat_timestamp"] = datetime.now().strftime("%Y%m%d_%H%M")
+            st.rerun()
+    st.divider()
+
 # ─── 1. Carga manual de e.firmas ──────────────────────────────────────────────
 titulo_manual = "➕ Agregar otras empresas (subir .cer y .key)" if _guardadas \
                 else "1️⃣ Sube las e.firmas (.cer y .key)"

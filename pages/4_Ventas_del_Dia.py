@@ -59,12 +59,14 @@ CTAS_PROD = [
 
 
 def _leer_cuentas_plantilla(plantilla_bytes):
-    """Lee la hoja CUENTAS de la plantilla; retorna dict {cuenta: nombre}."""
+    """Lee la hoja CUENTAS de la plantilla; retorna (cuentas_map, dyn_clientes, dyn_prods)."""
     cuentas_map = {
         IEPS_GS: "IEPS De Gasolina Magna",
         IEPS_GP: "IEPS de Premium",
         IEPS_GD: "IEPS de Diesel",
     }
+    dyn_clientes = []  # [(num_cuenta, nombre)] — col H/I (7,8)
+    dyn_prods    = []  # [(num_cuenta, nombre)] — col L/M (11,12)
     try:
         wb = openpyxl.load_workbook(io.BytesIO(plantilla_bytes), data_only=True)
         hoja = None
@@ -74,15 +76,24 @@ def _leer_cuentas_plantilla(plantilla_bytes):
                 break
         if hoja:
             for r in hoja.iter_rows(values_only=True):
-                for idx_num, idx_nom in [(7, 8), (11, 12)]:
-                    num = r[idx_num] if len(r) > idx_num else None
-                    nom = r[idx_nom] if len(r) > idx_nom else None
-                    if num and nom and str(num)[0] in ('1', '2', '4'):
-                        cuentas_map[str(num).strip()] = str(nom).strip().replace('\n', '')
+                _nc = r[7]  if len(r) > 7  else None
+                _nm = r[8]  if len(r) > 8  else None
+                if _nc and _nm:
+                    _ncs = str(_nc).strip(); _nms = str(_nm).strip().replace('\n', '').strip()
+                    if _ncs and _ncs[0].isdigit() and _nms:
+                        cuentas_map[_ncs] = _nms
+                        dyn_clientes.append((_ncs, _nms))
+                _pc = r[11] if len(r) > 11 else None
+                _pm = r[12] if len(r) > 12 else None
+                if _pc and _pm:
+                    _pcs = str(_pc).strip(); _pms = str(_pm).strip().replace('\n', '').strip()
+                    if _pcs and _pcs[0].isdigit() and _pms:
+                        cuentas_map[_pcs] = _pms
+                        dyn_prods.append((_pcs, _pms))
         wb.close()
     except Exception:
         pass
-    return cuentas_map
+    return cuentas_map, dyn_clientes, dyn_prods
 
 
 def _leer_despachos(file_bytes, filename, logs):
@@ -123,7 +134,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     # ── Leer plantilla de cuentas ──────────────────────────────────────────
     if plantilla_bytes:
         logs.append("⛽ Leyendo plantilla de cuentas...")
-        cuentas_map = _leer_cuentas_plantilla(plantilla_bytes)
+        cuentas_map, _dyn_cli, _dyn_prods = _leer_cuentas_plantilla(plantilla_bytes)
         logs.append(f"  {len(cuentas_map)} cuentas cargadas.")
     else:
         cuentas_map = {
@@ -131,10 +142,26 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             IEPS_GP: "IEPS de Premium",
             IEPS_GD: "IEPS de Diesel",
         }
+        _dyn_cli, _dyn_prods = [], []
         logs.append("  ℹ Sin plantilla — usando nombres predeterminados.")
 
-    NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(CUENTAS_TPL, CLIENTES_TPL)]
-    NOMS_PROD   = [cuentas_map.get(c, p)   for c, p   in zip(CTAS_PROD, PRODS)]
+    # Listas dinámicas (desde hoja CUENTAS) o fallback hardcoded
+    if _dyn_cli:
+        _cuentas_tpl  = [nc for nc, _ in _dyn_cli]
+        _clientes_tpl = [nm for _, nm in _dyn_cli]
+        logs.append(f"  {len(_clientes_tpl)} clientes leídos de hoja CUENTAS.")
+    else:
+        _cuentas_tpl  = CUENTAS_TPL
+        _clientes_tpl = CLIENTES_TPL
+    if len(_dyn_prods) == 7:
+        _ctas_prod = [pc for pc, _ in _dyn_prods]
+        _prods     = [pm for _, pm in _dyn_prods]
+    else:
+        _ctas_prod = CTAS_PROD
+        _prods     = PRODS
+
+    NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(_cuentas_tpl, _clientes_tpl)]
+    NOMS_PROD   = [cuentas_map.get(c, p)   for c, p   in zip(_ctas_prod, _prods)]
 
     # ── Acumular por fecha / cliente / producto ────────────────────────────
     cli_day   = defaultdict(float)
@@ -160,9 +187,9 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     logs.append(f"  {len(fechas)} fecha(s) detectada(s): {fechas[0]} … {fechas[-1]}")
 
     # ── Índices de columnas ────────────────────────────────────────────────
-    N_META    = len(META_HDRS)    # 8
-    N_CLI     = len(CLIENTES_TPL) # 20
-    N_PROD    = len(PRODS)        # 7
+    N_META    = len(META_HDRS)      # 8
+    N_CLI     = len(_clientes_tpl)  # dinámico desde hoja CUENTAS
+    N_PROD    = len(_prods)         # 7 si dinámico, si no fallback
     OFF       = N_META            # 8  → inicio clientes
     COL_TOT1  = OFF + N_CLI       # 28 → TOTAL B2 clientes
     COL_PROD0 = OFF + N_CLI + 1   # 29 → inicio productos
@@ -221,9 +248,13 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     titulo = "VENTAS DEL DIA — SUPER SERVICIO PERIFERICO"
     ws.merge_range(0, 0, 0, TOTAL_COLS - 1, titulo, f_title)
 
-    # ── Fila 1: numeración secuencial 0..N ────────────────────────────────
-    for c in range(TOTAL_COLS):
-        ws.write(1, c, c, f_acct)
+    # ── Fila 1: índice en meta/totales, N° de cuenta real en clientes/productos
+    for c in range(N_META): ws.write(1, c, c, f_acct)
+    for i, acct in enumerate(_cuentas_tpl): ws.write(1, OFF + i, acct, f_acct)
+    ws.write(1, COL_TOT1, COL_TOT1, f_acct)
+    for i, acct in enumerate(_ctas_prod): ws.write(1, COL_PROD0 + i, acct, f_acct)
+    ws.write(1, COL_TOT2, COL_TOT2, f_acct)
+    ws.write(1, COL_CONC, COL_CONC, f_acct)
 
     # ── Fila 2: encabezados ────────────────────────────────────────────────
     for i, h in enumerate(META_HDRS):
@@ -281,7 +312,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
         # Clientes
         total_b2 = 0.0
-        for i, cli in enumerate(CLIENTES_TPL):
+        for i, cli in enumerate(_clientes_tpl):
             v = round(cli_day.get((fecha, cli), 0.0), 2)
             ws.write(row, OFF + i, v if v else None, fn)
             total_b2 += v
@@ -338,7 +369,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             fd_str = fd.strftime('%d/%m/%Y')
         except Exception:
             fd_str = fecha
-        tot_cli  = sum(cli_day.get((fecha, cli), 0.0) for cli in CLIENTES_TPL)
+        tot_cli  = sum(cli_day.get((fecha, cli), 0.0) for cli in _clientes_tpl)
         tot_prod = (
             prod_day.get((fecha, "GS"), 0.0) +
             prod_day.get((fecha, "GP"), 0.0) +
@@ -443,6 +474,3 @@ if generar and despachos_file is not None:
             st.error(f"❌ Error al generar póliza: {exc}")
             with st.expander("Detalle del error"):
                 st.code(traceback.format_exc())
-
-st.markdown("---")
-st.caption("Módulo Ventas del Día · AUXILIAR DE REGISTROS")

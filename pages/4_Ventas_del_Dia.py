@@ -76,18 +76,22 @@ def _leer_cuentas_plantilla(plantilla_bytes):
                 break
         if hoja:
             for r in hoja.iter_rows(values_only=True):
-                _nc = r[7]  if len(r) > 7  else None
-                _nm = r[8]  if len(r) > 8  else None
-                if _nc and _nm:
-                    _ncs = str(_nc).strip(); _nms = str(_nm).strip().replace('\n', '').strip()
-                    if _ncs and _ncs[0].isdigit() and _nms:
+                # Clientes — col H(7) cuenta, I(8) nombre
+                _nc = r[7] if len(r) > 7 else None
+                _nm = r[8] if len(r) > 8 else None
+                if _nc is not None and _nm is not None:
+                    _ncs = str(_nc).strip()
+                    _nms = str(_nm).strip().replace('\n', '').strip()
+                    if _ncs and _nms:          # sin filtro isdigit() — acepta cualquier clave
                         cuentas_map[_ncs] = _nms
                         dyn_clientes.append((_ncs, _nms))
+                # Productos — col L(11) cuenta, M(12) nombre
                 _pc = r[11] if len(r) > 11 else None
                 _pm = r[12] if len(r) > 12 else None
-                if _pc and _pm:
-                    _pcs = str(_pc).strip(); _pms = str(_pm).strip().replace('\n', '').strip()
-                    if _pcs and _pcs[0].isdigit() and _pms:
+                if _pc is not None and _pm is not None:
+                    _pcs = str(_pc).strip()
+                    _pms = str(_pm).strip().replace('\n', '').strip()
+                    if _pcs and _pms:
                         cuentas_map[_pcs] = _pms
                         dyn_prods.append((_pcs, _pms))
         wb.close()
@@ -160,8 +164,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         _ctas_prod = CTAS_PROD
         _prods     = PRODS
 
-    NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(_cuentas_tpl, _clientes_tpl)]
-    NOMS_PROD   = [cuentas_map.get(c, p)   for c, p   in zip(_ctas_prod, _prods)]
+    NOMS_PROD   = [cuentas_map.get(c, p) for c, p in zip(_ctas_prod, _prods)]
 
     # ── Acumular por fecha / cliente / producto ────────────────────────────
     cli_day   = defaultdict(float)
@@ -186,16 +189,44 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         raise RuntimeError("No se encontraron datos de ventas en el archivo.")
     logs.append(f"  {len(fechas)} fecha(s) detectada(s): {fechas[0]} … {fechas[-1]}")
 
+    # ── Diagnóstico clientes ───────────────────────────────────────────────
+    all_cli_despachos = sorted(set(k[1] for k in cli_day.keys() if k[1]))
+    logs.append(f"  Clientes únicos en despachos ({len(all_cli_despachos)}): {', '.join(all_cli_despachos)}")
+    logs.append(f"  Cuentas cargadas de plantilla ({len(_clientes_tpl)}): {', '.join(_clientes_tpl)}")
+
+    # Clientes con al menos un importe ≠ 0
+    _activos = [
+        (nc, nm) for nc, nm in zip(_cuentas_tpl, _clientes_tpl)
+        if any(cli_day.get((f, nm), 0.0) for f in fechas)
+    ]
+    _sin_datos = [nm for nm in _clientes_tpl
+                  if not any(cli_day.get((f, nm), 0.0) for f in fechas)]
+    if _sin_datos:
+        logs.append(f"  ⚠️ Sin datos (se omiten de la póliza): {', '.join(_sin_datos)}")
+
+    # Clientes en despachos que no tienen cuenta asignada en la plantilla
+    _sin_cuenta = [cli for cli in all_cli_despachos if cli not in _clientes_tpl]
+    if _sin_cuenta:
+        logs.append(f"  ⚠️ En despachos pero SIN cuenta en plantilla: {', '.join(_sin_cuenta)}")
+
+    if _activos:
+        _cuentas_tpl  = [nc for nc, _ in _activos]
+        _clientes_tpl = [nm for _, nm in _activos]
+    logs.append(f"  ✅ {len(_clientes_tpl)} cliente(s) activos en la póliza.")
+
+    # NOMBRES_TPL con lista ya filtrada
+    NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(_cuentas_tpl, _clientes_tpl)]
+
     # ── Índices de columnas ────────────────────────────────────────────────
     N_META    = len(META_HDRS)      # 8
     N_CLI     = len(_clientes_tpl)  # dinámico desde hoja CUENTAS
     N_PROD    = len(_prods)         # 7 si dinámico, si no fallback
     OFF       = N_META            # 8  → inicio clientes
-    COL_TOT1  = OFF + N_CLI       # 28 → TOTAL B2 clientes
-    COL_PROD0 = OFF + N_CLI + 1   # 29 → inicio productos
-    COL_TOT2  = OFF + N_CLI + 1 + N_PROD  # 36 → TOTAL B2 productos
-    COL_CONC  = OFF + N_CLI + 1 + N_PROD + 1  # 37 → CONCILIACION
-    TOTAL_COLS = COL_CONC + 1     # 38
+    COL_TOT1  = OFF + N_CLI       # → TOTAL B2 clientes
+    COL_PROD0 = OFF + N_CLI + 1   # → inicio productos
+    COL_TOT2  = OFF + N_CLI + 1 + N_PROD  # → TOTAL B2 productos
+    COL_CONC  = OFF + N_CLI + 1 + N_PROD + 1  # → CONCILIACION
+    TOTAL_COLS = COL_CONC + 1
 
     # ── Generar Excel con xlsxwriter ───────────────────────────────────────
     logs.append("⛽ Generando póliza Excel...")
@@ -241,14 +272,13 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     f_grand_c = fmt({**BASE, 'bold': True, 'bg_color': '#E65100', 'font_color': '#FFFFFF',
                      'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
 
-    # ── Fila 0: título ─────────────────────────────────────────────────────
     ws.set_row(0, 24)
     ws.set_row(1, 18)
     ws.set_row(2, 50)
     titulo = "VENTAS DEL DIA — SUPER SERVICIO PERIFERICO"
     ws.merge_range(0, 0, 0, TOTAL_COLS - 1, titulo, f_title)
 
-    # ── Fila 1: índice en meta/totales, N° de cuenta real en clientes/productos
+    # Fila 1: N° de cuenta
     for c in range(N_META): ws.write(1, c, c, f_acct)
     for i, acct in enumerate(_cuentas_tpl): ws.write(1, OFF + i, acct, f_acct)
     ws.write(1, COL_TOT1, COL_TOT1, f_acct)
@@ -256,7 +286,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.write(1, COL_TOT2, COL_TOT2, f_acct)
     ws.write(1, COL_CONC, COL_CONC, f_acct)
 
-    # ── Fila 2: encabezados ────────────────────────────────────────────────
+    # Fila 2: encabezados
     for i, h in enumerate(META_HDRS):
         ws.write(2, i, h, f_hdr_m)
     for i, nom in enumerate(NOMBRES_TPL):
@@ -267,7 +297,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.write(2, COL_TOT2, "TOTAL B2", f_hdr_tot)
     ws.write(2, COL_CONC, "CONCILIACION", f_hdr_con)
 
-    # ── Anchos de columna ──────────────────────────────────────────────────
+    # Anchos
     ws.set_column(0, 0, 14)
     ws.set_column(1, 1, 12)
     for c in range(2, N_META):
@@ -281,7 +311,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.set_column(COL_CONC, COL_CONC, 14)
     ws.freeze_panes(3, 2)
 
-    # ── Filas de datos ─────────────────────────────────────────────────────
     gran_cli  = [0.0] * N_CLI
     gran_tot1 = 0.0
     gran_prod = [0.0] * N_PROD
@@ -294,7 +323,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ft  = f_tot0 if ri % 2 == 0 else f_tot1
         fc  = f_conc0 if ri % 2 == 0 else f_conc1
 
-        # Convertir fecha a objeto date para Excel
         try:
             _fd = datetime.strptime(fecha[:10], '%Y-%m-%d')
             fecha_display = _fd.strftime('%d/%m/%Y')
@@ -310,7 +338,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         for c in range(4, N_META):
             ws.write(row, c, "", f_meta)
 
-        # Clientes
         total_b2 = 0.0
         for i, cli in enumerate(_clientes_tpl):
             v = round(cli_day.get((fecha, cli), 0.0), 2)
@@ -320,7 +347,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.write(row, COL_TOT1, round(total_b2, 2), ft)
         gran_tot1 += total_b2
 
-        # Productos
         prod_vals = [
             prod_day.get((fecha, "GS"), 0.0),
             prod_day.get((fecha, "GP"), 0.0),
@@ -341,7 +367,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.write(row, COL_CONC, diferencia, fc)
         gran_conc += diferencia
 
-    # ── Fila totales generales ─────────────────────────────────────────────
     tr = len(fechas) + 3
     ws.merge_range(tr, 0, tr, N_META - 1, "TOTAL GENERAL", f_grand_l)
     for i in range(N_CLI):
@@ -361,7 +386,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     else:
         logs.append(f"⚠️  CONCILIACION con diferencia: {gran_conc:,.2f}")
 
-    # ── Resumen por fecha (para mostrar en UI) ─────────────────────────────
     resumen = []
     for fecha in fechas:
         try:

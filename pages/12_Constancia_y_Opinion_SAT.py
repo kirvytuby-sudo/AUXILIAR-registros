@@ -486,19 +486,23 @@ if _guardadas:
                              "pwd": datos.get("password", ""),
                              "rfc": rfc, "nombre": nombre})
 
-    # ── Botón rápido: generar TODAS las empresas guardadas ────────────────────
-    _sin_pwd_g = [c for c in sorted(_guardadas.keys())
+    # ── Botón rápido: generar solo las empresas marcadas ─────────────────────
+    _claves_marcadas = [c for c in sorted(_guardadas.keys())
+                        if st.session_state.get(f"sec_{c}", True)]
+    _sin_pwd_g = [c for c in _claves_marcadas
                   if not _guardadas[c].get("password")]
     if _sin_pwd_g:
         st.caption(f"⚠️ Falta contraseña guardada en Secrets para: {', '.join(_sin_pwd_g)}")
-    _n_emp = len(_guardadas)
+    _n_sel = len(_claves_marcadas)
+    _btn_label = (f"🤖  GENERAR  —  {_n_sel} empresa{'s' if _n_sel != 1 else ''}"
+                  if _n_sel else "🤖  GENERAR  —  (ninguna seleccionada)")
     if st.button(
-        f"🤖  GENERAR TODAS  —  {_n_emp} empresa{'s' if _n_emp > 1 else ''}",
+        _btn_label,
         type="primary", use_container_width=True,
-        key="btn_auto_todas", disabled=bool(_sin_pwd_g)
+        key="btn_auto_todas", disabled=(bool(_sin_pwd_g) or _n_sel == 0)
     ):
         _auto_list = []
-        for _k in sorted(_guardadas.keys()):
+        for _k in _claves_marcadas:
             _d = _guardadas[_k]
             try:
                 _cb = base64.b64decode(_d["cer_b64"])

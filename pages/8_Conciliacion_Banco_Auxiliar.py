@@ -1,7 +1,7 @@
 """
 pages/8_Conciliacion_Banco_Auxiliar.py — Módulo Conciliación Banco vs Auxiliar
 Carga un Excel del banco y un auxiliar contable, concilia depósitos↔cargos
-y retiros↔abonos con tolerancia ±$0.05 (sin límite de fechas).
+y retiros↔abonos con tolerancia ±$0.05 y ±2 días.
 """
 import io
 import os
@@ -159,11 +159,40 @@ def _read_auxiliar(wb):
     if hdr_idx is None:
         raise ValueError("No se encontró encabezado con columnas 'Fecha' y 'Cargo' en el auxiliar.")
 
-    col_f      = _col(mapping, "fecha")
-    col_pol    = _col(mapping, "póliza", "poliza", "pol")
-    col_cli    = _col(mapping, "concepto", "descripcion", "descripción", "cliente", "referencia")
-    col_cargo  = _col(mapping, "cargo")
-    col_abono  = _col(mapping, "abono")
+    col_f     = _col(mapping, "fecha")
+
+    # Póliza: buscar número/folio primero para no confundir con "Tipo de Póliza"
+    col_pol   = _col(mapping, "núm. póliza", "num. póliza", "número póliza",
+                     "numero poliza", "num poliza", "folio póliza", "folio")
+    if col_pol is None:
+        # Fallback genérico — evitar columnas que empiecen con "tipo"
+        for cand in ("póliza", "poliza", "pol"):
+            for k, v in mapping.items():
+                if cand in k and not k.startswith("tipo"):
+                    col_pol = v
+                    break
+            if col_pol is not None:
+                break
+
+    # Desc. Póliza (fuente principal para Concepto Aux)
+    col_dp    = _col(mapping, "desc. póliza", "desc poliza", "descripción póliza",
+                     "descripcion poliza", "descripción", "descripcion", "desc")
+
+    # Detalle / Concepto (secundario)
+    col_det   = _col(mapping, "detalle", "concepto", "cliente", "referencia")
+    if col_det is not None and col_det == col_dp:
+        col_det = None
+
+    col_cargo = _col(mapping, "cargo")
+    col_abono = _col(mapping, "abono")
+
+    def _s(row, col):
+        """Extrae string de celda; devuelve '' para None/nan/None-literal."""
+        if col is None or col >= len(row):
+            return ""
+        v = row[col]
+        s = "" if v is None else str(v).strip()
+        return "" if s.lower() in ("none", "nan", "#n/a", "") else s
 
     aux_cargo = []
     aux_abono = []
@@ -174,12 +203,15 @@ def _read_auxiliar(wb):
         fecha = _to_date(row[col_f] if col_f is not None and col_f < len(row) else None)
         if fecha is None:
             continue
-        pol    = str(row[col_pol] if col_pol is not None and col_pol < len(row) else "").strip()
-        cli    = str(row[col_cli] if col_cli is not None and col_cli < len(row) else "").strip()
-        cargo  = _to_float(row[col_cargo] if col_cargo is not None and col_cargo < len(row) else 0)
-        abono  = _to_float(row[col_abono] if col_abono is not None and col_abono < len(row) else 0)
+        pol      = _s(row, col_pol)
+        dp_val   = _s(row, col_dp)
+        det_val  = _s(row, col_det)
+        # Concepto Aux: priorizar Desc. Póliza; si vacía, usar Detalle/Concepto
+        concepto = dp_val or det_val
+        cargo    = _to_float(row[col_cargo] if col_cargo is not None and col_cargo < len(row) else 0)
+        abono    = _to_float(row[col_abono] if col_abono is not None and col_abono < len(row) else 0)
 
-        base = {"fecha": fecha, "poliza": pol, "concepto": cli, "matched": False}
+        base = {"fecha": fecha, "poliza": pol, "concepto": concepto, "matched": False}
         if cargo > 0:
             aux_cargo.append({**base, "monto": cargo})
         if abono > 0:
@@ -620,31 +652,4 @@ if st.session_state.cba_resultado_bytes and st.session_state.cba_resumen:
         st.markdown(f'<div class="cba-stat"><div class="val" style="color:#1E40AF">{res["conc_r"]}/{res["total_r"]}</div><div class="lbl">Retiros conciliados</div></div>', unsafe_allow_html=True)
     with m4:
         no_total = res["no_d"] + res["no_r"]
-        color_no = "#991B1B" if no_total > 0 else "#166534"
-        st.markdown(f'<div class="cba-stat"><div class="val" style="color:{color_no}">{no_total}</div><div class="lbl">Sin conciliar</div></div>', unsafe_allow_html=True)
-
-    # Descarga
-    st.download_button(
-        label="⬇️  Descargar Excel de conciliación",
-        data=st.session_state.cba_resultado_bytes,
-        file_name="Conciliacion_Banco_Auxiliar.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary",
-        use_container_width=True,
-    )
-
-else:
-    st.markdown("""
-<div class="cba-card" style="text-align:center; padding: 3rem 2rem;">
-  <div style="font-size:3rem; margin-bottom:1rem;">🔀</div>
-  <h3 style="color:#1E3A8A; margin:0 0 .5rem;">Conciliación Banco vs Auxiliar</h3>
-  <p style="color:#64748B; max-width:400px; margin:0 auto;">
-    Carga el Excel del banco y el auxiliar contable, luego presiona
-    <strong>Generar conciliación</strong>. El resultado se descarga como Excel
-    con hojas de Depósitos, Retiros y Resumen.
-  </p>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("---")
-st.caption("Módulo Conciliación Banco vs Auxiliar · v1.0  ·  Tolerancia ±$0.05 · match por monto, fecha como desempate")
+        color_no = "#991B1B" if n

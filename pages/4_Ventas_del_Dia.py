@@ -1,10 +1,10 @@
-"""AUXILIAR DE REGISTROS — Ventas del Día (Control de Despachos → Póliza Excel)"""
+"""AUXILIAR DE REGISTROS â Ventas del DÃ­a (Control de Despachos â PÃ³liza Excel)"""
 import streamlit as st
 import io
 from collections import defaultdict
 from datetime import datetime
 
-st.set_page_config(page_title="Ventas del Día · Auxiliar", page_icon="⛽", layout="wide")
+st.set_page_config(page_title="Ventas del DÃ­a Â· Auxiliar", page_icon="â½", layout="wide")
 
 st.markdown("""<style>
 [data-testid="stAppViewContainer"] { background: #dbeafe; }
@@ -14,8 +14,8 @@ st.markdown("""<style>
 #MainMenu{visibility:hidden;}footer{visibility:hidden;}
 </style>
 <div class="header-bar">
-  <h1>⛽ Ventas del Día</h1>
-  <p>Genera la póliza contable de ventas diarias desde el control de despachos</p>
+  <h1>â½ Ventas del DÃ­a</h1>
+  <p>Genera la pÃ³liza contable de ventas diarias desde el control de despachos</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -23,10 +23,10 @@ try:
     import xlsxwriter
     import openpyxl
 except ImportError as _e:
-    st.error(f"❌ Librería faltante: {_e}. Verifica requirements.txt.")
+    st.error(f"â LibrerÃ­a faltante: {_e}. Verifica requirements.txt.")
     st.stop()
 
-# ── Cuentas IEPS (fijas) ────────────────────────────────────────────────────
+# ââ Cuentas IEPS (fijas) ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 IEPS_GS = "401-01-0001-0006-0001"
 IEPS_GP = "401-01-0001-0006-0002"
 IEPS_GD = "401-01-0001-0006-0003"
@@ -36,7 +36,7 @@ CLIENTES_TPL = [
     "M Y T INTEGRALES PARA LA SALUD", "T AMERICAN EXPRESS",
     "CENTRO DE DISTRIBUCION ORIENTE", "T ULTRAGAS", "T PLUXEE MEXICO",
     "JUAN ANTONIO CRUZ MONDRAGON", "T INBURSA", "V EFECTIVALE",
-    "ETIQUETAS CCL", "MARIA DEL CARMEN PEÑALOZA PEIMBERT",
+    "ETIQUETAS CCL", "MARIA DEL CARMEN PEÃALOZA PEIMBERT",
     "ROTULACIONES E IMPRESIONES MEXICANAS SA DE CV",
     "ALMACENAJE Y DISTRIBUCION TRANSGALLA", "PETRO ASFALTOS DEL SURESTE",
     "GRAFIARTE DELA", "MARICELA GONZALEZ RODRIGUEZ", "ADEPT SERVICES MEXICO",
@@ -94,34 +94,34 @@ def _leer_despachos(file_bytes, filename, logs):
             ws_xls = wb_xls.sheet_by_index(0)
             rows = [tuple(ws_xls.row_values(r)) for r in range(ws_xls.nrows)]
             data = rows[1:]
-            logs.append(f"  {len(data):,} registros leídos (.xls vía xlrd).")
+            logs.append(f"  {len(data):,} registros leÃ­dos (.xls vÃ­a xlrd).")
             return data
         except ImportError:
             raise RuntimeError(
-                "El archivo está en formato antiguo .xls y la librería 'xlrd' no está instalada.\n"
-                "Solución: Abre el archivo en Excel y guárdalo como .xlsx."
+                "El archivo estÃ¡ en formato antiguo .xls y la librerÃ­a 'xlrd' no estÃ¡ instalada.\n"
+                "SoluciÃ³n: Abre el archivo en Excel y guÃ¡rdalo como .xlsx."
             )
     else:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
         data = list(wb.active.iter_rows(values_only=True))[1:]
         wb.close()
-        logs.append(f"  {len(data):,} registros leídos (.xlsx).")
+        logs.append(f"  {len(data):,} registros leÃ­dos (.xlsx).")
         return data
 
 
 def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     """
-    Procesa el control de despachos y genera la póliza Excel.
+    Procesa el control de despachos y genera la pÃ³liza Excel.
     Retorna (excel_bytes: bytes, logs: list[str]).
     """
     logs = []
 
-    logs.append("⛽ Leyendo control de despachos...")
+    logs.append("â½ Leyendo control de despachos...")
     data = _leer_despachos(despachos_bytes, despachos_nombre, logs)
 
-    # ── Leer plantilla de cuentas ──────────────────────────────────────────
+    # ââ Leer plantilla de cuentas ââââââââââââââââââââââââââââââââââââââââââ
     if plantilla_bytes:
-        logs.append("⛽ Leyendo plantilla de cuentas...")
+        logs.append("â½ Leyendo plantilla de cuentas...")
         cuentas_map = _leer_cuentas_plantilla(plantilla_bytes)
         logs.append(f"  {len(cuentas_map)} cuentas cargadas.")
     else:
@@ -130,12 +130,12 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             IEPS_GP: "IEPS de Premium",
             IEPS_GD: "IEPS de Diesel",
         }
-        logs.append("  ℹ Sin plantilla — usando nombres predeterminados.")
+        logs.append("  â¹ Sin plantilla â usando nombres predeterminados.")
 
     NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(CUENTAS_TPL, CLIENTES_TPL)]
     NOMS_PROD   = [cuentas_map.get(c, p)   for c, p   in zip(CTAS_PROD, PRODS)]
 
-    # ── Acumular por fecha / cliente / producto ────────────────────────────
+    # ââ Acumular por fecha / cliente / producto ââââââââââââââââââââââââââââ
     cli_day   = defaultdict(float)
     prod_day  = defaultdict(float)
     iva_day   = defaultdict(float)
@@ -156,21 +156,21 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     fechas = sorted(set(k[0] for k in cli_day if k[0]))
     if not fechas:
         raise RuntimeError("No se encontraron datos de ventas en el archivo.")
-    logs.append(f"  {len(fechas)} fecha(s) detectada(s): {fechas[0]} … {fechas[-1]}")
+    logs.append(f"  {len(fechas)} fecha(s) detectada(s): {fechas[0]} â¦ {fechas[-1]}")
 
-    # ── Índices de columnas ────────────────────────────────────────────────
+    # ââ Ãndices de columnas ââââââââââââââââââââââââââââââââââââââââââââââââ
     N_META    = len(META_HDRS)    # 8
     N_CLI     = len(CLIENTES_TPL) # 20
     N_PROD    = len(PRODS)        # 7
-    OFF       = N_META            # 8  → inicio clientes
-    COL_TOT1  = OFF + N_CLI       # 28 → TOTAL B2 clientes
-    COL_PROD0 = OFF + N_CLI + 1   # 29 → inicio productos
-    COL_TOT2  = OFF + N_CLI + 1 + N_PROD  # 36 → TOTAL B2 productos
-    COL_CONC  = OFF + N_CLI + 1 + N_PROD + 1  # 37 → CONCILIACION
+    OFF       = N_META            # 8  â inicio clientes
+    COL_TOT1  = OFF + N_CLI       # 28 â TOTAL B2 clientes
+    COL_PROD0 = OFF + N_CLI + 1   # 29 â inicio productos
+    COL_TOT2  = OFF + N_CLI + 1 + N_PROD  # 36 â TOTAL B2 productos
+    COL_CONC  = OFF + N_CLI + 1 + N_PROD + 1  # 37 â CONCILIACION
     TOTAL_COLS = COL_CONC + 1     # 38
 
-    # ── Generar Excel con xlsxwriter ───────────────────────────────────────
-    logs.append("⛽ Generando póliza Excel...")
+    # ââ Generar Excel con xlsxwriter âââââââââââââââââââââââââââââââââââââââ
+    logs.append("â½ Generando pÃ³liza Excel...")
     buf = io.BytesIO()
     wb  = xlsxwriter.Workbook(buf, {'in_memory': True})
     ws  = wb.add_worksheet("poliza IA")
@@ -213,14 +213,14 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     f_grand_c = fmt({**BASE, 'bold': True, 'bg_color': '#E65100', 'font_color': '#FFFFFF',
                      'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
 
-    # ── Fila 0: título ─────────────────────────────────────────────────────
+    # ââ Fila 0: tÃ­tulo âââââââââââââââââââââââââââââââââââââââââââââââââââââ
     ws.set_row(0, 24)
     ws.set_row(1, 18)
     ws.set_row(2, 50)
-    titulo = "VENTAS DEL DIA — SUPER SERVICIO PERIFERICO"
+    titulo = "VENTAS DEL DIA â SUPER SERVICIO PERIFERICO"
     ws.merge_range(0, 0, 0, TOTAL_COLS - 1, titulo, f_title)
 
-    # ── Fila 1: números de cuenta ──────────────────────────────────────────
+    # ââ Fila 1: nÃºmeros de cuenta ââââââââââââââââââââââââââââââââââââââââââ
     for c in range(N_META):
         ws.write(1, c, "", f_acct)
     for i, cta in enumerate(CUENTAS_TPL):
@@ -231,7 +231,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.write(1, COL_TOT2, "", f_acct)
     ws.write(1, COL_CONC, "", f_acct)
 
-    # ── Fila 2: encabezados ────────────────────────────────────────────────
+    # ââ Fila 2: encabezados ââââââââââââââââââââââââââââââââââââââââââââââââ
     for i, h in enumerate(META_HDRS):
         ws.write(2, i, h, f_hdr_m)
     for i, nom in enumerate(NOMBRES_TPL):
@@ -242,7 +242,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.write(2, COL_TOT2, "TOTAL B2", f_hdr_tot)
     ws.write(2, COL_CONC, "CONCILIACION", f_hdr_con)
 
-    # ── Anchos de columna ──────────────────────────────────────────────────
+    # ââ Anchos de columna ââââââââââââââââââââââââââââââââââââââââââââââââââ
     ws.set_column(0, 0, 14)
     ws.set_column(1, 1, 12)
     for c in range(2, N_META):
@@ -256,7 +256,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.set_column(COL_CONC, COL_CONC, 14)
     ws.freeze_panes(3, 2)
 
-    # ── Filas de datos ─────────────────────────────────────────────────────
+    # ââ Filas de datos âââââââââââââââââââââââââââââââââââââââââââââââââââââ
     gran_cli  = [0.0] * N_CLI
     gran_tot1 = 0.0
     gran_prod = [0.0] * N_PROD
@@ -314,7 +314,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.write(row, COL_CONC, diferencia, fc)
         gran_conc += diferencia
 
-    # ── Fila totales generales ─────────────────────────────────────────────
+    # ââ Fila totales generales âââââââââââââââââââââââââââââââââââââââââââââ
     tr = len(fechas) + 3
     ws.merge_range(tr, 0, tr, N_META - 1, "TOTAL GENERAL", f_grand_l)
     for i in range(N_CLI):
@@ -328,13 +328,13 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     wb.close()
     buf.seek(0)
 
-    logs.append(f"✅ Póliza generada — {len(fechas)} fecha(s), {TOTAL_COLS} columnas.")
+    logs.append(f"â PÃ³liza generada â {len(fechas)} fecha(s), {TOTAL_COLS} columnas.")
     if abs(gran_conc) < 0.02:
-        logs.append(f"✅ CONCILIACION cuadra: {gran_conc:,.2f}")
+        logs.append(f"â CONCILIACION cuadra: {gran_conc:,.2f}")
     else:
-        logs.append(f"⚠️  CONCILIACION con diferencia: {gran_conc:,.2f}")
+        logs.append(f"â ï¸  CONCILIACION con diferencia: {gran_conc:,.2f}")
 
-    # ── Resumen por fecha (para mostrar en UI) ─────────────────────────────
+    # ââ Resumen por fecha (para mostrar en UI) âââââââââââââââââââââââââââââ
     resumen = []
     for fecha in fechas:
         try:
@@ -362,35 +362,35 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     return buf.read(), logs, resumen
 
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # UI
-# ══════════════════════════════════════════════════════════════════════════════
+# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-st.markdown("### 📂 Archivos de entrada")
+st.markdown("### ð Archivos de entrada")
 col1, col2 = st.columns([1, 1])
 with col1:
     despachos_file = st.file_uploader(
-        "📊 Control de despachos (.xlsx / .xls)",
+        "ð Control de despachos (.xlsx / .xls)",
         type=["xlsx", "xls"],
         help="Archivo de control de despachos generado por el sistema de ventas.",
     )
 with col2:
     plantilla_file = st.file_uploader(
-        "📋 Plantilla de cuentas (.xlsx) — opcional",
+        "ð Plantilla de cuentas (.xlsx) â opcional",
         type=["xlsx"],
         help="Plantilla SINUBE con hoja 'CUENTAS'. Si no se proporciona, se usan nombres predeterminados.",
     )
 
 st.markdown("")
 generar = st.button(
-    "⛽  Generar Póliza Ventas del Día",
+    "â½  Generar PÃ³liza Ventas del DÃ­a",
     type="primary",
     disabled=despachos_file is None,
     use_container_width=True,
 )
 
 if despachos_file is None:
-    st.info("👆 Selecciona al menos el archivo de control de despachos para comenzar.")
+    st.info("ð Selecciona al menos el archivo de control de despachos para comenzar.")
 
 if generar and despachos_file is not None:
     with st.spinner("Procesando..."):
@@ -405,19 +405,19 @@ if generar and despachos_file is not None:
             base = despachos_file.name.rsplit('.', 1)[0]
             nombre_salida = f"poliza_ventas_dia_{base}.xlsx"
 
-            st.success(f"✅ Póliza generada — {len(resumen)} fecha(s)")
+            st.success(f"â PÃ³liza generada â {len(resumen)} fecha(s)")
 
             st.download_button(
-                label="💾  Descargar póliza Excel",
+                label="ð¾  Descargar pÃ³liza Excel",
                 data=excel_bytes,
                 file_name=nombre_salida,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
 
-            # ── Tabla resumen ──────────────────────────────────────────────
+            # ââ Tabla resumen ââââââââââââââââââââââââââââââââââââââââââââââ
             if resumen:
-                st.markdown("### 📊 Resumen por fecha")
+                st.markdown("### ð Resumen por fecha")
                 import pandas as pd
                 df = pd.DataFrame(resumen)
                 # Color diferencia
@@ -433,20 +433,20 @@ if generar and despachos_file is not None:
                         "Total Productos": "{:,.2f}",
                         "Diferencia":      "{:,.2f}",
                     })
-                    .applymap(_color_diff, subset=["Diferencia"])
+                    .map(_color_diff, subset=["Diferencia"])
                 )
                 st.dataframe(styled, use_container_width=True, hide_index=True)
 
-            # ── Log ────────────────────────────────────────────────────────
-            with st.expander("📋 Log de procesamiento"):
+            # ââ Log ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+            with st.expander("ð Log de procesamiento"):
                 for line in logs:
                     st.text(line)
 
         except Exception as exc:
             import traceback
-            st.error(f"❌ Error al generar póliza: {exc}")
+            st.error(f"â Error al generar pÃ³liza: {exc}")
             with st.expander("Detalle del error"):
                 st.code(traceback.format_exc())
 
 st.markdown("---")
-st.caption("Módulo Ventas del Día · AUXILIAR DE REGISTROS")
+st.caption("MÃ³dulo Ventas del DÃ­a Â· AUXILIAR DE REGISTROS")

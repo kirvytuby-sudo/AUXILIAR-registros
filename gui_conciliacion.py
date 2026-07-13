@@ -11,7 +11,7 @@ PestaÃ±as disponibles:
   2. PrÃ©stamos     â PDFs de prÃ©stamos detectados
   3. Reportes      â resumen consolidado y filtros por fecha
   4. ConfiguraciÃ³n â rutas por defecto, carpeta de salida
-
+h
 Requiere: pandas, openpyxl, pdfplumber
 """
 
@@ -7092,15 +7092,29 @@ class WorkspaceWindow(tk.Toplevel):
                     break
             if hoja_cuentas is None:
                 self.after(0, self._log, "  â  No se encontrÃ³ hoja 'cuentas' en la plantilla.", True)
-            else:
-                for r in hoja_cuentas.iter_rows(values_only=True):
-                    for idx_num, idx_nom in [(7, 8), (11, 12)]:
-                        num = r[idx_num] if len(r) > idx_num else None
-                        nom = r[idx_nom] if len(r) > idx_nom else None
-                        if num and nom and str(num)[0] in ('1', '2', '4'):
-                            cuentas_map[str(num).strip()] = str(nom).strip().replace('\n', '')
 
-            CLIENTES_TPL = [
+            # ── Extraer listas dinámicas de la hoja CUENTAS ──────────────────
+            _dyn_clientes = []   # [(num_cuenta, nombre)] — columnas H/I (7,8)
+            _dyn_prods    = []   # [(num_cuenta, nombre)] — columnas L/M (11,12)
+            if hoja_cuentas is not None:
+                for r in hoja_cuentas.iter_rows(values_only=True):
+                    _nc  = r[7]  if len(r) > 7  else None
+                    _nm  = r[8]  if len(r) > 8  else None
+                    if _nc and _nm:
+                        _ncs = str(_nc).strip(); _nms = str(_nm).strip().replace('\n', '').strip()
+                        if _ncs and _ncs[0].isdigit() and _nms:
+                            cuentas_map[_ncs] = _nms
+                            _dyn_clientes.append((_ncs, _nms))
+                    _pc  = r[11] if len(r) > 11 else None
+                    _pm  = r[12] if len(r) > 12 else None
+                    if _pc and _pm:
+                        _pcs = str(_pc).strip(); _pms = str(_pm).strip().replace('\n', '').strip()
+                        if _pcs and _pcs[0].isdigit() and _pms:
+                            cuentas_map[_pcs] = _pms
+                            _dyn_prods.append((_pcs, _pms))
+
+            # Listas de respaldo hardcoded
+            _CLIENTES_FB = [
                 "T BANORTE","Contado","T EDENRED (ACCOR)","T EFECTIVALE",
                 "M Y T INTEGRALES PARA LA SALUD","T AMERICAN EXPRESS",
                 "CENTRO DE DISTRIBUCION ORIENTE","T ULTRAGAS","T PLUXEE MEXICO",
@@ -7110,24 +7124,38 @@ class WorkspaceWindow(tk.Toplevel):
                 "ALMACENAJE Y DISTRIBUCION TRANSGALLA","PETRO ASFALTOS DEL SURESTE",
                 "GRAFIARTE DELA","MARICELA GONZALEZ RODRIGUEZ","ADEPT SERVICES MEXICO",
             ]
-            CUENTAS_TPL = [
+            _CUENTAS_FB = [
                 "105-01-0001-0004","105-01-0001-0001","105-01-0002-0002","105-01-0002-0001",
                 "105-01-0003-3600","105-01-0001-0007","105-01-0003-0601","105-01-0002-0003",
                 "105-01-0002-0007","105-01-0003-2700","105-01-0002-0006","105-01-0002-0005",
                 "105-01-0003-1200","105-01-0003-3601","105-01-0003-5400","105-01-0003-0002",
                 "105-01-0003-4701","105-01-0003-1800","105-01-0003-3602","105-01-0003-0001",
             ]
+            if _dyn_clientes:
+                CUENTAS_TPL  = [nc for nc, _ in _dyn_clientes]
+                CLIENTES_TPL = [nm for _, nm in _dyn_clientes]
+                self.after(0, self._log, f"  {len(CLIENTES_TPL)} clientes leídos de hoja CUENTAS.")
+            else:
+                CUENTAS_TPL  = _CUENTAS_FB
+                CLIENTES_TPL = _CLIENTES_FB
+                self.after(0, self._log, "  Usando lista predeterminada.")
             NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(CUENTAS_TPL, CLIENTES_TPL)]
 
             META_HDRS = ["TIPO DE POLIZA","Fecha","REFERENCIA","CONCEPTO","ERROR","UIDD","NUM POLIZA","PROCESADO"]
             N_META = len(META_HDRS)
-            PRODS     = ["GS","GP","GD","IVA","IEPS GS","IEPS GP","IEPS GD"]
-            CTAS_PROD = [
+            _PRODS_FB = ["GS","GP","GD","IVA","IEPS GS","IEPS GP","IEPS GD"]
+            _CTAS_PROD_FB = [
                 "401-01-0001-0001","401-01-0001-0002","401-01-0001-0003","209-01",
                 self._vd_ieps_gs.get().strip(),
                 self._vd_ieps_gp.get().strip(),
                 self._vd_ieps_gd.get().strip(),
             ]
+            if len(_dyn_prods) == 7:
+                CTAS_PROD = [pc for pc, _ in _dyn_prods]
+                PRODS     = [pm for _, pm in _dyn_prods]
+            else:
+                PRODS     = _PRODS_FB
+                CTAS_PROD = _CTAS_PROD_FB
             NOMS_PROD = [cuentas_map.get(c, p) for c, p in zip(CTAS_PROD, PRODS)]
 
             # data ya fue leÃ­da arriba (con soporte .xls / .xlsx)
@@ -7193,7 +7221,13 @@ class WorkspaceWindow(tk.Toplevel):
             titulo = "VENTAS DEL DIA â SUPER SERVICIO PERIFERICO"
             ws.merge_range(0, 0, 0, TOTAL_COLS-1, titulo, f_title)
 
-            for c in range(TOTAL_COLS): ws.write(1, c, c, f_acct)
+            # Fila 2: índice en meta/totales, cuenta real en clientes/productos
+            for c in range(N_META): ws.write(1, c, c, f_acct)
+            for i, acct in enumerate(CUENTAS_TPL): ws.write(1, OFF + i, acct, f_acct)
+            ws.write(1, COL_TOT1, COL_TOT1, f_acct)
+            for i, acct in enumerate(CTAS_PROD): ws.write(1, COL_PROD0 + i, acct, f_acct)
+            ws.write(1, COL_TOT2, COL_TOT2, f_acct)
+            ws.write(1, COL_CONC, COL_CONC, f_acct)
 
             for i, h in enumerate(META_HDRS): ws.write(2, i, h, f_hdr_m)
             for i, nom in enumerate(NOMBRES_TPL): ws.write(2, OFF+i, nom, f_hdr_c)

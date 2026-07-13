@@ -1,4 +1,4 @@
-"""AUXILIAR DE REGISTROS — Conciliación Control de Despacho vs SAT (CFDI/XML)"""
+"""AUXILIAR DE REGISTROS â ConciliaciÃ³n Control de Despacho vs SAT (CFDI/XML)"""
 import io
 import xml.etree.ElementTree as ET
 from collections import defaultdict
@@ -8,8 +8,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 st.set_page_config(
-    page_title="Conciliación SAT",
-    page_icon="🔗",
+    page_title="ConciliaciÃ³n SAT",
+    page_icon="ð",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -27,14 +27,14 @@ st.markdown("""
 
 st.markdown("""
 <div class="hdr">
-  <h2>🔗 Conciliación Control de Despacho vs SAT (CFDI/XML)</h2>
+  <h2>ð ConciliaciÃ³n Control de Despacho vs SAT (CFDI/XML)</h2>
   <p>Compara los UUIDs de los XMLs del SAT contra la columna FolioFiscal del Excel de despachos.</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LÓGICA
-# ─────────────────────────────────────────────────────────────────────────────
+# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# LÃGICA
+# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 NS = {
     "cfdi": "http://www.sat.gob.mx/cfd/4",
     "tfd":  "http://www.sat.gob.mx/TimbreFiscalDigital",
@@ -70,9 +70,9 @@ def _parsear_xmls(xml_files):
                 "total":    total,
                 "archivo":  f.name,
             })
-            logs.append(f"  ✔ {f.name}  UUID: {uuid[:8]}...")
+            logs.append(f"  â {f.name}  UUID: {uuid[:8]}...")
         except Exception as e:
-            logs.append(f"  ✘ {f.name}: {e}")
+            logs.append(f"  â {f.name}: {e}")
     return data, logs
 
 
@@ -103,11 +103,11 @@ def _leer_excel(excel_bytes, excel_name):
             if matches:
                 hdr_row = ri
                 folio_col_idx = matches[0]
-                logs.append(f"  ✔ Columna FolioFiscal: col {folio_col_idx+1} "
+                logs.append(f"  â Columna FolioFiscal: col {folio_col_idx+1} "
                              f"('{sht.cell_value(ri, folio_col_idx)}')")
                 break
         if folio_col_idx is None:
-            return None, ["  ✘ No se encontró columna FolioFiscal en el Excel"]
+            return None, ["  â No se encontrÃ³ columna FolioFiscal en el Excel"]
         # Col de importe
         for ci in range(sht.ncols):
             hv = str(sht.cell_value(hdr_row, ci)).strip().lower()
@@ -135,12 +135,12 @@ def _leer_excel(excel_bytes, excel_name):
                         or v.lower() in ("uuid", "folio fiscal", "folio_fiscal", "uidd")):
                     folio_col_idx = ci - 1
                     hdr_row_xl    = ri
-                    logs.append(f"  ✔ Columna FolioFiscal: col {ci} ('{v}')")
+                    logs.append(f"  â Columna FolioFiscal: col {ci} ('{v}')")
                     break
             if folio_col_idx is not None:
                 break
         if folio_col_idx is None:
-            return None, ["  ✘ No se encontró columna FolioFiscal"]
+            return None, ["  â No se encontrÃ³ columna FolioFiscal"]
         for ci, cell in enumerate(ws_r[hdr_row_xl]):
             if str(cell.value or "").strip().lower() in ("importe", "total", "subtotal"):
                 imp_col_idx = ci
@@ -155,12 +155,12 @@ def _leer_excel(excel_bytes, excel_name):
                 except: pass
             excel_rows.append({"uuid": uuid_xl, "importe": importe})
 
-    logs.append(f"  ✔ {len(excel_rows)} filas leídas")
+    logs.append(f"  â {len(excel_rows)} filas leÃ­das")
     return excel_rows, logs
 
 
 def _generar_excel(xmls_data, excel_rows):
-    """Genera el Excel de conciliación. Retorna bytes."""
+    """Genera el Excel de conciliaciÃ³n. Retorna bytes."""
     AZUL  = "1E3A5F"; AZUL2 = "2E75B6"; AZUL3 = "D6E4F0"
     VERDE = "C8E6C9"; ROJO  = "FFCDD2"; AMBAR = "FFF9C4"; GRIS = "F5F5F5"
     thin  = Side(style="thin", color="BBBBBB")
@@ -181,11 +181,11 @@ def _generar_excel(xmls_data, excel_rows):
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Conciliación UUID"
+    ws.title = "ConciliaciÃ³n UUID"
     ws.sheet_view.showGridLines = False
 
     ws.merge_cells("A1:M1")
-    cx(ws["A1"], "CONCILIACIÓN  CONTROL DE DESPACHO  vs  SAT (CFDI/XML)",
+    cx(ws["A1"], "CONCILIACIÃN  CONTROL DE DESPACHO  vs  SAT (CFDI/XML)",
        bg=AZUL, fg="FFFFFF", bold=True, sz=13, align="center", border=False)
     ws.row_dimensions[1].height = 30
 
@@ -195,9 +195,9 @@ def _generar_excel(xmls_data, excel_rows):
     ws.row_dimensions[2].height = 18
 
     HDRS = [
-        ("No.", 5), ("Folio Fiscal\n(UUID — XML)", 42),
-        ("Folio Fiscal\n(UIDD — Excel)", 42),
-        ("¿Coincide?", 12), ("Fecha", 12),
+        ("No.", 5), ("Folio Fiscal\n(UUID â XML)", 42),
+        ("Folio Fiscal\n(UIDD â Excel)", 42),
+        ("Â¿Coincide?", 12), ("Fecha", 12),
         ("Receptor XML", 28), ("Concepto", 26),
         ("SubTotal\nXML", 14), ("IVA\nXML", 12), ("Total\nXML", 14),
         ("Importe\nExcel", 14), ("Diferencia", 14), ("Estado", 16),
@@ -208,7 +208,7 @@ def _generar_excel(xmls_data, excel_rows):
         ws.column_dimensions[ws.cell(4, j).column_letter].width = w
     ws.row_dimensions[4].height = 36
 
-    # Índice UUID → lista importes Excel
+    # Ãndice UUID â lista importes Excel
     excel_idx = defaultdict(list)
     for r in excel_rows:
         excel_idx[r["uuid"]].append(r["importe"])
@@ -223,16 +223,16 @@ def _generar_excel(xmls_data, excel_rows):
         imp_xl = sum(excel_idx[uuid]) if found else 0
         diff   = imp_xl - x["total"]
         m_bg   = VERDE if found else ROJO
-        m_txt  = "✔  SÍ" if found else "✘  NO"
+        m_txt  = "â  SÃ" if found else "â  NO"
         d_bg   = VERDE if abs(diff) < 0.02 else (AMBAR if abs(diff) < 100 else ROJO)
         if found and abs(diff) < 0.02:
-            est, est_bg = "✔ Conciliado", VERDE
+            est, est_bg = "â Conciliado", VERDE
         elif found and abs(diff) < 100:
-            est, est_bg = "⚠ Dif. menor", AMBAR
+            est, est_bg = "â  Dif. menor", AMBAR
         elif found:
-            est, est_bg = "⚠ Dif. mayor", ROJO
+            est, est_bg = "â  Dif. mayor", ROJO
         else:
-            est, est_bg = "✘ No encontrado", ROJO
+            est, est_bg = "â No encontrado", ROJO
         if found:
             ok_count += 1
 
@@ -295,20 +295,20 @@ def _generar_excel(xmls_data, excel_rows):
     return buf.read(), resumen, ok_count
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 # UI
-# ─────────────────────────────────────────────────────────────────────────────
-st.markdown("### 📁 Archivos de entrada")
+# âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+st.markdown("### ð Archivos de entrada")
 col1, col2 = st.columns([1, 1])
 with col1:
     excel_file = st.file_uploader(
-        "📄 Control de Despachos (.xlsx / .xls)",
+        "ð Control de Despachos (.xlsx / .xls)",
         type=["xlsx", "xls"],
         help="Debe contener una columna FolioFiscal, UUID o UIDD.",
     )
 with col2:
     xml_files = st.file_uploader(
-        "📑 Archivos XML (CFDI del SAT)",
+        "ð Archivos XML (CFDI del SAT)",
         type=["xml"],
         accept_multiple_files=True,
         help="Selecciona uno o varios CFDIs (.xml).",
@@ -316,30 +316,30 @@ with col2:
 
 st.markdown("")
 generar = st.button(
-    "🔗  Generar Conciliación",
+    "ð  Generar ConciliaciÃ³n",
     type="primary",
     disabled=(excel_file is None or not xml_files),
     use_container_width=True,
 )
 
 if not excel_file or not xml_files:
-    st.info("📋 Carga el Excel de Control de Despachos y al menos un XML para comenzar.")
+    st.info("ð Carga el Excel de Control de Despachos y al menos un XML para comenzar.")
 
 if generar and excel_file and xml_files:
     with st.spinner("Procesando..."):
         logs_all = []
         try:
             # 1. Parsear XMLs
-            logs_all.append("📑 Leyendo XMLs...")
+            logs_all.append("ð Leyendo XMLs...")
             xmls_data, xml_logs = _parsear_xmls(xml_files)
             logs_all.extend(xml_logs)
-            logs_all.append(f"  Total: {len(xmls_data)} XMLs leídos")
+            logs_all.append(f"  Total: {len(xmls_data)} XMLs leÃ­dos")
 
             if not xmls_data:
-                st.error("✘ No se pudo leer ningún XML válido.")
+                st.error("â No se pudo leer ningÃºn XML vÃ¡lido.")
             else:
                 # 2. Leer Excel
-                logs_all.append("\n📄 Leyendo Excel...")
+                logs_all.append("\nð Leyendo Excel...")
                 excel_bytes  = excel_file.read()
                 excel_rows, xl_logs = _leer_excel(excel_bytes, excel_file.name)
                 logs_all.extend(xl_logs)
@@ -350,7 +350,7 @@ if generar and excel_file and xml_files:
                     logs_all.append(f"  Total: {len(excel_rows)} filas en Excel")
 
                     # 3. Generar Excel
-                    logs_all.append("\n📊 Conciliando y generando reporte...")
+                    logs_all.append("\nð Conciliando y generando reporte...")
                     excel_out, resumen, ok_count = _generar_excel(xmls_data, excel_rows)
 
                     total_xml = sum(x["total"] for x in xmls_data)
@@ -358,23 +358,23 @@ if generar and excel_file and xml_files:
 
                     logs_all.append(f"\n{'='*60}")
                     logs_all.append(f"  XMLs procesados   : {len(xmls_data)}")
-                    logs_all.append(f"  Encontrados       : {ok_count} ✔")
-                    logs_all.append(f"  No encontrados    : {no_enc} ✘")
+                    logs_all.append(f"  Encontrados       : {ok_count} â")
+                    logs_all.append(f"  No encontrados    : {no_enc} â")
                     logs_all.append(f"  Total XMLs        : ${total_xml:,.2f}")
                     logs_all.append(f"{'='*60}")
 
-                    # Métricas
+                    # MÃ©tricas
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("XMLs procesados", len(xmls_data))
-                    m2.metric("✔ Encontrados",   ok_count)
-                    m3.metric("✘ No encontrados", no_enc)
+                    m2.metric("â Encontrados",   ok_count)
+                    m3.metric("â No encontrados", no_enc)
                     m4.metric("Total XML",        f"${total_xml:,.2f}")
 
-                    st.success(f"✅ Conciliación generada — {ok_count}/{len(xmls_data)} encontrados")
+                    st.success(f"â ConciliaciÃ³n generada â {ok_count}/{len(xmls_data)} encontrados")
 
                     nombre_salida = f"Conciliacion_DespachoVsSAT_{excel_file.name.rsplit('.',1)[0]}.xlsx"
                     st.download_button(
-                        label="📥  Descargar Excel de Conciliación",
+                        label="ð¥  Descargar Excel de ConciliaciÃ³n",
                         data=excel_out,
                         file_name=nombre_salida,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -383,14 +383,14 @@ if generar and excel_file and xml_files:
 
                     # Tabla resumen
                     if resumen:
-                        st.markdown("### 📊 Resumen")
+                        st.markdown("### ð Resumen")
                         import pandas as pd
                         df = pd.DataFrame(resumen)
 
                         def _color_estado(v):
                             if "Conciliado" in str(v):
                                 return "background-color:#D1FAE5; color:#065F46"
-                            if "⚠" in str(v):
+                            if "â " in str(v):
                                 return "background-color:#FEF3C7; color:#92400E"
                             return "background-color:#FEE2E2; color:#991B1B"
 
@@ -400,20 +400,20 @@ if generar and excel_file and xml_files:
                                 "Total XML":      "{:,.2f}",
                                 "Importe Excel":  "{:,.2f}",
                                 "Diferencia":     "{:,.2f}",
-                            }, na_rep="—")
-                            .applymap(_color_estado, subset=["Estado"])
+                            }, na_rep="â")
+                            .map(_color_estado, subset=["Estado"])
                         )
                         st.dataframe(styled, use_container_width=True, hide_index=True)
 
         except Exception as exc:
             import traceback
-            st.error(f"✘ Error: {exc}")
+            st.error(f"â Error: {exc}")
             with st.expander("Detalle del error"):
                 st.code(traceback.format_exc())
-            logs_all.append(f"\n✘ ERROR: {exc}")
+            logs_all.append(f"\nâ ERROR: {exc}")
 
-        with st.expander("📋 Log de procesamiento"):
+        with st.expander("ð Log de procesamiento"):
             st.text("\n".join(logs_all))
 
 st.markdown("---")
-st.caption("Módulo Conciliación SAT · AUXILIAR DE REGISTROS")
+st.caption("MÃ³dulo ConciliaciÃ³n SAT Â· AUXILIAR DE REGISTROS")

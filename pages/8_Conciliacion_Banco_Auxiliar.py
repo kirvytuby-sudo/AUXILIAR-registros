@@ -652,4 +652,31 @@ if st.session_state.cba_resultado_bytes and st.session_state.cba_resumen:
         st.markdown(f'<div class="cba-stat"><div class="val" style="color:#1E40AF">{res["conc_r"]}/{res["total_r"]}</div><div class="lbl">Retiros conciliados</div></div>', unsafe_allow_html=True)
     with m4:
         no_total = res["no_d"] + res["no_r"]
-        color_no = "#991B1B" if n
+        color_no = "#991B1B" if no_total > 0 else "#166534"
+        st.markdown(f'<div class="cba-stat"><div class="val" style="color:{color_no}">{no_total}</div><div class="lbl">Sin conciliar</div></div>', unsafe_allow_html=True)
+
+    # Descarga
+    st.download_button(
+        label="⬇️  Descargar Excel de conciliación",
+        data=st.session_state.cba_resultado_bytes,
+        file_name="Conciliacion_Banco_Auxiliar.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary",
+        use_container_width=True,
+    )
+
+else:
+    st.markdown("""
+<div class="cba-card" style="text-align:center; padding: 3rem 2rem;">
+  <div style="font-size:3rem; margin-bottom:1rem;">🔀</div>
+  <h3 style="color:#1E3A8A; margin:0 0 .5rem;">Conciliación Banco vs Auxiliar</h3>
+  <p style="color:#64748B; max-width:400px; margin:0 auto;">
+    Carga el Excel del banco y el auxiliar contable, luego presiona
+    <strong>Generar conciliación</strong>. El resultado se descarga como Excel
+    con hojas de Depósitos, Retiros y Resumen.
+  </p>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("---")
+st.caption("Módulo Conciliación Banco vs Auxiliar · v1.1  ·  Tolerancia ±$0.05 · Concepto Aux = Desc. Póliza")

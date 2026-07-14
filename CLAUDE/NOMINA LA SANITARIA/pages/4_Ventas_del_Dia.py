@@ -100,6 +100,35 @@ def _leer_cuentas_plantilla(plantilla_bytes):
     return cuentas_map, dyn_clientes, dyn_prods
 
 
+def _norm(s):
+    """Normaliza nombre para comparación: mayúsculas, sin espacios/saltos de línea extra."""
+    return str(s or "").replace('\n', ' ').strip().upper()
+
+
+def _match_cliente(raw, clientes_list):
+    """Mapea nombre de cliente del despacho al nombre exacto de la plantilla.
+    1) Vacío o 'Contado' → 'Publico en General' (cuenta de efectivo).
+    2) Coincidencia exacta (normalizado, sin distinción de mayúsculas).
+    3) Subcadena: uno contiene al otro (ej. 'T.EDENRED' ↔ 'Clientes T.EDENRED').
+    4) Sin coincidencia → retorna el nombre original (aparecerá en log ⚠️).
+    """
+    raw_s = str(raw or "").strip()
+    if not raw_s or raw_s.upper() == "CONTADO":
+        return "Publico en General"
+    raw_n = _norm(raw_s)
+    # Exacto
+    for nm in clientes_list:
+        if _norm(nm) == raw_n:
+            return nm
+    # Subcadena
+    for nm in clientes_list:
+        nm_n = _norm(nm)
+        if raw_n in nm_n or nm_n in raw_n:
+            return nm
+    # Sin coincidencia
+    return raw_s
+
+
 def _leer_despachos(file_bytes, filename, logs):
     """Lee el archivo de despachos (.xlsx o .xls). Retorna lista de filas (sin encabezado)."""
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'xlsx'
@@ -174,11 +203,10 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     for r in data:
         try:
-            fecha   = str(r[0])[:10] if r[0] is not None else ""
-            cliente = str(r[16] or "").strip()
-            if not cliente or cliente.upper() == "CONTADO":
-                cliente = "CONTADO"          # vacío o variante → nombre exacto de la hoja CUENTAS
-            prod    = str(r[3]  or "")
+            fecha       = str(r[0])[:10] if r[0] is not None else ""
+            cliente_raw = str(r[17] or "").strip()   # col R = "Cliente" (r[16]=Factura, incorrecto)
+            cliente     = _match_cliente(cliente_raw, _clientes_tpl)
+            prod        = str(r[3]  or "")
             cli_day[(fecha, cliente)]  += float(r[9]  or 0)
             prod_day[(fecha, prod)]    += float(r[6]  or 0)
             iva_day[fecha]             += float(r[7]  or 0)

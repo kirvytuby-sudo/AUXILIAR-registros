@@ -164,7 +164,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         _ctas_prod = CTAS_PROD
         _prods     = PRODS
 
-    NOMS_PROD   = [cuentas_map.get(c, p) for c, p in zip(_ctas_prod, _prods)]
+    NOMS_PROD = [cuentas_map.get(c, p) for c, p in zip(_ctas_prod, _prods)]
 
     # ── Acumular por fecha / cliente / producto ────────────────────────────
     cli_day   = defaultdict(float)
@@ -176,6 +176,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         try:
             fecha   = str(r[0])[:10] if r[0] is not None else ""
             cliente = str(r[16] or "").strip()
+            cliente = cliente or "Contado"   # celda vacía = venta en efectivo
             prod    = str(r[3]  or "")
             cli_day[(fecha, cliente)]  += float(r[9]  or 0)
             prod_day[(fecha, prod)]    += float(r[6]  or 0)
@@ -218,14 +219,14 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(_cuentas_tpl, _clientes_tpl)]
 
     # ── Índices de columnas ────────────────────────────────────────────────
-    N_META    = len(META_HDRS)      # 8
-    N_CLI     = len(_clientes_tpl)  # dinámico desde hoja CUENTAS
-    N_PROD    = len(_prods)         # 7 si dinámico, si no fallback
-    OFF       = N_META            # 8  → inicio clientes
-    COL_TOT1  = OFF + N_CLI       # → TOTAL B2 clientes
-    COL_PROD0 = OFF + N_CLI + 1   # → inicio productos
-    COL_TOT2  = OFF + N_CLI + 1 + N_PROD  # → TOTAL B2 productos
-    COL_CONC  = OFF + N_CLI + 1 + N_PROD + 1  # → CONCILIACION
+    N_META    = len(META_HDRS)
+    N_CLI     = len(_clientes_tpl)
+    N_PROD    = len(_prods)
+    OFF       = N_META
+    COL_TOT1  = OFF + N_CLI
+    COL_PROD0 = OFF + N_CLI + 1
+    COL_TOT2  = OFF + N_CLI + 1 + N_PROD
+    COL_CONC  = OFF + N_CLI + 1 + N_PROD + 1
     TOTAL_COLS = COL_CONC + 1
 
     # ── Generar Excel con xlsxwriter ───────────────────────────────────────
@@ -278,7 +279,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     titulo = "VENTAS DEL DIA — SUPER SERVICIO PERIFERICO"
     ws.merge_range(0, 0, 0, TOTAL_COLS - 1, titulo, f_title)
 
-    # Fila 1: N° de cuenta
     for c in range(N_META): ws.write(1, c, c, f_acct)
     for i, acct in enumerate(_cuentas_tpl): ws.write(1, OFF + i, acct, f_acct)
     ws.write(1, COL_TOT1, COL_TOT1, f_acct)
@@ -286,7 +286,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.write(1, COL_TOT2, COL_TOT2, f_acct)
     ws.write(1, COL_CONC, COL_CONC, f_acct)
 
-    # Fila 2: encabezados
     for i, h in enumerate(META_HDRS):
         ws.write(2, i, h, f_hdr_m)
     for i, nom in enumerate(NOMBRES_TPL):
@@ -297,7 +296,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.write(2, COL_TOT2, "TOTAL B2", f_hdr_tot)
     ws.write(2, COL_CONC, "CONCILIACION", f_hdr_con)
 
-    # Anchos
     ws.set_column(0, 0, 14)
     ws.set_column(1, 1, 12)
     for c in range(2, N_META):
@@ -466,17 +464,14 @@ if generar and despachos_file is not None:
                 use_container_width=True,
             )
 
-            # ── Tabla resumen ──────────────────────────────────────────────
             if resumen:
                 st.markdown("### 📊 Resumen por fecha")
                 import pandas as pd
                 df = pd.DataFrame(resumen)
-                # Color diferencia
                 def _color_diff(v):
                     if abs(v) < 0.02:
                         return "background-color:#D1FAE5; color:#065F46"
                     return "background-color:#FEF3C7; color:#92400E"
-
                 styled = (
                     df.style
                     .format({
@@ -488,7 +483,6 @@ if generar and despachos_file is not None:
                 )
                 st.dataframe(styled, use_container_width=True, hide_index=True)
 
-            # ── Log ────────────────────────────────────────────────────────
             with st.expander("📋 Log de procesamiento"):
                 for line in logs:
                     st.text(line)

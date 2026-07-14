@@ -76,16 +76,14 @@ def _leer_cuentas_plantilla(plantilla_bytes):
                 break
         if hoja:
             for r in hoja.iter_rows(values_only=True):
-                # Clientes — col H(7) cuenta, I(8) nombre
                 _nc = r[7] if len(r) > 7 else None
                 _nm = r[8] if len(r) > 8 else None
                 if _nc is not None and _nm is not None:
                     _ncs = str(_nc).strip()
                     _nms = str(_nm).strip().replace('\n', '').strip()
-                    if _ncs and _nms:          # sin filtro isdigit() — acepta cualquier clave
+                    if _ncs and _nms:
                         cuentas_map[_ncs] = _nms
                         dyn_clientes.append((_ncs, _nms))
-                # Productos — col L(11) cuenta, M(12) nombre
                 _pc = r[11] if len(r) > 11 else None
                 _pm = r[12] if len(r) > 12 else None
                 if _pc is not None and _pm is not None:
@@ -101,7 +99,6 @@ def _leer_cuentas_plantilla(plantilla_bytes):
 
 
 def _leer_despachos(file_bytes, filename, logs):
-    """Lee el archivo de despachos (.xlsx o .xls). Retorna lista de filas (sin encabezado)."""
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'xlsx'
     if ext == 'xls':
         try:
@@ -126,16 +123,11 @@ def _leer_despachos(file_bytes, filename, logs):
 
 
 def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
-    """
-    Procesa el control de despachos y genera la póliza Excel.
-    Retorna (excel_bytes: bytes, logs: list[str]).
-    """
     logs = []
 
     logs.append("⛽ Leyendo control de despachos...")
     data = _leer_despachos(despachos_bytes, despachos_nombre, logs)
 
-    # ── Leer plantilla de cuentas ──────────────────────────────────────────
     if plantilla_bytes:
         logs.append("⛽ Leyendo plantilla de cuentas...")
         cuentas_map, _dyn_cli, _dyn_prods = _leer_cuentas_plantilla(plantilla_bytes)
@@ -149,7 +141,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         _dyn_cli, _dyn_prods = [], []
         logs.append("  ℹ Sin plantilla — usando nombres predeterminados.")
 
-    # Listas dinámicas (desde hoja CUENTAS) o fallback hardcoded
     if _dyn_cli:
         _cuentas_tpl  = [nc for nc, _ in _dyn_cli]
         _clientes_tpl = [nm for _, nm in _dyn_cli]
@@ -166,7 +157,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     NOMS_PROD = [cuentas_map.get(c, p) for c, p in zip(_ctas_prod, _prods)]
 
-    # ── Acumular por fecha / cliente / producto ────────────────────────────
+    # ── Acumular ───────────────────────────────────────────────────────────
     cli_day   = defaultdict(float)
     prod_day  = defaultdict(float)
     iva_day   = defaultdict(float)
@@ -176,7 +167,8 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         try:
             fecha   = str(r[0])[:10] if r[0] is not None else ""
             cliente = str(r[16] or "").strip()
-            cliente = cliente or "Contado"   # celda vacía = venta en efectivo
+            if not cliente or cliente.upper() == "CONTADO":
+                cliente = "CONTADO"          # vacío o variante → nombre exacto de la hoja CUENTAS
             prod    = str(r[3]  or "")
             cli_day[(fecha, cliente)]  += float(r[9]  or 0)
             prod_day[(fecha, prod)]    += float(r[6]  or 0)
@@ -195,7 +187,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     logs.append(f"  Clientes únicos en despachos ({len(all_cli_despachos)}): {', '.join(all_cli_despachos)}")
     logs.append(f"  Cuentas cargadas de plantilla ({len(_clientes_tpl)}): {', '.join(_clientes_tpl)}")
 
-    # Clientes con al menos un importe ≠ 0
     _activos = [
         (nc, nm) for nc, nm in zip(_cuentas_tpl, _clientes_tpl)
         if any(cli_day.get((f, nm), 0.0) for f in fechas)
@@ -205,7 +196,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     if _sin_datos:
         logs.append(f"  ⚠️ Sin datos (se omiten de la póliza): {', '.join(_sin_datos)}")
 
-    # Clientes en despachos que no tienen cuenta asignada en la plantilla
     _sin_cuenta = [cli for cli in all_cli_despachos if cli not in _clientes_tpl]
     if _sin_cuenta:
         logs.append(f"  ⚠️ En despachos pero SIN cuenta en plantilla: {', '.join(_sin_cuenta)}")
@@ -215,7 +205,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         _clientes_tpl = [nm for _, nm in _activos]
     logs.append(f"  ✅ {len(_clientes_tpl)} cliente(s) activos en la póliza.")
 
-    # NOMBRES_TPL con lista ya filtrada
     NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(_cuentas_tpl, _clientes_tpl)]
 
     # ── Índices de columnas ────────────────────────────────────────────────
@@ -229,53 +218,37 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     COL_CONC  = OFF + N_CLI + 1 + N_PROD + 1
     TOTAL_COLS = COL_CONC + 1
 
-    # ── Generar Excel con xlsxwriter ───────────────────────────────────────
+    # ── Excel ──────────────────────────────────────────────────────────────
     logs.append("⛽ Generando póliza Excel...")
     buf = io.BytesIO()
     wb  = xlsxwriter.Workbook(buf, {'in_memory': True})
     ws  = wb.add_worksheet("poliza IA")
 
-    def fmt(d):
-        return wb.add_format(d)
+    def fmt(d): return wb.add_format(d)
 
     CURR = 'General'
-    BASE = {'font_name': 'Arial', 'font_size': 9, 'border': 1,
-            'border_color': '#CCCCCC', 'valign': 'vcenter'}
+    BASE = {'font_name': 'Arial', 'font_size': 9, 'border': 1, 'border_color': '#CCCCCC', 'valign': 'vcenter'}
 
-    f_title   = fmt({'bold': True, 'font_color': '#FFFFFF', 'bg_color': '#C2185B',
-                     'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Arial'})
-    f_acct    = fmt({**BASE, 'bold': True, 'bg_color': '#3B0764', 'font_color': '#FFFFFF',
-                     'align': 'center', 'font_size': 8})
-    f_hdr_m   = fmt({**BASE, 'bold': True, 'bg_color': '#6A1B9A', 'font_color': '#FFFFFF',
-                     'align': 'center', 'text_wrap': True, 'font_size': 8})
-    f_hdr_c   = fmt({**BASE, 'bold': True, 'bg_color': '#1565C0', 'font_color': '#FFFFFF',
-                     'align': 'center', 'text_wrap': True, 'font_size': 8})
-    f_hdr_p   = fmt({**BASE, 'bold': True, 'bg_color': '#0D47A1', 'font_color': '#FFFFFF',
-                     'align': 'center', 'text_wrap': True, 'font_size': 8})
-    f_hdr_tot = fmt({**BASE, 'bold': True, 'bg_color': '#1B5E20', 'font_color': '#FFFFFF',
-                     'align': 'center', 'font_size': 8})
-    f_hdr_con = fmt({**BASE, 'bold': True, 'bg_color': '#E65100', 'font_color': '#FFFFFF',
-                     'align': 'center', 'font_size': 8})
+    f_title   = fmt({'bold': True, 'font_color': '#FFFFFF', 'bg_color': '#C2185B', 'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Arial'})
+    f_acct    = fmt({**BASE, 'bold': True, 'bg_color': '#3B0764', 'font_color': '#FFFFFF', 'align': 'center', 'font_size': 8})
+    f_hdr_m   = fmt({**BASE, 'bold': True, 'bg_color': '#6A1B9A', 'font_color': '#FFFFFF', 'align': 'center', 'text_wrap': True, 'font_size': 8})
+    f_hdr_c   = fmt({**BASE, 'bold': True, 'bg_color': '#1565C0', 'font_color': '#FFFFFF', 'align': 'center', 'text_wrap': True, 'font_size': 8})
+    f_hdr_p   = fmt({**BASE, 'bold': True, 'bg_color': '#0D47A1', 'font_color': '#FFFFFF', 'align': 'center', 'text_wrap': True, 'font_size': 8})
+    f_hdr_tot = fmt({**BASE, 'bold': True, 'bg_color': '#1B5E20', 'font_color': '#FFFFFF', 'align': 'center', 'font_size': 8})
+    f_hdr_con = fmt({**BASE, 'bold': True, 'bg_color': '#E65100', 'font_color': '#FFFFFF', 'align': 'center', 'font_size': 8})
     f_fecha   = fmt({**BASE, 'bold': True, 'bg_color': '#F3E5F5', 'align': 'center', 'num_format': 'dd/mm/yyyy'})
     f_meta    = fmt({**BASE, 'bg_color': '#EDE7F6', 'align': 'left', 'font_size': 8})
     f_num0    = fmt({**BASE, 'bg_color': '#FFFFFF', 'align': 'right', 'num_format': CURR})
     f_num1    = fmt({**BASE, 'bg_color': '#B7D9EF', 'align': 'right', 'num_format': CURR})
     f_tot0    = fmt({**BASE, 'bold': True, 'bg_color': '#E6F2FB', 'align': 'right', 'num_format': CURR})
     f_tot1    = fmt({**BASE, 'bold': True, 'bg_color': '#DCEDC8', 'align': 'right', 'num_format': CURR})
-    f_conc0   = fmt({**BASE, 'bold': True, 'bg_color': '#FFF9C4', 'font_color': '#E65100',
-                     'align': 'right', 'num_format': CURR})
-    f_conc1   = fmt({**BASE, 'bold': True, 'bg_color': '#FFF176', 'font_color': '#E65100',
-                     'align': 'right', 'num_format': CURR})
-    f_grand   = fmt({**BASE, 'bold': True, 'bg_color': '#1B5E20', 'font_color': '#FFFFFF',
-                     'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
-    f_grand_l = fmt({**BASE, 'bold': True, 'bg_color': '#1B5E20', 'font_color': '#FFFFFF',
-                     'align': 'center', 'border': 2, 'border_color': '#000000'})
-    f_grand_c = fmt({**BASE, 'bold': True, 'bg_color': '#E65100', 'font_color': '#FFFFFF',
-                     'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
+    f_conc0   = fmt({**BASE, 'bold': True, 'bg_color': '#FFF9C4', 'font_color': '#E65100', 'align': 'right', 'num_format': CURR})
+    f_conc1   = fmt({**BASE, 'bold': True, 'bg_color': '#FFF176', 'font_color': '#E65100', 'align': 'right', 'num_format': CURR})
+    f_grand   = fmt({**BASE, 'bold': True, 'bg_color': '#1B5E20', 'font_color': '#FFFFFF', 'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
+    f_grand_l = fmt({**BASE, 'bold': True, 'bg_color': '#1B5E20', 'font_color': '#FFFFFF', 'align': 'center', 'border': 2, 'border_color': '#000000'})
+    f_grand_c = fmt({**BASE, 'bold': True, 'bg_color': '#E65100', 'font_color': '#FFFFFF', 'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
 
-    ws.set_row(0, 24)
-    ws.set_row(1, 18)
-    ws.set_row(2, 50)
+    ws.set_row(0, 24); ws.set_row(1, 18); ws.set_row(2, 50)
     titulo = "VENTAS DEL DIA — SUPER SERVICIO PERIFERICO"
     ws.merge_range(0, 0, 0, TOTAL_COLS - 1, titulo, f_title)
 
@@ -286,27 +259,19 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.write(1, COL_TOT2, COL_TOT2, f_acct)
     ws.write(1, COL_CONC, COL_CONC, f_acct)
 
-    for i, h in enumerate(META_HDRS):
-        ws.write(2, i, h, f_hdr_m)
-    for i, nom in enumerate(NOMBRES_TPL):
-        ws.write(2, OFF + i, nom, f_hdr_c)
+    for i, h in enumerate(META_HDRS): ws.write(2, i, h, f_hdr_m)
+    for i, nom in enumerate(NOMBRES_TPL): ws.write(2, OFF + i, nom, f_hdr_c)
     ws.write(2, COL_TOT1, "TOTAL B2", f_hdr_tot)
-    for i, nom in enumerate(NOMS_PROD):
-        ws.write(2, COL_PROD0 + i, nom, f_hdr_p)
+    for i, nom in enumerate(NOMS_PROD): ws.write(2, COL_PROD0 + i, nom, f_hdr_p)
     ws.write(2, COL_TOT2, "TOTAL B2", f_hdr_tot)
     ws.write(2, COL_CONC, "CONCILIACION", f_hdr_con)
 
-    ws.set_column(0, 0, 14)
-    ws.set_column(1, 1, 12)
-    for c in range(2, N_META):
-        ws.set_column(c, c, 20)
-    for i in range(N_CLI):
-        ws.set_column(OFF + i, OFF + i, 14)
+    ws.set_column(0, 0, 14); ws.set_column(1, 1, 12)
+    for c in range(2, N_META): ws.set_column(c, c, 20)
+    for i in range(N_CLI): ws.set_column(OFF + i, OFF + i, 14)
     ws.set_column(COL_TOT1, COL_TOT1, 13)
-    for i in range(N_PROD):
-        ws.set_column(COL_PROD0 + i, COL_PROD0 + i, 13)
-    ws.set_column(COL_TOT2, COL_TOT2, 13)
-    ws.set_column(COL_CONC, COL_CONC, 14)
+    for i in range(N_PROD): ws.set_column(COL_PROD0 + i, COL_PROD0 + i, 13)
+    ws.set_column(COL_TOT2, COL_TOT2, 13); ws.set_column(COL_CONC, COL_CONC, 14)
     ws.freeze_panes(3, 2)
 
     gran_cli  = [0.0] * N_CLI
@@ -317,41 +282,34 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     for ri, fecha in enumerate(fechas):
         row = ri + 3
-        fn  = f_num0 if ri % 2 == 0 else f_num1
-        ft  = f_tot0 if ri % 2 == 0 else f_tot1
-        fc  = f_conc0 if ri % 2 == 0 else f_conc1
-
+        fn = f_num0 if ri % 2 == 0 else f_num1
+        ft = f_tot0 if ri % 2 == 0 else f_tot1
+        fc = f_conc0 if ri % 2 == 0 else f_conc1
         try:
             _fd = datetime.strptime(fecha[:10], '%Y-%m-%d')
             fecha_display = _fd.strftime('%d/%m/%Y')
             _fecha_val = _fd.date()
         except Exception:
-            fecha_display = fecha
-            _fecha_val = fecha
+            fecha_display = fecha; _fecha_val = fecha
 
         ws.write(row, 0, "D", f_meta)
         ws.write_datetime(row, 1, _fecha_val, f_fecha)
         ws.write(row, 2, "VENTA DEL DIA " + fecha_display, f_meta)
         ws.write(row, 3, "VENTA DEL DIA " + fecha_display, f_meta)
-        for c in range(4, N_META):
-            ws.write(row, c, "", f_meta)
+        for c in range(4, N_META): ws.write(row, c, "", f_meta)
 
         total_b2 = 0.0
         for i, cli in enumerate(_clientes_tpl):
             v = round(cli_day.get((fecha, cli), 0.0), 2)
             ws.write(row, OFF + i, v if v else None, fn)
-            total_b2 += v
-            gran_cli[i] += v
+            total_b2 += v; gran_cli[i] += v
         ws.write(row, COL_TOT1, round(total_b2, 2), ft)
         gran_tot1 += total_b2
 
         prod_vals = [
-            prod_day.get((fecha, "GS"), 0.0),
-            prod_day.get((fecha, "GP"), 0.0),
-            prod_day.get((fecha, "GD"), 0.0),
-            iva_day.get(fecha, 0.0),
-            ieps_prod.get((fecha, "GS"), 0.0),
-            ieps_prod.get((fecha, "GP"), 0.0),
+            prod_day.get((fecha, "GS"), 0.0), prod_day.get((fecha, "GP"), 0.0),
+            prod_day.get((fecha, "GD"), 0.0), iva_day.get(fecha, 0.0),
+            ieps_prod.get((fecha, "GS"), 0.0), ieps_prod.get((fecha, "GP"), 0.0),
             ieps_prod.get((fecha, "GD"), 0.0),
         ]
         total_prod = sum(prod_vals)
@@ -367,16 +325,13 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     tr = len(fechas) + 3
     ws.merge_range(tr, 0, tr, N_META - 1, "TOTAL GENERAL", f_grand_l)
-    for i in range(N_CLI):
-        ws.write(tr, OFF + i, round(gran_cli[i], 2), f_grand)
+    for i in range(N_CLI): ws.write(tr, OFF + i, round(gran_cli[i], 2), f_grand)
     ws.write(tr, COL_TOT1, round(gran_tot1, 2), f_grand)
-    for i in range(N_PROD):
-        ws.write(tr, COL_PROD0 + i, round(gran_prod[i], 2), f_grand)
+    for i in range(N_PROD): ws.write(tr, COL_PROD0 + i, round(gran_prod[i], 2), f_grand)
     ws.write(tr, COL_TOT2, round(gran_tot2, 2), f_grand)
     ws.write(tr, COL_CONC, round(gran_conc, 2), f_grand_c)
 
-    wb.close()
-    buf.seek(0)
+    wb.close(); buf.seek(0)
 
     logs.append(f"✅ Póliza generada — {len(fechas)} fecha(s), {TOTAL_COLS} columnas.")
     if abs(gran_conc) < 0.02:
@@ -387,26 +342,18 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     resumen = []
     for fecha in fechas:
         try:
-            fd = datetime.strptime(fecha[:10], '%Y-%m-%d')
-            fd_str = fd.strftime('%d/%m/%Y')
+            fd = datetime.strptime(fecha[:10], '%Y-%m-%d'); fd_str = fd.strftime('%d/%m/%Y')
         except Exception:
             fd_str = fecha
         tot_cli  = sum(cli_day.get((fecha, cli), 0.0) for cli in _clientes_tpl)
         tot_prod = (
-            prod_day.get((fecha, "GS"), 0.0) +
-            prod_day.get((fecha, "GP"), 0.0) +
-            prod_day.get((fecha, "GD"), 0.0) +
-            iva_day.get(fecha, 0.0) +
-            ieps_prod.get((fecha, "GS"), 0.0) +
-            ieps_prod.get((fecha, "GP"), 0.0) +
+            prod_day.get((fecha, "GS"), 0.0) + prod_day.get((fecha, "GP"), 0.0) +
+            prod_day.get((fecha, "GD"), 0.0) + iva_day.get(fecha, 0.0) +
+            ieps_prod.get((fecha, "GS"), 0.0) + ieps_prod.get((fecha, "GP"), 0.0) +
             ieps_prod.get((fecha, "GD"), 0.0)
         )
-        resumen.append({
-            "Fecha": fd_str,
-            "Total Clientes": round(tot_cli, 2),
-            "Total Productos": round(tot_prod, 2),
-            "Diferencia": round(tot_cli - tot_prod, 2),
-        })
+        resumen.append({"Fecha": fd_str, "Total Clientes": round(tot_cli, 2),
+                        "Total Productos": round(tot_prod, 2), "Diferencia": round(tot_cli - tot_prod, 2)})
 
     return buf.read(), logs, resumen
 
@@ -418,25 +365,15 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 st.markdown("### 📂 Archivos de entrada")
 col1, col2 = st.columns([1, 1])
 with col1:
-    despachos_file = st.file_uploader(
-        "📊 Control de despachos (.xlsx / .xls)",
-        type=["xlsx", "xls"],
-        help="Archivo de control de despachos generado por el sistema de ventas.",
-    )
+    despachos_file = st.file_uploader("📊 Control de despachos (.xlsx / .xls)", type=["xlsx", "xls"],
+        help="Archivo de control de despachos generado por el sistema de ventas.")
 with col2:
-    plantilla_file = st.file_uploader(
-        "📋 Plantilla de cuentas (.xlsx) — opcional",
-        type=["xlsx"],
-        help="Plantilla SINUBE con hoja 'CUENTAS'. Si no se proporciona, se usan nombres predeterminados.",
-    )
+    plantilla_file = st.file_uploader("📋 Plantilla de cuentas (.xlsx) — opcional", type=["xlsx"],
+        help="Plantilla SINUBE con hoja 'CUENTAS'. Si no se proporciona, se usan nombres predeterminados.")
 
 st.markdown("")
-generar = st.button(
-    "⛽  Generar Póliza Ventas del Día",
-    type="primary",
-    disabled=despachos_file is None,
-    use_container_width=True,
-)
+generar = st.button("⛽  Generar Póliza Ventas del Día", type="primary",
+    disabled=despachos_file is None, use_container_width=True)
 
 if despachos_file is None:
     st.info("👆 Selecciona al menos el archivo de control de despachos para comenzar.")
@@ -446,41 +383,25 @@ if generar and despachos_file is not None:
         try:
             plantilla_bytes = plantilla_file.read() if plantilla_file else None
             excel_bytes, logs, resumen = procesar_ventas(
-                despachos_file.read(),
-                despachos_file.name,
-                plantilla_bytes,
-            )
+                despachos_file.read(), despachos_file.name, plantilla_bytes)
 
             base = despachos_file.name.rsplit('.', 1)[0]
             nombre_salida = f"poliza_ventas_dia_{base}.xlsx"
-
             st.success(f"✅ Póliza generada — {len(resumen)} fecha(s)")
-
-            st.download_button(
-                label="💾  Descargar póliza Excel",
-                data=excel_bytes,
+            st.download_button(label="💾  Descargar póliza Excel", data=excel_bytes,
                 file_name=nombre_salida,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
+                use_container_width=True)
 
             if resumen:
                 st.markdown("### 📊 Resumen por fecha")
                 import pandas as pd
                 df = pd.DataFrame(resumen)
                 def _color_diff(v):
-                    if abs(v) < 0.02:
-                        return "background-color:#D1FAE5; color:#065F46"
-                    return "background-color:#FEF3C7; color:#92400E"
-                styled = (
-                    df.style
-                    .format({
-                        "Total Clientes":  "{:,.2f}",
-                        "Total Productos": "{:,.2f}",
-                        "Diferencia":      "{:,.2f}",
-                    })
-                    .map(_color_diff, subset=["Diferencia"])
-                )
+                    return "background-color:#D1FAE5; color:#065F46" if abs(v) < 0.02 else "background-color:#FEF3C7; color:#92400E"
+                styled = (df.style
+                    .format({"Total Clientes": "{:,.2f}", "Total Productos": "{:,.2f}", "Diferencia": "{:,.2f}"})
+                    .map(_color_diff, subset=["Diferencia"]))
                 st.dataframe(styled, use_container_width=True, hide_index=True)
 
             with st.expander("📋 Log de procesamiento"):

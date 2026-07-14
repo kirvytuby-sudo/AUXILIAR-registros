@@ -272,8 +272,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     BASE = {'font_name': 'Arial', 'font_size': 9, 'border': 1,
             'border_color': '#CCCCCC', 'valign': 'vcenter'}
 
-    f_title   = fmt({'bold': True, 'font_color': '#FFFFFF', 'bg_color': '#C2185B',
-                     'font_size': 12, 'align': 'center', 'valign': 'vcenter', 'font_name': 'Arial'})
     f_acct    = fmt({**BASE, 'bold': True, 'bg_color': '#3B0764', 'font_color': '#FFFFFF',
                      'align': 'center', 'font_size': 8})
     f_hdr_m   = fmt({**BASE, 'bold': True, 'bg_color': '#6A1B9A', 'font_color': '#FFFFFF',
@@ -303,31 +301,26 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     f_grand_c = fmt({**BASE, 'bold': True, 'bg_color': '#E65100', 'font_color': '#FFFFFF',
                      'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
 
-    # ── Fila 0: título ─────────────────────────────────────────────────────
-    ws.set_row(0, 24)
-    ws.set_row(1, 18)
-    ws.set_row(2, 50)
-    titulo = "VENTAS DEL DIA — SUPER SERVICIO PERIFERICO"
-    ws.merge_range(0, 0, 0, TOTAL_COLS - 1, titulo, f_title)
+    # ── Fila 0: número de columna / número de cuenta ──────────────────────
+    ws.set_row(0, 18)
+    ws.set_row(1, 50)
+    for c in range(N_META): ws.write(0, c, c + 1, f_acct)
+    for i, acct in enumerate(_cuentas_tpl): ws.write(0, OFF + i, acct, f_acct)
+    ws.write(0, COL_TOT1, COL_TOT1 + 1, f_acct)
+    for i, acct in enumerate(_ctas_prod): ws.write(0, COL_PROD0 + i, acct, f_acct)
+    ws.write(0, COL_TOT2, COL_TOT2 + 1, f_acct)
+    ws.write(0, COL_CONC, COL_CONC + 1, f_acct)
 
-    # ── Fila 1: número de columna (desde 1) en meta/totales, N° de cuenta en clientes/productos
-    for c in range(N_META): ws.write(1, c, c + 1, f_acct)
-    for i, acct in enumerate(_cuentas_tpl): ws.write(1, OFF + i, acct, f_acct)
-    ws.write(1, COL_TOT1, COL_TOT1 + 1, f_acct)
-    for i, acct in enumerate(_ctas_prod): ws.write(1, COL_PROD0 + i, acct, f_acct)
-    ws.write(1, COL_TOT2, COL_TOT2 + 1, f_acct)
-    ws.write(1, COL_CONC, COL_CONC + 1, f_acct)
-
-    # ── Fila 2: encabezados ────────────────────────────────────────────────
+    # ── Fila 1: encabezados ────────────────────────────────────────────────
     for i, h in enumerate(META_HDRS):
-        ws.write(2, i, h, f_hdr_m)
+        ws.write(1, i, h, f_hdr_m)
     for i, nom in enumerate(NOMBRES_TPL):
-        ws.write(2, OFF + i, nom, f_hdr_c)
-    ws.write(2, COL_TOT1, "TOTAL B2", f_hdr_tot)
+        ws.write(1, OFF + i, nom, f_hdr_c)
+    ws.write(1, COL_TOT1, "TOTAL B2", f_hdr_tot)
     for i, nom in enumerate(NOMS_PROD):
-        ws.write(2, COL_PROD0 + i, nom, f_hdr_p)
-    ws.write(2, COL_TOT2, "TOTAL B2", f_hdr_tot)
-    ws.write(2, COL_CONC, "CONCILIACION", f_hdr_con)
+        ws.write(1, COL_PROD0 + i, nom, f_hdr_p)
+    ws.write(1, COL_TOT2, "TOTAL B2", f_hdr_tot)
+    ws.write(1, COL_CONC, "CONCILIACION", f_hdr_con)
 
     # ── Anchos de columna ──────────────────────────────────────────────────
     ws.set_column(0, 0, 14)
@@ -341,7 +334,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.set_column(COL_PROD0 + i, COL_PROD0 + i, 13)
     ws.set_column(COL_TOT2, COL_TOT2, 13)
     ws.set_column(COL_CONC, COL_CONC, 14)
-    ws.freeze_panes(3, 2)
+    ws.freeze_panes(2, 2)
 
     # ── Filas de datos ─────────────────────────────────────────────────────
     gran_cli  = [0.0] * N_CLI
@@ -351,7 +344,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     gran_conc = 0.0
 
     for ri, fecha in enumerate(fechas):
-        row = ri + 3
+        row = ri + 2
         fn  = f_num0 if ri % 2 == 0 else f_num1
         ft  = f_tot0 if ri % 2 == 0 else f_tot1
         fc  = f_conc0 if ri % 2 == 0 else f_conc1
@@ -404,7 +397,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         gran_conc += diferencia
 
     # ── Fila totales generales ─────────────────────────────────────────────
-    tr = len(fechas) + 3
+    tr = len(fechas) + 2
     ws.merge_range(tr, 0, tr, N_META - 1, "TOTAL GENERAL", f_grand_l)
     for i in range(N_CLI):
         ws.write(tr, OFF + i, round(gran_cli[i], 2), f_grand)

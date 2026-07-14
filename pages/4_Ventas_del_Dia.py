@@ -133,8 +133,32 @@ def _match_cliente(raw, clientes_list):
     return raw_s
 
 
+def _detectar_columnas(header_row, logs):
+    """
+    Lee la fila de encabezado y retorna un dict {nombre_col: índice}.
+    Soporta MENA/PERIFERICO (27 cols, Cliente en r[16]) y
+    VALLEJO (28 cols con None extra en r[14], Cliente en r[17]).
+    """
+    col_map = {}
+    for i, h in enumerate(header_row):
+        if h is not None:
+            col_map[str(h).strip()] = i
+    # Columnas esperadas con fallbacks seguros
+    defaults = {
+        'FechaHora': 0, 'Producto': 3, 'Subtotal': 6,
+        'Iva': 7, 'Ieps': 8, 'Importe': 9, 'Cliente': 16,
+    }
+    result = {k: col_map.get(k, v) for k, v in defaults.items()}
+    logs.append(
+        f"  Columnas detectadas → Producto:{result['Producto']} "
+        f"Importe:{result['Importe']} Cliente:{result['Cliente']}"
+    )
+    return result
+
+
 def _leer_despachos(file_bytes, filename, logs):
-    """Lee el archivo de despachos (.xlsx o .xls). Retorna lista de filas (sin encabezado)."""
+    """Lee el archivo de despachos (.xlsx o .xls).
+    Retorna (data, col_map) — data sin encabezado, col_map con índices detectados."""
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'xlsx'
     if ext == 'xls':
         try:
@@ -142,9 +166,10 @@ def _leer_despachos(file_bytes, filename, logs):
             wb_xls = xlrd.open_workbook(file_contents=file_bytes)
             ws_xls = wb_xls.sheet_by_index(0)
             rows = [tuple(ws_xls.row_values(r)) for r in range(ws_xls.nrows)]
+            col_map = _detectar_columnas(rows[0], logs)
             data = rows[1:]
             logs.append(f"  {len(data):,} registros leídos (.xls vía xlrd).")
-            return data
+            return data, col_map
         except ImportError:
             raise RuntimeError(
                 "El archivo está en formato antiguo .xls y la librería 'xlrd' no está instalada.\n"
@@ -152,10 +177,12 @@ def _leer_despachos(file_bytes, filename, logs):
             )
     else:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
-        data = list(wb.active.iter_rows(values_only=True))[1:]
+        all_rows = list(wb.active.iter_rows(values_only=True))
         wb.close()
+        col_map = _detectar_columnas(all_rows[0], logs)
+        data = all_rows[1:]
         logs.append(f"  {len(data):,} registros leídos (.xlsx).")
-        return data
+        return data, col_map
 
 
 def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
@@ -166,7 +193,14 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     logs = []
 
     logs.append("⛽ Leyendo control de despachos...")
-    data = _leer_despachos(despachos_bytes, despachos_nombre, logs)
+    data, col_map = _leer_despachos(despachos_bytes, despachos_nombre, logs)
+    C_FECHA    = col_map['FechaHora']
+    C_PROD     = col_map['Producto']
+    C_SUBTOTAL = col_map['Subtotal']
+    C_IVA      = col_map['Iva']
+    C_IEPS     = col_map['Ieps']
+    C_IMPORTE  = col_map['Importe']
+    C_CLIENTE  = col_map['Cliente']
 
     # ── Leer plantilla de cuentas ──────────────────────────────────────────
     if plantilla_bytes:
@@ -207,14 +241,14 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     for r in data:
         try:
-            fecha       = str(r[0])[:10] if r[0] is not None else ""
-            cliente_raw = str(r[17] or "").strip()   # col R = "Cliente" (r[16]=Factura, incorrecto)
+            fecha       = str(r[C_FECHA])[:10] if r[C_FECHA] is not None else ""
+            cliente_raw = str(r[C_CLIENTE] or "").strip()
             cliente     = _match_cliente(cliente_raw, _clientes_tpl)
-            prod        = str(r[3]  or "")
-            cli_day[(fecha, cliente)]  += float(r[9]  or 0)
-            prod_day[(fecha, prod)]    += float(r[6]  or 0)
-            iva_day[fecha]             += float(r[7]  or 0)
-            ieps_prod[(fecha, prod)]   += float(r[8]  or 0)
+            prod        = str(r[C_PROD] or "")
+            cli_day[(fecha, cliente)]  += float(r[C_IMPORTE]  or 0)
+            prod_day[(fecha, prod)]    += float(r[C_SUBTOTAL] or 0)
+            iva_day[fecha]             += float(r[C_IVA]      or 0)
+            ieps_prod[(fecha, prod)]   += float(r[C_IEPS]     or 0)
         except Exception:
             continue
 

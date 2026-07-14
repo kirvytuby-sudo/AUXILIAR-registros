@@ -228,18 +228,22 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     logs.append(f"  Clientes únicos en despachos ({len(all_cli_despachos)}): {', '.join(all_cli_despachos)}")
     logs.append(f"  Cuentas cargadas de plantilla ({len(_clientes_tpl)}): {', '.join(_clientes_tpl)}")
 
-    # Diagnóstico: clientes sin importe (se quedan en la póliza en $0 pero se avisa)
-    _sin_datos = [nm for nm in _clientes_tpl
-                  if not any(cli_day.get((f, nm), 0.0) for f in fechas)]
-    if _sin_datos:
-        logs.append(f"  ℹ️ Sin importe (nombre no coincide con despachos): {', '.join(_sin_datos)}")
-
-    # Clientes en despachos que no tienen cuenta asignada en la plantilla
+    # Clientes en despachos sin cuenta en plantilla
     _sin_cuenta = [cli for cli in all_cli_despachos if cli not in _clientes_tpl]
     if _sin_cuenta:
         logs.append(f"  ⚠️ En despachos pero SIN cuenta en plantilla: {', '.join(_sin_cuenta)}")
 
-    logs.append(f"  ✅ {len(_clientes_tpl)} cliente(s) en la póliza.")
+    # Filtrar: solo clientes con importe > 0 en alguna fecha
+    _activos = [(nc, nm) for nc, nm in zip(_cuentas_tpl, _clientes_tpl)
+                if any(cli_day.get((f, nm), 0.0) for f in fechas)]
+    _sin_datos = [nm for nm in _clientes_tpl
+                  if not any(cli_day.get((f, nm), 0.0) for f in fechas)]
+    if _sin_datos:
+        logs.append(f"  ℹ️ Sin importe (se omiten): {', '.join(_sin_datos)}")
+    if _activos:
+        _cuentas_tpl = [nc for nc, _ in _activos]
+        _clientes_tpl = [nm for _, nm in _activos]
+    logs.append(f"  ✅ {len(_clientes_tpl)} cliente(s) con importe en la póliza.")
 
     # NOMBRES_TPL con lista ya filtrada
     NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(_cuentas_tpl, _clientes_tpl)]
@@ -306,13 +310,13 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     titulo = "VENTAS DEL DIA — SUPER SERVICIO PERIFERICO"
     ws.merge_range(0, 0, 0, TOTAL_COLS - 1, titulo, f_title)
 
-    # ── Fila 1: índice en meta/totales, N° de cuenta real en clientes/productos
-    for c in range(N_META): ws.write(1, c, c, f_acct)
+    # ── Fila 1: número de columna (desde 1) en meta/totales, N° de cuenta en clientes/productos
+    for c in range(N_META): ws.write(1, c, c + 1, f_acct)
     for i, acct in enumerate(_cuentas_tpl): ws.write(1, OFF + i, acct, f_acct)
-    ws.write(1, COL_TOT1, COL_TOT1, f_acct)
+    ws.write(1, COL_TOT1, COL_TOT1 + 1, f_acct)
     for i, acct in enumerate(_ctas_prod): ws.write(1, COL_PROD0 + i, acct, f_acct)
-    ws.write(1, COL_TOT2, COL_TOT2, f_acct)
-    ws.write(1, COL_CONC, COL_CONC, f_acct)
+    ws.write(1, COL_TOT2, COL_TOT2 + 1, f_acct)
+    ws.write(1, COL_CONC, COL_CONC + 1, f_acct)
 
     # ── Fila 2: encabezados ────────────────────────────────────────────────
     for i, h in enumerate(META_HDRS):

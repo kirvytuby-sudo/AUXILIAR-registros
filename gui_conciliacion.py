@@ -7044,6 +7044,59 @@ class WorkspaceWindow(tk.Toplevel):
             import openpyxl
             from collections import defaultdict
 
+            import re as _re
+
+            # âââ Helpers match/detecciÃ³n (equivalentes al mÃ³dulo Streamlit) ââââââ
+            def _vd_norm(s):
+                return str(s or "").replace("\n", " ").strip().upper()
+            def _vd_clean(s):
+                s = str(s or "").replace("\n", " ")
+                s = _re.sub(r"\(.*?\)", "", s)
+                s = s.replace(".", " ")
+                return _re.sub(r"\s+", " ", s).strip().upper()
+            def _vd_sig_words(s):
+                return {w for w in _vd_clean(s).split() if len(w) > 3}
+            def _vd_match_cliente(raw, clientes_list):
+                raw_s = str(raw or "").strip()
+                raw_n = _vd_norm(raw_s)
+                if not raw_n:
+                    for nm in clientes_list:
+                        if _vd_norm(nm) == "CONTADO":
+                            return nm
+                    return clientes_list[0] if clientes_list else raw_s
+                for nm in clientes_list:
+                    if _vd_norm(nm) == raw_n:
+                        return nm
+                for nm in clientes_list:
+                    nm_n = _vd_norm(nm)
+                    if raw_n in nm_n or nm_n in raw_n:
+                        return nm
+                raw_c = _vd_clean(raw_s)
+                for nm in clientes_list:
+                    nm_c = _vd_clean(nm)
+                    if raw_c in nm_c or nm_c in raw_c:
+                        return nm
+                raw_words = _vd_sig_words(raw_s)
+                best, best_score = None, 0
+                for nm in clientes_list:
+                    nm_words = _vd_sig_words(nm)
+                    score = len(raw_words & nm_words)
+                    if score > best_score:
+                        best_score, best = score, nm
+                if best_score > 0:
+                    return best
+                return raw_s
+            def _vd_detectar_columnas(header_row):
+                col_map = {}
+                for i, h in enumerate(header_row):
+                    if h is not None:
+                        col_map[str(h).strip()] = i
+                defaults = {
+                    "FechaHora": 0, "Producto": 3, "Subtotal": 6,
+                    "Iva": 7, "Ieps": 8, "Importe": 9, "Cliente": 16,
+                }
+                return {k: col_map.get(k, v) for k, v in defaults.items()}
+
             # ââ Leer despachos (soporta .xls y .xlsx) ââââââââââââââââââââââââ
             self.after(0, self._log, "â½ Leyendo control de despachos...")
             ext = os.path.splitext(despachos_path)[1].lower()
@@ -7057,6 +7110,7 @@ class WorkspaceWindow(tk.Toplevel):
                         tuple(_ws_xls.row_values(r))
                         for r in range(_ws_xls.nrows)
                     ]
+                    _col_map = _vd_detectar_columnas(_rows_raw[0])
                     data = _rows_raw[1:]  # saltar encabezado
                     self.after(0, self._log, f"  {len(data):,} registros leÃ­dos (.xls vÃ­a xlrd).")
                 except ImportError:
@@ -7072,8 +7126,10 @@ class WorkspaceWindow(tk.Toplevel):
                     return
             else:
                 wb_desp = openpyxl.load_workbook(despachos_path, data_only=True, read_only=True)
-                data = list(wb_desp.active.iter_rows(values_only=True))[1:]
+                _all_rows = list(wb_desp.active.iter_rows(values_only=True))
                 wb_desp.close()
+                _col_map = _vd_detectar_columnas(_all_rows[0])
+                data = _all_rows[1:]
                 self.after(0, self._log, f"  {len(data):,} registros leÃ­dos (.xlsx).")
 
             self.after(0, self._log, "â½ Leyendo plantilla de cuentas...")
@@ -7158,7 +7214,16 @@ class WorkspaceWindow(tk.Toplevel):
                 CTAS_PROD = _CTAS_PROD_FB
             NOMS_PROD = [cuentas_map.get(c, p) for c, p in zip(CTAS_PROD, PRODS)]
 
-            # data ya fue leÃ­da arriba (con soporte .xls / .xlsx)
+            # ââ Columnas detectadas ââââââââââââââââââââââââââââ
+            C_FECHA    = _col_map["FechaHora"]
+            C_PROD     = _col_map["Producto"]
+            C_SUBTOTAL = _col_map["Subtotal"]
+            C_IVA      = _col_map["Iva"]
+            C_IEPS     = _col_map["Ieps"]
+            C_IMPORTE  = _col_map["Importe"]
+            C_CLIENTE  = _col_map["Cliente"]
+            self.after(0, self._log,
+                f"  Columnas: Producto={C_PROD} Importe={C_IMPORTE} Cliente={C_CLIENTE}")
 
             cli_day   = defaultdict(float)
             prod_day  = defaultdict(float)
@@ -7166,13 +7231,16 @@ class WorkspaceWindow(tk.Toplevel):
             ieps_prod = defaultdict(float)
 
             for r in data:
-                fecha   = str(r[0])[:10]
-                cliente = str(r[16] or "").strip()
-                prod    = str(r[3] or "")
-                cli_day[(fecha, cliente)]  += r[9] or 0
-                prod_day[(fecha, prod)]    += r[6] or 0
-                iva_day[fecha]             += r[7] or 0
-                ieps_prod[(fecha, prod)]   += r[8] or 0
+                try:
+                    fecha   = str(r[C_FECHA])[:10] if r[C_FECHA] is not None else ""
+                    cliente = _vd_match_cliente(str(r[C_CLIENTE] or "").strip(), CLIENTES_TPL)
+                    prod    = str(r[C_PROD] or "")
+                    cli_day[(fecha, cliente)]  += float(r[C_IMPORTE]  or 0)
+                    prod_day[(fecha, prod)]    += float(r[C_SUBTOTAL] or 0)
+                    iva_day[fecha]             += float(r[C_IVA]      or 0)
+                    ieps_prod[(fecha, prod)]   += float(r[C_IEPS]     or 0)
+                except Exception:
+                    continue
 
             fechas = sorted(set(k[0] for k in cli_day))
             N_CLI  = len(CLIENTES_TPL)
@@ -7217,24 +7285,30 @@ class WorkspaceWindow(tk.Toplevel):
             f_grand_l = fmt({**BASE,'bold':True,'bg_color':'#1B5E20','font_color':'#FFFFFF','align':'center','border':2,'border_color':'#000000'})
             f_grand_c = fmt({**BASE,'bold':True,'bg_color':'#E65100','font_color':'#FFFFFF','align':'right','num_format':CURR,'border':2,'border_color':'#000000'})
 
-            ws.set_row(0, 24); ws.set_row(1, 18); ws.set_row(2, 50)
-            titulo = "VENTAS DEL DIA â SUPER SERVICIO PERIFERICO"
-            ws.merge_range(0, 0, 0, TOTAL_COLS-1, titulo, f_title)
+            ws.set_row(0, 14); ws.set_row(1, 24); ws.set_row(2, 18); ws.set_row(3, 50)
 
-            # Fila 2: índice en meta/totales, cuenta real en clientes/productos
-            for c in range(N_META): ws.write(1, c, c, f_acct)
-            for i, acct in enumerate(CUENTAS_TPL): ws.write(1, OFF + i, acct, f_acct)
-            ws.write(1, COL_TOT1, COL_TOT1, f_acct)
-            for i, acct in enumerate(CTAS_PROD): ws.write(1, COL_PROD0 + i, acct, f_acct)
-            ws.write(1, COL_TOT2, COL_TOT2, f_acct)
-            ws.write(1, COL_CONC, COL_CONC, f_acct)
+            # Fila 0: numeración 0-based
+            for c in range(TOTAL_COLS): ws.write(0, c, c, f_acct)
 
-            for i, h in enumerate(META_HDRS): ws.write(2, i, h, f_hdr_m)
-            for i, nom in enumerate(NOMBRES_TPL): ws.write(2, OFF+i, nom, f_hdr_c)
-            ws.write(2, COL_TOT1, "TOTAL B2", f_hdr_tot)
-            for i, nom in enumerate(NOMS_PROD): ws.write(2, COL_PROD0+i, nom, f_hdr_p)
-            ws.write(2, COL_TOT2, "TOTAL B2", f_hdr_tot)
-            ws.write(2, COL_CONC, "CONCILIACION", f_hdr_con)
+            # Fila 1: título
+            titulo = "VENTAS DEL DIA — SUPER SERVICIO PERIFERICO"
+            ws.merge_range(1, 0, 1, TOTAL_COLS-1, titulo, f_title)
+
+            # Fila 2: número de cuenta
+            for c in range(N_META): ws.write(2, c, c, f_acct)
+            for i, acct in enumerate(CUENTAS_TPL): ws.write(2, OFF + i, acct, f_acct)
+            ws.write(2, COL_TOT1, COL_TOT1, f_acct)
+            for i, acct in enumerate(CTAS_PROD): ws.write(2, COL_PROD0 + i, acct, f_acct)
+            ws.write(2, COL_TOT2, COL_TOT2, f_acct)
+            ws.write(2, COL_CONC, COL_CONC, f_acct)
+
+            # Fila 3: encabezados
+            for i, h in enumerate(META_HDRS): ws.write(3, i, h, f_hdr_m)
+            for i, nom in enumerate(NOMBRES_TPL): ws.write(3, OFF+i, nom, f_hdr_c)
+            ws.write(3, COL_TOT1, "TOTAL B2", f_hdr_tot)
+            for i, nom in enumerate(NOMS_PROD): ws.write(3, COL_PROD0+i, nom, f_hdr_p)
+            ws.write(3, COL_TOT2, "TOTAL B2", f_hdr_tot)
+            ws.write(3, COL_CONC, "CONCILIACION", f_hdr_con)
 
             ws.set_column(0, 0, 14); ws.set_column(1, 1, 12)
             for c in range(2, N_META): ws.set_column(c, c, 20)
@@ -7243,7 +7317,7 @@ class WorkspaceWindow(tk.Toplevel):
             for i in range(N_PROD): ws.set_column(COL_PROD0+i, COL_PROD0+i, 13)
             ws.set_column(COL_TOT2, COL_TOT2, 13)
             ws.set_column(COL_CONC, COL_CONC, 14)
-            ws.freeze_panes(3, 2)
+            ws.freeze_panes(4, 2)
 
             gran_cli  = [0.0] * N_CLI
             gran_tot1 = 0.0
@@ -7252,7 +7326,7 @@ class WorkspaceWindow(tk.Toplevel):
             gran_conc = 0.0
 
             for ri, fecha in enumerate(fechas):
-                row = ri + 3
+                row = ri + 4
                 fn  = f_num0 if ri%2==0 else f_num1
                 ft  = f_tot0 if ri%2==0 else f_tot1
                 fc  = f_conc0 if ri%2==0 else f_conc1
@@ -7302,7 +7376,7 @@ class WorkspaceWindow(tk.Toplevel):
                 ws.write(row, COL_CONC, diferencia, fc)
                 gran_conc += diferencia
 
-            tr = len(fechas) + 3
+            tr = len(fechas) + 4
             ws.merge_range(tr, 0, tr, N_META-1, "TOTAL GENERAL", f_grand_l)
             for i in range(N_CLI): ws.write(tr, OFF+i, round(gran_cli[i], 2), f_grand)
             ws.write(tr, COL_TOT1, round(gran_tot1, 2), f_grand)

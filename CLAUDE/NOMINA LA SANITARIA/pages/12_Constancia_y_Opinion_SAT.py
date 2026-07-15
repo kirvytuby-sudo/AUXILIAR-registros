@@ -486,19 +486,23 @@ if _guardadas:
                              "pwd": datos.get("password", ""),
                              "rfc": rfc, "nombre": nombre})
 
-    # ── Botón rápido: generar TODAS las empresas guardadas ────────────────────
-    _sin_pwd_g = [c for c in sorted(_guardadas.keys())
+    # ── Botón rápido: generar solo las empresas marcadas ─────────────────────
+    _claves_marcadas = [c for c in sorted(_guardadas.keys())
+                        if st.session_state.get(f"sec_{c}", True)]
+    _sin_pwd_g = [c for c in _claves_marcadas
                   if not _guardadas[c].get("password")]
     if _sin_pwd_g:
         st.caption(f"⚠️ Falta contraseña guardada en Secrets para: {', '.join(_sin_pwd_g)}")
-    _n_emp = len(_guardadas)
+    _n_sel = len(_claves_marcadas)
+    _btn_label = (f"🤖  GENERAR  —  {_n_sel} empresa{'s' if _n_sel != 1 else ''}"
+                  if _n_sel else "🤖  GENERAR  —  (ninguna seleccionada)")
     if st.button(
-        f"🤖  GENERAR TODAS  —  {_n_emp} empresa{'s' if _n_emp > 1 else ''}",
+        _btn_label,
         type="primary", use_container_width=True,
-        key="btn_auto_todas", disabled=bool(_sin_pwd_g)
+        key="btn_auto_todas", disabled=(bool(_sin_pwd_g) or _n_sel == 0)
     ):
         _auto_list = []
-        for _k in sorted(_guardadas.keys()):
+        for _k in _claves_marcadas:
             _d = _guardadas[_k]
             try:
                 _cb = base64.b64decode(_d["cer_b64"])
@@ -524,6 +528,50 @@ if _guardadas:
             st.session_state["sat_resultados"] = _res_auto
             st.session_state["sat_timestamp"] = datetime.now().strftime("%Y%m%d_%H%M")
             st.rerun()
+    # ── Quitar empresa guardada ───────────────────────────────────────────────────────────
+    with st.expander("🗑️ Quitar empresa guardada"):
+        _emp_claves_del = sorted(_guardadas.keys())
+        if _emp_claves_del:
+            _esel = st.selectbox(
+                "Empresa a quitar", _emp_claves_del, key="del_emp_sel",
+                format_func=lambda k: f"{k}  —  {str(_guardadas[k].get('nombre', k))[:50]}"
+            )
+            if st.button("Generar Secrets sin esta empresa",
+                         key="btn_del_emp", type="primary"):
+                _restantes_emp = {k: v for k, v in _guardadas.items() if k != _esel}
+                if _restantes_emp:
+                    _lineas_emp = []
+                    for _ek, _ed in _restantes_emp.items():
+                        _lineas_emp.append(f"[empresas.{_ek}]")
+                        if isinstance(_ed, dict):
+                            for _ek2, _ev2 in _ed.items():
+                                _lineas_emp.append(f'  {_ek2} = "{_ev2}"')
+                        _lineas_emp.append("")
+                    st.session_state["del_emp_toml"] = "\n".join(_lineas_emp).strip()
+                else:
+                    st.session_state["del_emp_toml"] = ""
+                st.session_state["del_emp_nombre"] = _esel
+            if "del_emp_toml" in st.session_state:
+                _qen = st.session_state.get("del_emp_nombre", "")
+                _toml_del = st.session_state["del_emp_toml"]
+                if _toml_del:
+                    st.warning(
+                        f"Reemplaza **toda** la sección `[empresas]` en "
+                        f"Settings → Secrets con este bloque para borrar **{_qen}**:"
+                    )
+                    st.code(_toml_del, language="toml")
+                else:
+                    st.warning(
+                        f"Al borrar **{_qen}** no quedan más empresas. "
+                        "Elimina **toda** la sección `[empresas]` de Settings → Secrets."
+                    )
+                if st.button("✔ Listo, ya lo actualicé en Secrets",
+                             key="btn_del_emp_done"):
+                    del st.session_state["del_emp_toml"]
+                    st.session_state.pop("del_emp_nombre", None)
+                    st.rerun()
+        else:
+            st.caption("No hay empresas guardadas.")
     st.divider()
 
 # ─── 1. Carga manual de e.firmas ──────────────────────────────────────────────

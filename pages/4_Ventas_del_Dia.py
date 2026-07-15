@@ -100,35 +100,72 @@ def _leer_cuentas_plantilla(plantilla_bytes):
     return cuentas_map, dyn_clientes, dyn_prods
 
 
+import re as _re
+
 def _norm(s):
     """Normaliza nombre para comparación: mayúsculas, sin espacios/saltos de línea extra."""
     return str(s or "").replace('\n', ' ').strip().upper()
 
+def _clean(s):
+    """Limpieza profunda: quita paréntesis, reemplaza puntos por espacio, comprime espacios."""
+    s = str(s or "").replace('\n', ' ')
+    s = _re.sub(r'\(.*?\)', '', s)   # quitar (ACCOR), (SA DE CV), etc.
+    s = s.replace('.', ' ')           # T.EDENRED → T EDENRED
+    return _re.sub(r'\s+', ' ', s).strip().upper()
+
+def _sig_words(s):
+    """Palabras significativas (>3 chars) del texto limpio."""
+    return {w for w in _clean(s).split() if len(w) > 3}
 
 def _match_cliente(raw, clientes_list):
     """Mapea nombre de cliente del despacho al nombre exacto de la plantilla.
     1) Vacío → busca 'CONTADO' en la lista (o primer elemento).
-    2) Coincidencia exacta normalizada (ej. 'Contado' → 'CONTADO').
-    3) Subcadena: uno contiene al otro (ej. 'T.EDENRED' ↔ 'Clientes T.EDENRED').
-    4) Sin coincidencia → retorna el nombre original (aparecerá en log ⚠️).
+    2) Exacto normalizado.
+    3) Subcadena normalizada (ej. 'T.EDENRED' ↔ 'Clientes T.EDENRED').
+    4) Subcadena limpia: sin puntos ni paréntesis
+       (ej. 'T EFECTIVALE' ↔ 'Clientes T.EFECTIVALE',
+            'T EDENRED (ACCOR)' ↔ 'Clientes T.EDENRED').
+    5) Palabra significativa en común
+       (ej. 'T BANORTE' ↔ 'Clientes Tarjeta banorte' → BANORTE).
+    6) Sin coincidencia → retorna el nombre original (aparecerá en log ⚠️).
     """
     raw_s = str(raw or "").strip()
     raw_n = _norm(raw_s)
     if not raw_n:
-        # Vacío → buscar CONTADO en la lista o devolver el primero
         for nm in clientes_list:
             if _norm(nm) == "CONTADO":
                 return nm
         return clientes_list[0] if clientes_list else raw_s
-    # Exacto (incluye 'Contado' → 'CONTADO', 'T.BANORTE' → 'T.BANORTE', etc.)
+
+    # Paso 1: exacto
     for nm in clientes_list:
         if _norm(nm) == raw_n:
             return nm
-    # Subcadena (ej. 'T.EDENRED' ↔ 'Clientes T.EDENRED')
+
+    # Paso 2: subcadena normal
     for nm in clientes_list:
         nm_n = _norm(nm)
         if raw_n in nm_n or nm_n in raw_n:
             return nm
+
+    # Paso 3: subcadena limpia (sin puntos/paréntesis)
+    raw_c = _clean(raw_s)
+    for nm in clientes_list:
+        nm_c = _clean(nm)
+        if raw_c in nm_c or nm_c in raw_c:
+            return nm
+
+    # Paso 4: palabra significativa en común (última opción)
+    raw_words = _sig_words(raw_s)
+    best, best_score = None, 0
+    for nm in clientes_list:
+        nm_words = _sig_words(nm)
+        score = len(raw_words & nm_words)
+        if score > best_score:
+            best_score, best = score, nm
+    if best_score > 0:
+        return best
+
     # Sin coincidencia
     return raw_s
 

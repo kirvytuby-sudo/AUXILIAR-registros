@@ -528,50 +528,50 @@ if _guardadas:
             st.session_state["sat_resultados"] = _res_auto
             st.session_state["sat_timestamp"] = datetime.now().strftime("%Y%m%d_%H%M")
             st.rerun()
-    # ── Quitar empresa guardada ───────────────────────────────────────────────────────────
-    with st.expander("🗑️ Quitar empresa guardada"):
-        _emp_claves_del = sorted(_guardadas.keys())
-        if _emp_claves_del:
-            _esel = st.selectbox(
-                "Empresa a quitar", _emp_claves_del, key="del_emp_sel",
-                format_func=lambda k: f"{k}  —  {str(_guardadas[k].get('nombre', k))[:50]}"
+    st.markdown("#### 🗑️ Quitar empresa guardada")
+    _emp_claves_del = sorted(_guardadas.keys())
+    _col_qsel, _col_qbtn = st.columns([3, 1])
+    with _col_qsel:
+        _esel = st.selectbox(
+            "Empresa", _emp_claves_del, key="del_emp_sel",
+            format_func=lambda k: f"{k}  —  {str(_guardadas[k].get('nombre', k))[:50]}",
+            label_visibility="collapsed"
+        )
+    with _col_qbtn:
+        if st.button("🗑️ Quitar", key="btn_del_emp",
+                     use_container_width=True):
+            _restantes_emp = {k: v for k, v in _guardadas.items() if k != _esel}
+            if _restantes_emp:
+                _lineas_emp = []
+                for _ek, _ed in _restantes_emp.items():
+                    _lineas_emp.append(f"[empresas.{_ek}]")
+                    if isinstance(_ed, dict):
+                        for _ek2, _ev2 in _ed.items():
+                            _lineas_emp.append(f'  {_ek2} = "{_ev2}"')
+                    _lineas_emp.append("")
+                st.session_state["del_emp_toml"] = "\n".join(_lineas_emp).strip()
+            else:
+                st.session_state["del_emp_toml"] = ""
+            st.session_state["del_emp_nombre"] = _esel
+    if "del_emp_toml" in st.session_state:
+        _qen = st.session_state.get("del_emp_nombre", "")
+        _toml_del = st.session_state["del_emp_toml"]
+        if _toml_del:
+            st.warning(
+                f"Reemplaza **toda** la sección `[empresas]` en "
+                f"Settings → Secrets con este bloque para borrar **{_qen}**:"
             )
-            if st.button("Generar Secrets sin esta empresa",
-                         key="btn_del_emp", type="primary"):
-                _restantes_emp = {k: v for k, v in _guardadas.items() if k != _esel}
-                if _restantes_emp:
-                    _lineas_emp = []
-                    for _ek, _ed in _restantes_emp.items():
-                        _lineas_emp.append(f"[empresas.{_ek}]")
-                        if isinstance(_ed, dict):
-                            for _ek2, _ev2 in _ed.items():
-                                _lineas_emp.append(f'  {_ek2} = "{_ev2}"')
-                        _lineas_emp.append("")
-                    st.session_state["del_emp_toml"] = "\n".join(_lineas_emp).strip()
-                else:
-                    st.session_state["del_emp_toml"] = ""
-                st.session_state["del_emp_nombre"] = _esel
-            if "del_emp_toml" in st.session_state:
-                _qen = st.session_state.get("del_emp_nombre", "")
-                _toml_del = st.session_state["del_emp_toml"]
-                if _toml_del:
-                    st.warning(
-                        f"Reemplaza **toda** la sección `[empresas]` en "
-                        f"Settings → Secrets con este bloque para borrar **{_qen}**:"
-                    )
-                    st.code(_toml_del, language="toml")
-                else:
-                    st.warning(
-                        f"Al borrar **{_qen}** no quedan más empresas. "
-                        "Elimina **toda** la sección `[empresas]` de Settings → Secrets."
-                    )
-                if st.button("✔ Listo, ya lo actualicé en Secrets",
-                             key="btn_del_emp_done"):
-                    del st.session_state["del_emp_toml"]
-                    st.session_state.pop("del_emp_nombre", None)
-                    st.rerun()
+            st.code(_toml_del, language="toml")
         else:
-            st.caption("No hay empresas guardadas.")
+            st.warning(
+                f"Al borrar **{_qen}** no quedan más empresas. "
+                "Elimina **toda** la sección `[empresas]` de Settings → Secrets."
+            )
+        if st.button("✔ Listo, ya lo actualicé en Secrets",
+                     key="btn_del_emp_done"):
+            del st.session_state["del_emp_toml"]
+            st.session_state.pop("del_emp_nombre", None)
+            st.rerun()
     st.divider()
 
 # ─── 1. Carga manual de e.firmas ──────────────────────────────────────────────

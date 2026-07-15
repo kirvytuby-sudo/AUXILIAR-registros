@@ -75,6 +75,97 @@ def _get_secret(clave, default=None):
         return default
 
 
+
+# ─── Supabase helpers ─────────────────────────────────────────────────────────
+@st.cache_resource(ttl=60)
+def _sb_client():
+    try:
+        from supabase import create_client
+        return create_client(
+            st.secrets["supabase"]["url"],
+            st.secrets["supabase"]["key"],
+        )
+    except Exception:
+        return None
+
+
+def _sb_fernet():
+    try:
+        from cryptography.fernet import Fernet
+        return Fernet(st.secrets["supabase"]["enc_key"].encode())
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=30)
+def _sb_load_empresas():
+    """Carga todas las empresas de Supabase y las devuelve como dict."""
+    sb = _sb_client()
+    f  = _sb_fernet()
+    if not sb or not f:
+        return {}
+    try:
+        rows = sb.table("empresas").select("*").execute().data or []
+    except Exception:
+        return {}
+    result = {}
+    for row in rows:
+        rfc = row["rfc"]
+        try:
+            import base64 as _b64
+            cer_bytes = f.decrypt(row["cer_enc"].encode())
+            key_bytes = f.decrypt(row["key_enc"].encode())
+            pwd       = f.decrypt(row["pwd_enc"].encode()).decode()
+            result[rfc] = {
+                "nombre": row.get("nombre", rfc),
+                "cer_b64": _b64.b64encode(cer_bytes).decode(),
+                "key_b64": _b64.b64encode(key_bytes).decode(),
+                "password": pwd,
+            }
+        except Exception:
+            pass
+    return result
+
+
+def _sb_save_empresa(rfc, nombre, cer_bytes, key_bytes, pwd, vigencia, tipo):
+    sb = _sb_client()
+    f  = _sb_fernet()
+    if not sb or not f:
+        st.error("Supabase no está configurado en Secrets.")
+        return False
+    try:
+        _pwd_b = pwd.encode() if isinstance(pwd, str) else (pwd or b"")
+        sb.table("empresas").upsert({
+            "rfc":     rfc,
+            "nombre":  nombre,
+            "cer_enc": f.encrypt(cer_bytes).decode(),
+            "key_enc": f.encrypt(key_bytes).decode(),
+            "pwd_enc": f.encrypt(_pwd_b).decode(),
+            "vigencia": vigencia.strftime("%d/%m/%Y") if hasattr(vigencia, "strftime") else str(vigencia or ""),
+            "tipo":    tipo or "",
+        }).execute()
+        return True
+    except Exception as _e:
+        st.error(f"Error guardando en Supabase: {_e}")
+        return False
+
+
+def _sb_delete_empresa(rfc):
+    sb = _sb_client()
+    if not sb:
+        st.error("Supabase no configurado en Secrets.")
+        return False
+    try:
+        sb.table("empresas").delete().eq("rfc", rfc).execute()
+        _sb_load_empresas.clear()
+        return True
+    except Exception as _e:
+        st.error(f"Error borrando de Supabase: {_e}")
+        return False
+
+
+_USE_SUPABASE = bool(_sb_client() and _sb_fernet())
+
 def _correo_actual():
     """Correo del usuario que inició sesión en la app (si la app es privada)."""
     try:
@@ -456,7 +547,7 @@ empresas = []          # lista final: guardadas seleccionadas + subidas manualme
 toml_empresas = {}     # para el generador de Secrets (solo manuales)
 
 # ─── 0. Empresas guardadas en Secrets ─────────────────────────────────────────
-_guardadas = _get_secret("empresas", {}) or {}
+_guardadas = _sb_load_empresas() if _USE_SUPABASE else (_get_secret("empresas", {}) or {})
 if _guardadas:
     st.subheader("🔐 Empresas guardadas")
     st.caption("Estas e.firmas están guardadas en los Secrets de la app — solo marca y genera.")
@@ -539,21 +630,26 @@ if _guardadas:
         )
     with _col_qbtn:
         if st.button("🗑️ Quitar", key="btn_del_emp",
-                     use_container_width=True):
-            _restantes_emp = {k: v for k, v in _guardadas.items() if k != _esel}
-            if _restantes_emp:
-                _lineas_emp = []
-                for _ek, _ed in _restantes_emp.items():
-                    _lineas_emp.append(f"[empresas.{_ek}]")
-                    if isinstance(_ed, dict):
-                        for _ek2, _ev2 in _ed.items():
-                            _lineas_emp.append(f'  {_ek2} = "{_ev2}"')
-                    _lineas_emp.append("")
-                st.session_state["del_emp_toml"] = "\n".join(_lineas_emp).strip()
+                     use_container_width=True, type="primary"):
+            if _USE_SUPABASE:
+                if _sb_delete_empresa(_esel):
+                    st.success(f"✅ Empresa {_esel} eliminada.")
+                    st.rerun()
             else:
-                st.session_state["del_emp_toml"] = ""
-            st.session_state["del_emp_nombre"] = _esel
-    if "del_emp_toml" in st.session_state:
+                _restantes_emp = {k: v for k, v in _guardadas.items() if k != _esel}
+                if _restantes_emp:
+                    _lineas_emp = []
+                    for _ek, _ed in _restantes_emp.items():
+                        _lineas_emp.append(f"[empresas.{_ek}]")
+                        if isinstance(_ed, dict):
+                            for _ek2, _ev2 in _ed.items():
+                                _lineas_emp.append(f'  {_ek2} = "{_ev2}"')
+                        _lineas_emp.append("")
+                    st.session_state["del_emp_toml"] = "\n".join(_lineas_emp).strip()
+                else:
+                    st.session_state["del_emp_toml"] = ""
+                st.session_state["del_emp_nombre"] = _esel
+    if not _USE_SUPABASE and "del_emp_toml" in st.session_state:
         _qen = st.session_state.get("del_emp_nombre", "")
         _toml_del = st.session_state["del_emp_toml"]
         if _toml_del:
@@ -649,7 +745,35 @@ elif keys and not cers:
 # ─── 2.5 Generador de Secrets (guardar para siempre) ──────────────────────────
 if toml_empresas:
     with st.expander("💾 Guardar estas empresas para no subirlas cada vez"):
-        st.markdown("""
+        if _USE_SUPABASE:
+            st.markdown(
+                "Guarda las e.firmas **directamente en la base de datos** — "
+                "aparecerán automáticamente la próxima vez."
+            )
+            _sb_btn_col, _ = st.columns([1, 2])
+            with _sb_btn_col:
+                if st.button("☁️ Guardar en Supabase", type="primary",
+                             use_container_width=True, key="btn_sb_guardar"):
+                    _sb_ok = True
+                    for _srfc, _sd in toml_empresas.items():
+                        _svig = cers.get(
+                            next((p["cer"] for p in pares if cers[p["cer"]]["rfc"] == _srfc), ""),
+                            {}
+                        ).get("vig")
+                        _stipo = cers.get(
+                            next((p["cer"] for p in pares if cers[p["cer"]]["rfc"] == _srfc), ""),
+                            {}
+                        ).get("tipo", "")
+                        if not _sb_save_empresa(
+                            _srfc, _sd["nombre"], _sd["cer"], _sd["key"],
+                            _sd["pwd"], _svig, _stipo
+                        ):
+                            _sb_ok = False
+                    if _sb_ok:
+                        st.success("✅ Empresa(s) guardadas. Recarga la página para verlas arriba.")
+                        _sb_load_empresas.clear()
+        else:
+            st.markdown("""
 Copia el texto de abajo y pégalo en **share.streamlit.io → tu app → ⚙️ Settings → Secrets**
 (agrega las secciones nuevas debajo de lo que ya tengas). La próxima vez, las empresas
 aparecerán arriba ya listas, sin subir archivos ni escribir contraseñas.
@@ -657,22 +781,22 @@ aparecerán arriba ya listas, sin subir archivos ni escribir contraseñas.
 ⚠️ Hazlo desde una computadora de confianza: el texto incluye tus llaves y contraseñas.
 Los Secrets están cifrados y **nunca** se publican en GitHub.
 """)
-        incluir_pwd = st.checkbox("Incluir contraseñas en el texto", value=True,
-                                  help="Si lo desmarcas, tendrás que escribir la contraseña cada vez (más seguro).")
-        lineas = []
-        if not _get_secret("app_password"):
-            lineas.append('# Clave para entrar a esta página (cámbiala por la tuya):')
-            lineas.append('app_password = "CAMBIA_ESTA_CLAVE"')
-            lineas.append('')
-        for rfc, d in toml_empresas.items():
-            lineas.append(f'[empresas.{rfc}]')
-            lineas.append(f'nombre = "{d["nombre"]}"')
-            lineas.append(f'cer_b64 = "{base64.b64encode(d["cer"]).decode()}"')
-            lineas.append(f'key_b64 = "{base64.b64encode(d["key"]).decode()}"')
-            pwd_txt = d["pwd"] if incluir_pwd else ""
-            lineas.append(f'password = "{pwd_txt}"')
-            lineas.append('')
-        st.code("\n".join(lineas), language="toml")
+            incluir_pwd = st.checkbox("Incluir contraseñas en el texto", value=True,
+                                      help="Si lo desmarcas, tendrás que escribir la contraseña cada vez (más seguro).")
+            lineas = []
+            if not _get_secret("app_password"):
+                lineas.append('# Clave para entrar a esta página (cámbiala por la tuya):')
+                lineas.append('app_password = "CAMBIA_ESTA_CLAVE"')
+                lineas.append('')
+            for rfc, d in toml_empresas.items():
+                lineas.append(f'[empresas.{rfc}]')
+                lineas.append(f'nombre = "{d["nombre"]}"')
+                lineas.append(f'cer_b64 = "{base64.b64encode(d["cer"]).decode()}"')
+                lineas.append(f'key_b64 = "{base64.b64encode(d["key"]).decode()}"')
+                pwd_txt = d["pwd"] if incluir_pwd else ""
+                lineas.append(f'password = "{pwd_txt}"')
+                lineas.append('')
+            st.code("\n".join(lineas), language="toml")
 
 # ─── 3. Botón único ───────────────────────────────────────────────────────────
 if empresas:

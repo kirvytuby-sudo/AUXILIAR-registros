@@ -182,6 +182,10 @@ for _k, _v in {
     "cfdi_preview_idx": None,
     "cfdi_verificando": False,
     "cfdi_start_time":  None,
+    "cfdi_polling":     False,   # True mientras se verifica en background
+    "cfdi_poll_start":  None,    # tiempo inicio del polling
+    "cfdi_terminados":  [],      # IDs ya terminados
+    "cfdi_errores_v":   [],      # IDs con error/rechazada/vencida
 }.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -314,6 +318,85 @@ st.markdown('<div class="sec-body">', unsafe_allow_html=True)
 
 from satcfdi.pacs.sat import EstadoSolicitud, EstadoComprobante, TipoDescargaMasivaTerceros
 
+# ── AUTO-POLLING (estado de máquina — un check por rerun) ─────────────────────
+_POLL_INTERVAL = 8   # segundos entre checks
+_POLL_MAX      = 300 # máximo 5 minutos
+
+if st.session_state.get("cfdi_polling") and st.session_state.get("cfdi_signer"):
+    _p_start  = st.session_state["cfdi_poll_start"] or time.time()
+    _elapsed  = time.time() - _p_start
+    _mm, _ss  = divmod(int(_elapsed), 60)
+    _rm, _rs  = divmod(int(max(0, _POLL_MAX - _elapsed)), 60)
+
+    _p_sols       = st.session_state.get("cfdi_solicitudes", [])
+    _p_terminados = set(st.session_state.get("cfdi_terminados", []))
+    _p_errores    = set(st.session_state.get("cfdi_errores_v", []))
+    _p_sat        = st.session_state["cfdi_sat"]
+
+    with st.container():
+        _ph_timer = st.markdown(
+            f"⏱️ **Verificando…** Transcurrido: `{_mm:02d}:{_ss:02d}` | Máx. restante: `{_rm:02d}:{_rs:02d}`"
+        )
+        _ph_prog  = st.progress(0, "Verificando solicitudes…")
+        _diag     = []
+
+        for _p_sol in _p_sols:
+            _pid = _p_sol.get("id","")
+            if not _pid:
+                _diag.append(f"⚠️ **{_p_sol['tipo']}**: sin ID")
+                _p_sol["estado"] = "SIN_ID"
+                _p_errores.add("__sin_id__" + _p_sol["tipo"])
+                continue
+            if _pid in _p_terminados or _pid in _p_errores:
+                _diag.append(f"✅ **{_p_sol['tipo']}**: ya procesado ({_p_sol.get('estado','')})")
+                continue
+            try:
+                _p_r   = _p_sat.recover_comprobante_status(_pid)
+                _p_en  = int(_p_r.get("EstadoSolicitud", -1))
+                _p_cod = _p_r.get("CodigoEstadoSolicitud","")
+                _p_num = _p_r.get("NumeroCFDIs", 0)
+                _p_paq = _p_r.get("IdsPaquetes") or []
+                _p_sol["paquetes"] = _p_paq
+                _p_sol["estado"]   = str(_p_en)
+                _lbl_e = {1:"Aceptada",2:"En proceso",3:"Terminada",4:"Error",5:"Rechazada",6:"Vencida"}.get(_p_en, str(_p_en))
+                _diag.append(
+                    f"{'✅' if _p_en==3 else '⏳' if _p_en in (1,2) else '❌'} "
+                    f"**{_p_sol['tipo']}**: {_lbl_e} | "
+                    f"Cód:`{_p_cod}` | CFDIs:`{_p_num}` | Paq:`{len(_p_paq)}`"
+                )
+                if _p_en == 3:
+                    _p_terminados.add(_pid)
+                elif _p_en in (4, 5, 6):
+                    _p_errores.add(_pid)
+            except Exception as _p_exc:
+                _diag.append(f"❌ **{_p_sol['tipo']}** → Error: `{_p_exc}`")
+
+        st.info("🔍 **Diagnóstico:**  \n" + "  \n".join(_diag) if _diag else "Sin datos aún.")
+
+        _n_done = len(_p_terminados) + len(_p_errores)
+        _n_tot  = max(len(_p_sols), 1)
+        _ph_prog.progress(min(_n_done / _n_tot, 1.0), f"{_n_done}/{_n_tot} solicitudes procesadas")
+
+    # Guardar estado actualizado
+    st.session_state["cfdi_solicitudes"] = _p_sols
+    st.session_state["cfdi_terminados"]  = list(_p_terminados)
+    st.session_state["cfdi_errores_v"]   = list(_p_errores)
+
+    _todos_ok = all(
+        (s.get("id","") in _p_terminados or s.get("id","") in _p_errores or not s.get("id",""))
+        for s in _p_sols
+    )
+
+    if _todos_ok or _elapsed >= _POLL_MAX:
+        st.session_state["cfdi_polling"] = False
+        if _p_terminados:
+            st.success("✅ Verificación completa — presiona **📥 Descargar paquetes**")
+        else:
+            st.warning("⚠️ Verificación completada sin paquetes listos")
+    else:
+        time.sleep(_POLL_INTERVAL)
+        st.rerun()
+
 _btn_solicitar, _btn_verificar, _btn_descargar, _btn_limpiar = st.columns([2, 2, 2, 1])
 
 with _btn_solicitar:
@@ -383,79 +466,25 @@ with _btn_solicitar:
         except Exception as _e:
             st.error(f"Error al solicitar: {_e}")
 
-# ── BOTÓN 2: VERIFICAR ESTADO (sin descargar) ────────────────────────────────
+# ── BOTÓN 2: VERIFICAR ESTADO ────────────────────────────────────────────────
 with _btn_verificar:
-    if st.button("🔄 Verificar estado", key="btn_verificar", use_container_width=True):
+    _is_polling = st.session_state.get("cfdi_polling", False)
+    _btn_lbl    = "⏹ Detener verificación" if _is_polling else "🔄 Verificar estado"
+    if st.button(_btn_lbl, key="btn_verificar", use_container_width=True):
         _sols = st.session_state.get("cfdi_solicitudes", [])
-        if not _sols:
+        if _is_polling:
+            # Detener polling
+            st.session_state["cfdi_polling"] = False
+            st.rerun()
+        elif not _sols:
             st.warning("Primero haz clic en **Solicitar descarga**.")
         else:
-            _t0       = st.session_state.get("cfdi_start_time") or time.time()
-            _timer_ph = st.empty()
-            _stat_ph  = st.empty()
-            _prog_ph  = st.empty()
-            _MAX_ESP  = 300
-            _POLL     = 6
-            _terminados = set()
-            _errores    = set()
-
-            while True:
-                _elapsed  = time.time() - _t0
-                _mm, _ss  = divmod(int(_elapsed), 60)
-                _rm, _rs  = divmod(int(max(0, _MAX_ESP - _elapsed)), 60)
-                _timer_ph.markdown(
-                    f"⏱️ **Transcurrido:** `{_mm:02d}:{_ss:02d}` &nbsp;|&nbsp; "
-                    f"⏳ **Máx. restante:** `{_rm:02d}:{_rs:02d}`"
-                )
-
-                _todos_listos = True
-                for _sol in _sols:
-                    _id_sol = _sol["id"]
-                    if not _id_sol or _id_sol in _terminados or _id_sol in _errores:
-                        continue
-                    try:
-                        _st    = _sat.recover_comprobante_status(_id_sol)
-                        _enum  = _st.get("EstadoSolicitud")
-                        _paq   = _st.get("IdsPaquetes") or []
-                        _sol["paquetes"] = _paq
-                        _sol["estado"]   = str(_enum)
-
-                        if _enum == EstadoSolicitud.TERMINADA:
-                            _terminados.add(_id_sol)
-                            _stat_ph.success(
-                                f"✅ {_sol['tipo'].capitalize()}: "
-                                f"{len(_paq)} paquete(s) listos — presiona **📥 Descargar paquetes**."
-                            )
-                        elif _enum in (EstadoSolicitud.ERROR, EstadoSolicitud.RECHAZADA, EstadoSolicitud.VENCIDA):
-                            _errores.add(_id_sol)
-                            _stat_ph.error(f"❌ {_sol['tipo'].capitalize()}: {str(_enum)}")
-                        else:
-                            _todos_listos = False
-                            _lbl = {
-                                str(EstadoSolicitud.ACEPTADA):   "Aceptada, en cola…",
-                                str(EstadoSolicitud.EN_PROCESO): "El SAT está procesando…",
-                            }.get(str(_enum), f"Estado {_enum}")
-                            _stat_ph.info(f"⏳ {_sol['tipo'].capitalize()}: {_lbl}")
-                    except Exception as _e:
-                        _todos_listos = False
-                        _stat_ph.warning(f"Error: {_e}")
-
-                _n_l = len(_terminados) + len(_errores)
-                _n_t = len(_sols)
-                _prog_ph.progress(_n_l / _n_t if _n_t else 1,
-                                  f"Solicitudes verificadas: {_n_l}/{_n_t}")
-
-                if _todos_listos or _elapsed >= _MAX_ESP:
-                    break
-                time.sleep(_POLL)
-
-            _ef = time.time() - _t0
-            _mf, _sf = divmod(int(_ef), 60)
-            _timer_ph.success(f"⏱️ Verificación completada en **{_mf:02d}:{_sf:02d}**")
-            _prog_ph.empty()
-            st.session_state["cfdi_solicitudes"] = _sols
+            # Iniciar polling
+            st.session_state["cfdi_polling"]    = True
+            st.session_state["cfdi_poll_start"] = time.time()
+            st.session_state["cfdi_terminados"] = []
+            st.session_state["cfdi_errores_v"]  = []
             st.rerun()
-
 # ── BOTÓN 3: DESCARGAR PAQUETES (independiente) ──────────────────────────────
 with _btn_descargar:
     if st.button("📥 Descargar paquetes", key="btn_descargar", use_container_width=True):
@@ -518,11 +547,13 @@ _sols_act = st.session_state.get("cfdi_solicitudes", [])
 if _sols_act:
     _est_labels = {
         "1": "Aceptada","2": "En proceso","3": "Terminada",
-        "4": "Error","5": "Rechazada","6": "Vencida","ENVIADA": "Enviada",
+        "4": "Error","5": "Rechazada","6": "Vencida",
+        "ENVIADA": "Enviada","SIN_ID": "Sin ID (SAT rechazó solicitud)","ERR": "Error al verificar",
     }
     for _s in _sols_act:
+        _id_disp = _s['id'] if _s['id'] else "_(vacío)_"
         _lbl = _est_labels.get(str(_s.get("estado","")),"—")
-        st.caption(f"**{_s['tipo'].capitalize()}** — ID: `{_s['id']}` — Estado: {_lbl} — Paquetes: {len(_s.get('paquetes',[]))}")
+        st.caption(f"**{_s['tipo'].capitalize()}** — ID: `{_id_disp}` — Estado: {_lbl} — Paquetes: {len(_s.get('paquetes',[]))}")
 
 st.markdown('</div>', unsafe_allow_html=True)
 

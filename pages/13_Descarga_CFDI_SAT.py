@@ -615,9 +615,29 @@ with _btn_solicitar:
                             "cod":      _rr.get("CodEstatus",""),
                         })
 
-            st.session_state["cfdi_solicitudes"] = _solicitudes_nuevas
+            # ── Separar aceptadas vs rechazadas ─────────────────────────
+            _aceptadas  = [s for s in _solicitudes_nuevas
+                           if s.get("cod","") in ("5000","5004") and s.get("id","")]
+            _rechazadas = [s for s in _solicitudes_nuevas
+                           if s not in _aceptadas]
+
+            # Solo enviar al polling las solicitudes ACEPTADAS con ID válido
+            st.session_state["cfdi_solicitudes"] = _aceptadas
             st.session_state["cfdi_resultados"]  = []
             st.session_state["cfdi_start_time"]  = time.time()
+
+            # ── Mostrar resultado por solicitud ──────────────────────────
+            for _sol in _aceptadas:
+                st.success(f"✅ Solicitud **{_sol['tipo']}** enviada — ID: `{_sol['id']}`")
+            for _sol in _rechazadas:
+                _cod_r = _sol.get("cod","")
+                _msg_r = {
+                    "301": "El SAT no permite descargar **Recibidos** para este RFC. Usa solo **Emitidos**.",
+                    "5002": "Límite de solicitudes alcanzado. Intenta mañana.",
+                    "5005": "Solicitud duplicada en proceso.",
+                }.get(_cod_r, f"SAT rechazó la solicitud (Cód: {_cod_r}).")
+                st.warning(f"⚠️ **{_sol['tipo'].capitalize()}** rechazada — {_msg_r}")
+
             # ── Guardar en historial ─────────────────────────────────────
             _hist_id_new  = str(_uuid_mod.uuid4())
             st.session_state["cfdi_hist_id"] = _hist_id_new
@@ -644,17 +664,11 @@ with _btn_solicitar:
                 "total_cfdis":  0,
                 "estado_final": "Enviada",
             })
-            for _sol in _solicitudes_nuevas:
-                _cod = _sol.get("cod","")
-                if _cod in ("5000","5004"):
-                    st.success(f"✅ Solicitud {_sol['tipo']} enviada — ID: `{_sol['id']}`")
-                else:
-                    st.warning(f"⚠️ Solicitud {_sol['tipo']} — Cód: {_cod} ID: `{_sol['id']}`")
-            if _solicitudes_nuevas:
+            if _aceptadas:
                 st.info(
                     "ℹ️ **El SAT tarda entre 30 minutos y varias horas en procesar.**  \n"
-                    "Presiona **🔄 Verificar estado** ahora para empezar a monitorear — "
-                    "la página revisará automáticamente cada 20 segundos hasta 1 hora."
+                    "Presiona **🔄 Verificar estado** para monitorear — "
+                    "revisará automáticamente cada 20 segundos hasta 1 hora."
                 )
         except Exception as _e:
             st.error(f"Error al solicitar: {_e}")

@@ -931,8 +931,3 @@ else:
                     st.warning("No se pudo generar la vista previa.")
 
 st.markdown('</div>', unsafe_allow_html=True)
-ing=True)
-                else:
-                    st.warning("No se pudo generar la vista previa.")
-
-st.markdown('</div>', unsafe_allow_html=True)

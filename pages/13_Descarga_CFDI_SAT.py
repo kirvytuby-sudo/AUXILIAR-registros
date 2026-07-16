@@ -449,23 +449,43 @@ if st.session_state.get("cfdi_polling") and st.session_state.get("cfdi_signer"):
             try:
                 _p_r   = _p_sat.recover_comprobante_status(_pid)
                 _p_en  = int(_p_r.get("EstadoSolicitud", -1))
-                _p_cod = _p_r.get("CodigoEstadoSolicitud","")
+                # CodEstatus = código del CALL de verificación (5000=ok, 5002=no encontrada)
+                # CodigoEstadoSolicitud = código específico de la solicitud (opcional)
+                _p_cod = _p_r.get("CodEstatus", _p_r.get("CodigoEstadoSolicitud", ""))
                 _p_num = _p_r.get("NumeroCFDIs", 0)
                 _p_paq = _p_r.get("IdsPaquetes") or []
                 _p_sol["paquetes"] = _p_paq
                 _p_sol["estado"]   = str(_p_en)
-                _lbl_e = {1:"Aceptada",2:"En proceso",3:"Terminada",4:"Error",5:"Rechazada",6:"Vencida"}.get(_p_en, str(_p_en))
+                _lbl_e = {
+                    0: "No encontrada (SAT no tiene esta solicitud)",
+                    1: "Aceptada", 2: "En proceso", 3: "Terminada",
+                    4: "Error", 5: "Rechazada", 6: "Vencida",
+                }.get(_p_en, f"Desconocido({_p_en})")
+                _icono = "✅" if _p_en==3 else "⏳" if _p_en in (1,2) else "❌"
                 _diag.append(
-                    f"{'✅' if _p_en==3 else '⏳' if _p_en in (1,2) else '❌'} "
-                    f"**{_p_sol['tipo']}**: {_lbl_e} | "
+                    f"{_icono} **{_p_sol['tipo']}**: {_lbl_e} | "
                     f"Cód:`{_p_cod}` | CFDIs:`{_p_num}` | Paq:`{len(_p_paq)}`"
                 )
+                # Debug: respuesta completa del SAT en expander
+                with st.expander(f"🔍 Respuesta SAT ({_p_sol['tipo']})", expanded=False):
+                    st.json(_p_r)
                 if _p_en == 3:
                     _p_terminados.add(_pid)
-                elif _p_en in (4, 5, 6):
+                elif _p_en in (0, 4, 5, 6):
+                    # 0 = SAT no encontró la solicitud (5002), 4=Error, 5=Rechazada, 6=Vencida
                     _p_errores.add(_pid)
+                    if _p_en == 0:
+                        st.warning(
+                            f"⚠️ **Solicitud '{_p_sol['tipo']}' no encontrada por el SAT** (CodEstatus: {_p_cod}).\n\n"
+                            "Posibles causas:\n"
+                            "- El SAT aún no registró la solicitud (espera 1-2 min y reintenta)\n"
+                            "- Se excedió el límite diario de solicitudes del RFC (~10/día)\n"
+                            "- La solicitud expiró (vencen a los 3 días)\n\n"
+                            "Prueba: haz clic en **🗑️ Limpiar** → **Solicitar descarga** de nuevo."
+                        )
             except Exception as _p_exc:
                 _diag.append(f"❌ **{_p_sol['tipo']}** → Error: `{_p_exc}`")
+                _p_errores.add(_pid)
 
         st.info("🔍 **Diagnóstico:**  \n" + "  \n".join(_diag) if _diag else "Sin datos aún.")
 

@@ -5,7 +5,7 @@ Autenticación: e.firma (.cer + .key + contraseña).
 """
 
 import streamlit as st
-import base64, zipfile, io, os, time
+import base64, zipfile, io, os, time, json, uuid as _uuid_mod
 from datetime import date, datetime, timedelta
 from lxml import etree
 import pandas as pd
@@ -143,6 +143,44 @@ def _make_sat(signer):
     return SAT(signer)
 
 
+# ── Historial de solicitudes ──────────────────────────────────────────────────
+_HIST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cfdi_historial.json")
+
+def _hist_cargar() -> list:
+    """Carga el historial de solicitudes desde JSON."""
+    try:
+        if os.path.exists(_HIST_FILE):
+            with open(_HIST_FILE, "r", encoding="utf-8") as _f:
+                return json.load(_f)
+    except Exception:
+        pass
+    return []
+
+def _hist_guardar(hist: list):
+    """Guarda historial (máx. 30 entradas)."""
+    try:
+        with open(_HIST_FILE, "w", encoding="utf-8") as _f:
+            json.dump(hist[:30], _f, ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        pass
+
+def _hist_agregar(entry: dict):
+    """Agrega (o reemplaza) una entrada al inicio del historial."""
+    _h = _hist_cargar()
+    _h = [x for x in _h if x.get("id_entrada") != entry.get("id_entrada")]
+    _h.insert(0, entry)
+    _hist_guardar(_h)
+
+def _hist_actualizar(id_entrada: str, **kwargs):
+    """Actualiza campos de una entrada existente por id_entrada."""
+    _h = _hist_cargar()
+    for _e in _h:
+        if _e.get("id_entrada") == id_entrada:
+            _e.update(kwargs)
+            break
+    _hist_guardar(_h)
+
+
 def _unzip_xmls(zip_b64: str) -> list[tuple[str, bytes]]:
     """Desempaca paquete ZIP base64 del SAT. Retorna [(nombre, xml_bytes)]."""
     raw = base64.b64decode(zip_b64)
@@ -186,6 +224,7 @@ for _k, _v in {
     "cfdi_poll_start":  None,    # tiempo inicio del polling
     "cfdi_terminados":  [],      # IDs ya terminados
     "cfdi_errores_v":   [],      # IDs con error/rechazada/vencida
+    "cfdi_hist_id":     None,    # ID de la entrada activa en el historial
 }.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -243,6 +282,63 @@ if not st.session_state["cfdi_signer"]:
 
 _sat = st.session_state["cfdi_sat"]
 _rfc = st.session_state["cfdi_rfc"]
+
+# ════════════════════════════════════════════════════════════════════════════
+# HISTORIAL de solicitudes
+# ════════════════════════════════════════════════════════════════════════════
+_hist = _hist_cargar()
+_hist_lbl = f"📋 Historial — {len(_hist)} solicitud(es) anteriores" if _hist else "📋 Historial — sin solicitudes anteriores"
+with st.expander(_hist_lbl, expanded=False):
+        if not _hist:
+            st.info("Aún no hay solicitudes registradas. Aparecerán aquí después de tu primera solicitud.")
+        for _h in _hist:
+            _ef  = _h.get("estado_final", "?")
+            _ico = (
+                "✅" if _ef in ("Terminada", "Descargado") else
+                "❌" if _ef in ("Error", "Rechazada", "Vencida", "Sin paquetes") else
+                "⏳"
+            )
+            _ha, _hb, _hc, _hd = st.columns([2.5, 2.5, 1.5, 0.8])
+            with _ha:
+                st.markdown(f"**{_h.get('fecha_solicitud','?')}**")
+                st.caption(f"RFC: {_h.get('rfc','?')}")
+                st.caption(f"Período: {_h.get('periodo','?')} · {_h.get('tipo_dl','?')}")
+            with _hb:
+                for _hs in _h.get("solicitudes", []):
+                    _hid  = _hs.get("id", "")
+                    _hest = _hs.get("estado", "")
+                    if _hid:
+                        st.caption(f"**{_hs.get('tipo','').capitalize()}**: `{_hid[:12]}…` [{_hest}]")
+                    else:
+                        st.caption(f"**{_hs.get('tipo','').capitalize()}**: sin ID")
+            with _hc:
+                st.markdown(f"{_ico} **{_ef}**")
+                st.caption(f"CFDIs: {_h.get('total_cfdis', 0)}")
+            with _hd:
+                if st.button(
+                    "↩ Cargar", key=f"h_load_{_h['id_entrada']}",
+                    use_container_width=True,
+                    help="Restaurar estas solicitudes en la sesión actual",
+                ):
+                    _sols_r = [
+                        {
+                            "tipo":     s["tipo"],
+                            "id":       s.get("id", ""),
+                            "paquetes": s.get("paquetes", []),
+                            "estado":   s.get("estado", "ENVIADA"),
+                            "cod":      s.get("cod", ""),
+                        }
+                        for s in _h.get("solicitudes", [])
+                    ]
+                    st.session_state["cfdi_solicitudes"] = _sols_r
+                    st.session_state["cfdi_resultados"]  = []
+                    st.session_state["cfdi_hist_id"]     = _h["id_entrada"]
+                    st.rerun()
+            st.divider()
+
+        if st.button("🗑️ Borrar historial completo", key="btn_borrar_hist"):
+            _hist_guardar([])
+            st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════
 # SECCIÓN 2 — FILTROS DE BÚSQUEDA
@@ -389,6 +485,24 @@ if st.session_state.get("cfdi_polling") and st.session_state.get("cfdi_signer"):
 
     if _todos_ok or _elapsed >= _POLL_MAX:
         st.session_state["cfdi_polling"] = False
+        # ── Actualizar historial con estado final ────────────────────────
+        _hist_id_poll = st.session_state.get("cfdi_hist_id")
+        if _hist_id_poll:
+            _ef_poll = "Terminada" if _p_terminados else "Sin paquetes"
+            _hist_actualizar(
+                _hist_id_poll,
+                estado_final = _ef_poll,
+                solicitudes  = [
+                    {
+                        "tipo":     s["tipo"],
+                        "id":       s.get("id", ""),
+                        "estado":   s.get("estado", ""),
+                        "paquetes": s.get("paquetes", []),
+                        "cod":      s.get("cod", ""),
+                    }
+                    for s in _p_sols
+                ],
+            )
         if _p_terminados:
             st.success("✅ Verificación completa — presiona **📥 Descargar paquetes**")
         else:
@@ -457,6 +571,32 @@ with _btn_solicitar:
             st.session_state["cfdi_solicitudes"] = _solicitudes_nuevas
             st.session_state["cfdi_resultados"]  = []
             st.session_state["cfdi_start_time"]  = time.time()
+            # ── Guardar en historial ─────────────────────────────────────
+            _hist_id_new  = str(_uuid_mod.uuid4())
+            st.session_state["cfdi_hist_id"] = _hist_id_new
+            _periodo_h = (
+                f"UUID: {_uuid_input}" if _modo == "🆔 Por UUID"
+                else f"{_fecha_ini} al {_fecha_fin}"
+            )
+            _hist_agregar({
+                "id_entrada":      _hist_id_new,
+                "fecha_solicitud": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "rfc":             _rfc,
+                "periodo":         _periodo_h,
+                "tipo_dl":         _tipo_dl if _modo != "🆔 Por UUID" else _tipo_dir,
+                "solicitudes": [
+                    {
+                        "tipo":     s["tipo"],
+                        "id":       s["id"],
+                        "estado":   s["estado"],
+                        "paquetes": s.get("paquetes", []),
+                        "cod":      s.get("cod", ""),
+                    }
+                    for s in _solicitudes_nuevas
+                ],
+                "total_cfdis":  0,
+                "estado_final": "Enviada",
+            })
             for _sol in _solicitudes_nuevas:
                 _cod = _sol.get("cod","")
                 if _cod in ("5000","5004"):
@@ -532,6 +672,14 @@ with _btn_descargar:
             )
             _prog_dl.empty()
             st.session_state["cfdi_resultados"] = _nuevos
+            # ── Actualizar historial con total de CFDIs ──────────────────
+            _hist_id_dl = st.session_state.get("cfdi_hist_id")
+            if _hist_id_dl:
+                _hist_actualizar(
+                    _hist_id_dl,
+                    total_cfdis  = len(_nuevos),
+                    estado_final = "Descargado",
+                )
             if _nuevos:
                 st.rerun()
 
@@ -779,6 +927,11 @@ else:
                     _html_prev = _html_from_xml(_rec["xml_bytes"])
                 if _html_prev:
                     st.components.v1.html(_html_prev, height=700, scrolling=True)
+                else:
+                    st.warning("No se pudo generar la vista previa.")
+
+st.markdown('</div>', unsafe_allow_html=True)
+ing=True)
                 else:
                     st.warning("No se pudo generar la vista previa.")
 

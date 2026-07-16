@@ -659,27 +659,7 @@ with _btn_solicitar:
         except Exception as _e:
             st.error(f"Error al solicitar: {_e}")
 
-# ── BOTÓN 2: VERIFICAR ESTADO ────────────────────────────────────────────────
-with _btn_verificar:
-    _is_polling = st.session_state.get("cfdi_polling", False)
-    _btn_lbl    = "⏹ Detener verificación" if _is_polling else "🔄 Verificar estado"
-    if st.button(_btn_lbl, key="btn_verificar", use_container_width=True):
-        _sols = st.session_state.get("cfdi_solicitudes", [])
-        if _is_polling:
-            # Detener polling
-            st.session_state["cfdi_polling"] = False
-            st.rerun()
-        elif not _sols:
-            st.warning("Primero haz clic en **Solicitar descarga**.")
-        else:
-            # Iniciar polling (resetear contadores)
-            st.session_state["cfdi_polling"]     = True
-            st.session_state["cfdi_poll_start"]  = time.time()
-            st.session_state["cfdi_terminados"]  = []
-            st.session_state["cfdi_errores_v"]   = []
-            st.session_state["cfdi_zero_counts"] = {}
-            st.rerun()
-# ── BOTÓN 3: DESCARGAR PAQUETES (independiente) ──────────────────────────────
+# ── BOTÓN 2: DESCARGAR PAQUETES ──────────────────────────────────────────────
 with _btn_descargar:
     if st.button("📥 Descargar paquetes", key="btn_descargar", use_container_width=True):
         _sols = st.session_state.get("cfdi_solicitudes", [])
@@ -736,6 +716,27 @@ with _btn_descargar:
                 )
             if _nuevos:
                 st.rerun()
+
+# ── BOTÓN 3: VERIFICAR ESTADO ────────────────────────────────────────────────
+with _btn_verificar:
+    _is_polling = st.session_state.get("cfdi_polling", False)
+    _btn_lbl    = "⏹ Detener verificación" if _is_polling else "🔄 Verificar estado"
+    if st.button(_btn_lbl, key="btn_verificar", use_container_width=True):
+        _sols = st.session_state.get("cfdi_solicitudes", [])
+        if _is_polling:
+            # Detener polling
+            st.session_state["cfdi_polling"] = False
+            st.rerun()
+        elif not _sols:
+            st.warning("Primero haz clic en **Solicitar descarga**.")
+        else:
+            # Iniciar polling (resetear contadores)
+            st.session_state["cfdi_polling"]     = True
+            st.session_state["cfdi_poll_start"]  = time.time()
+            st.session_state["cfdi_terminados"]  = []
+            st.session_state["cfdi_errores_v"]   = []
+            st.session_state["cfdi_zero_counts"] = {}
+            st.rerun()
 
 with _btn_limpiar:
     if st.button("🗑️ Limpiar", key="btn_limpiar", use_container_width=True):

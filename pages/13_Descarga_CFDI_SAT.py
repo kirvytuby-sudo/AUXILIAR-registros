@@ -558,7 +558,7 @@ if st.session_state.get("cfdi_polling") and st.session_state.get("cfdi_signer"):
         time.sleep(_POLL_INTERVAL)
         st.rerun()
 
-_btn_solicitar, _btn_verificar, _btn_descargar, _btn_limpiar = st.columns([2, 2, 2, 1])
+_btn_solicitar, _btn_descargar, _btn_verificar, _btn_limpiar = st.columns([2, 2, 2, 1])
 
 with _btn_solicitar:
     if st.button("📤 Solicitar descarga", key="btn_solicitar", type="primary", use_container_width=True):

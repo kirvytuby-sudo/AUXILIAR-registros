@@ -830,7 +830,7 @@ if resultados:
     hay_algo = False
 
     with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for r in resultados:
+        for _i_res, r in enumerate(resultados):
             rfc = r["rfc"] or "SIN_RFC"
             st.markdown(f"""
             <div class="emp-card"><div class="rfc">🏢 {rfc}</div>
@@ -848,7 +848,7 @@ if resultados:
                     zf.writestr(nombre_pdf, r["constancia"])
                     st.download_button(f"📥 Constancia de Situación Fiscal — {rfc}",
                                        data=r["constancia"], file_name=nombre_pdf,
-                                       mime="application/pdf", key=f"dl_csf_{rfc}",
+                                       mime="application/pdf", key=f"dl_csf_{rfc}_{_i_res}",
                                        use_container_width=True)
                 else:
                     st.markdown(f'<div class="err-box">❌ Constancia: {r["err_constancia"]}</div>',
@@ -860,7 +860,7 @@ if resultados:
                     zf.writestr(nombre_pdf, r["opinion"])
                     st.download_button(f"📥 Opinión de Cumplimiento 32-D — {rfc}",
                                        data=r["opinion"], file_name=nombre_pdf,
-                                       mime="application/pdf", key=f"dl_op_{rfc}",
+                                       mime="application/pdf", key=f"dl_op_{rfc}_{_i_res}",
                                        use_container_width=True)
                 else:
                     st.markdown(f'<div class="err-box">❌ Opinión 32-D: {r["err_opinion"]}</div>',

@@ -314,7 +314,7 @@ st.markdown('<div class="sec-body">', unsafe_allow_html=True)
 
 from satcfdi.pacs.sat import EstadoSolicitud, EstadoComprobante, TipoDescargaMasivaTerceros
 
-_btn_solicitar, _btn_verificar, _btn_limpiar = st.columns([2, 2, 1])
+_btn_solicitar, _btn_verificar, _btn_descargar, _btn_limpiar = st.columns([2, 2, 2, 1])
 
 with _btn_solicitar:
     if st.button("📤 Solicitar descarga", key="btn_solicitar", type="primary", use_container_width=True):
@@ -330,7 +330,6 @@ with _btn_solicitar:
                 )
 
                 if _modo == "🆔 Por UUID":
-                    # Búsqueda por UUID
                     _res = _sat.recover_comprobante_uuid_request(folio=_uuid_input)
                     if _res:
                         _solicitudes_nuevas.append({
@@ -341,7 +340,6 @@ with _btn_solicitar:
                             "cod":      _res.get("CodEstatus",""),
                         })
                 else:
-                    # Rango de fechas — emitidos
                     if _tipo_dl in ("Ambos","Emitidos"):
                         _re = _sat.recover_comprobante_emitted_request(
                             fecha_inicial       = _fecha_ini,
@@ -357,7 +355,6 @@ with _btn_solicitar:
                             "estado":   "ENVIADA",
                             "cod":      _re.get("CodEstatus",""),
                         })
-                    # Recibidos
                     if _tipo_dl in ("Ambos","Recibidos"):
                         _rr = _sat.recover_comprobante_received_request(
                             fecha_inicial       = _fecha_ini,
@@ -376,7 +373,7 @@ with _btn_solicitar:
 
             st.session_state["cfdi_solicitudes"] = _solicitudes_nuevas
             st.session_state["cfdi_resultados"]  = []
-            st.session_state["cfdi_start_time"]   = time.time()
+            st.session_state["cfdi_start_time"]  = time.time()
             for _sol in _solicitudes_nuevas:
                 _cod = _sol.get("cod","")
                 if _cod in ("5000","5004"):
@@ -386,36 +383,29 @@ with _btn_solicitar:
         except Exception as _e:
             st.error(f"Error al solicitar: {_e}")
 
+# ── BOTÓN 2: VERIFICAR ESTADO (sin descargar) ────────────────────────────────
 with _btn_verificar:
-    if st.button("🔄 Verificar y descargar (auto)", key="btn_verificar", use_container_width=True):
+    if st.button("🔄 Verificar estado", key="btn_verificar", use_container_width=True):
         _sols = st.session_state.get("cfdi_solicitudes", [])
         if not _sols:
             st.warning("Primero haz clic en **Solicitar descarga**.")
         else:
-            _t0 = st.session_state.get("cfdi_start_time") or time.time()
-            _nuevos_resultados = list(st.session_state.get("cfdi_resultados", []))
-            _timer_ph   = st.empty()   # reloj en vivo
-            _status_ph  = st.empty()   # mensajes de estado
-            _prog_ph    = st.empty()   # barra de progreso
-
-            # ── Auto-poll hasta que todos terminen o error ──────────────────
-            _MAX_ESPERA = 300  # 5 min máximo
-            _POLL_SEG   = 6    # consultar cada 6 s
+            _t0       = st.session_state.get("cfdi_start_time") or time.time()
+            _timer_ph = st.empty()
+            _stat_ph  = st.empty()
+            _prog_ph  = st.empty()
+            _MAX_ESP  = 300
+            _POLL     = 6
             _terminados = set()
             _errores    = set()
 
             while True:
                 _elapsed  = time.time() - _t0
-                _mm       = int(_elapsed // 60)
-                _ss       = int(_elapsed % 60)
-                _restante = max(0, _MAX_ESPERA - _elapsed)
-                _rm       = int(_restante // 60)
-                _rs       = int(_restante % 60)
-
+                _mm, _ss  = divmod(int(_elapsed), 60)
+                _rm, _rs  = divmod(int(max(0, _MAX_ESP - _elapsed)), 60)
                 _timer_ph.markdown(
-                    f"⏱️ **Tiempo transcurrido:** `{_mm:02d}:{_ss:02d}`  "
-                    f"&nbsp;&nbsp;|&nbsp;&nbsp; "
-                    f"⏳ **Tiempo máx. restante:** `{_rm:02d}:{_rs:02d}`",
+                    f"⏱️ **Transcurrido:** `{_mm:02d}:{_ss:02d}` &nbsp;|&nbsp; "
+                    f"⏳ **Máx. restante:** `{_rm:02d}:{_rs:02d}`"
                 )
 
                 _todos_listos = True
@@ -424,72 +414,98 @@ with _btn_verificar:
                     if not _id_sol or _id_sol in _terminados or _id_sol in _errores:
                         continue
                     try:
-                        _status  = _sat.recover_comprobante_status(_id_sol)
-                        _est_num = _status.get("EstadoSolicitud")
-                        _paquetes = _status.get("IdsPaquetes") or []
-                        _sol["paquetes"] = _paquetes
-                        _sol["estado"]   = str(_est_num)
+                        _st    = _sat.recover_comprobante_status(_id_sol)
+                        _enum  = _st.get("EstadoSolicitud")
+                        _paq   = _st.get("IdsPaquetes") or []
+                        _sol["paquetes"] = _paq
+                        _sol["estado"]   = str(_enum)
 
-                        if _est_num == EstadoSolicitud.TERMINADA:
+                        if _enum == EstadoSolicitud.TERMINADA:
                             _terminados.add(_id_sol)
-                            _status_ph.success(
+                            _stat_ph.success(
                                 f"✅ {_sol['tipo'].capitalize()}: "
-                                f"{len(_paquetes)} paquete(s) listos — descargando…"
+                                f"{len(_paq)} paquete(s) listos — presiona **📥 Descargar paquetes**."
                             )
-                            for _id_paq in _paquetes:
-                                try:
-                                    _meta_paq, _zip_b64 = _sat.recover_comprobante_download(_id_paq)
-                                    _xmls = _unzip_xmls(_zip_b64)
-                                    for _fname, _xbytes in _xmls:
-                                        _m = _parse_meta(_xbytes)
-                                        _m["direccion"] = _sol["tipo"]
-                                        _nuevos_resultados.append(_m)
-                                except Exception as _ep:
-                                    _status_ph.warning(f"Error en paquete {_id_paq[:8]}: {_ep}")
-                        elif _est_num in (EstadoSolicitud.ERROR, EstadoSolicitud.RECHAZADA, EstadoSolicitud.VENCIDA):
+                        elif _enum in (EstadoSolicitud.ERROR, EstadoSolicitud.RECHAZADA, EstadoSolicitud.VENCIDA):
                             _errores.add(_id_sol)
-                            _lbl_err = {
-                                str(EstadoSolicitud.ERROR):    "Error",
-                                str(EstadoSolicitud.RECHAZADA):"Rechazada",
-                                str(EstadoSolicitud.VENCIDA):  "Vencida",
-                            }.get(str(_est_num), str(_est_num))
-                            _status_ph.error(f"❌ {_sol['tipo'].capitalize()}: {_lbl_err}")
+                            _stat_ph.error(f"❌ {_sol['tipo'].capitalize()}: {str(_enum)}")
                         else:
                             _todos_listos = False
-                            _lbl_esp = {
+                            _lbl = {
                                 str(EstadoSolicitud.ACEPTADA):   "Aceptada, en cola…",
                                 str(EstadoSolicitud.EN_PROCESO): "El SAT está procesando…",
-                            }.get(str(_est_num), f"Estado {_est_num}")
-                            _status_ph.info(f"⏳ {_sol['tipo'].capitalize()}: {_lbl_esp}")
+                            }.get(str(_enum), f"Estado {_enum}")
+                            _stat_ph.info(f"⏳ {_sol['tipo'].capitalize()}: {_lbl}")
                     except Exception as _e:
                         _todos_listos = False
-                        _status_ph.warning(f"Error al verificar: {_e}")
+                        _stat_ph.warning(f"Error: {_e}")
 
-                _n_listos = len(_terminados) + len(_errores)
-                _n_total  = len(_sols)
-                _prog_ph.progress(
-                    _n_listos / _n_total if _n_total else 1,
-                    f"Solicitudes terminadas: {_n_listos}/{_n_total}",
-                )
+                _n_l = len(_terminados) + len(_errores)
+                _n_t = len(_sols)
+                _prog_ph.progress(_n_l / _n_t if _n_t else 1,
+                                  f"Solicitudes verificadas: {_n_l}/{_n_t}")
 
-                if _todos_listos or _elapsed >= _MAX_ESPERA:
+                if _todos_listos or _elapsed >= _MAX_ESP:
                     break
-                time.sleep(_POLL_SEG)
+                time.sleep(_POLL)
 
-            # ── Fin del loop ────────────────────────────────────────────────
-            _elapsed_final = time.time() - _t0
-            _mf = int(_elapsed_final // 60)
-            _sf = int(_elapsed_final % 60)
-            _timer_ph.success(
-                f"⏱️ Completado en **{_mf:02d}:{_sf:02d}** — "
-                f"{len(_nuevos_resultados)} CFDI(s) descargados."
-            )
+            _ef = time.time() - _t0
+            _mf, _sf = divmod(int(_ef), 60)
+            _timer_ph.success(f"⏱️ Verificación completada en **{_mf:02d}:{_sf:02d}**")
             _prog_ph.empty()
-
             st.session_state["cfdi_solicitudes"] = _sols
-            st.session_state["cfdi_resultados"]  = _nuevos_resultados
-            if _nuevos_resultados:
+            st.rerun()
+
+# ── BOTÓN 3: DESCARGAR PAQUETES (independiente) ──────────────────────────────
+with _btn_descargar:
+    if st.button("📥 Descargar paquetes", key="btn_descargar", use_container_width=True):
+        _sols = st.session_state.get("cfdi_solicitudes", [])
+        _listos = [s for s in _sols if s.get("paquetes")]
+        if not _listos:
+            st.warning("No hay paquetes listos. Primero **Verifica el estado**.")
+        else:
+            _t0_dl = time.time()
+            _nuevos = list(st.session_state.get("cfdi_resultados", []))
+            _timer_dl = st.empty()
+            _stat_dl  = st.empty()
+            _total_paq = sum(len(s["paquetes"]) for s in _listos)
+            _prog_dl   = st.progress(0, f"0 / {_total_paq} paquetes descargados")
+            _descargados = 0
+
+            for _sol in _listos:
+                for _id_paq in _sol.get("paquetes", []):
+                    try:
+                        _el = time.time() - _t0_dl
+                        _mm, _ss = divmod(int(_el), 60)
+                        _timer_dl.markdown(
+                            f"⏱️ **Descargando…** `{_mm:02d}:{_ss:02d}` — "
+                            f"paquete `{_id_paq[:8]}…`"
+                        )
+                        _meta_paq, _zip_b64 = _sat.recover_comprobante_download(_id_paq)
+                        _xmls = _unzip_xmls(_zip_b64)
+                        for _fname, _xbytes in _xmls:
+                            _m = _parse_meta(_xbytes)
+                            _m["direccion"] = _sol["tipo"]
+                            _nuevos.append(_m)
+                        _descargados += 1
+                        _prog_dl.progress(
+                            _descargados / _total_paq,
+                            f"{_descargados} / {_total_paq} paquetes descargados"
+                        )
+                    except Exception as _ep:
+                        _stat_dl.warning(f"Error en paquete {_id_paq[:8]}: {_ep}")
+
+            _ef2 = time.time() - _t0_dl
+            _mf2, _sf2 = divmod(int(_ef2), 60)
+            _timer_dl.success(
+                f"⏱️ Descarga completa en **{_mf2:02d}:{_sf2:02d}** — "
+                f"{len(_nuevos)} CFDI(s) obtenidos."
+            )
+            _prog_dl.empty()
+            st.session_state["cfdi_resultados"] = _nuevos
+            if _nuevos:
                 st.rerun()
+
 with _btn_limpiar:
     if st.button("🗑️ Limpiar", key="btn_limpiar", use_container_width=True):
         st.session_state["cfdi_solicitudes"] = []

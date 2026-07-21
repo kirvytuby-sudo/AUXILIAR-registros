@@ -129,22 +129,31 @@ with _c_cat:
         "📊 Catálogo de cuentas (.xlsx)", type=["xlsx","xls"], label_visibility="visible",
     )
 
-# Clasificar al subir — solo cuando cambia el set de PDFs
-_pdf_names = sorted([f.name for f in pdfs]) if pdfs else []
-if _pdf_names != st.session_state.get("pb_pdf_names", []):
-    st.session_state.pb_pdf_names = _pdf_names
-    with st.spinner("Clasificando PDFs..."):
-        if pdfs:
-            _clas, _errs = clasificar_uploads(pdfs)
-            st.session_state.pb_clasificados = _clas
-            st.session_state.pb_log = ["PDFs cargados y clasificados."] + _errs
-        else:
-            st.session_state.pb_clasificados = {"nomina": [], "complementos": [], "vacaciones": [], "no_reconocidos": []}
-            st.session_state.pb_log = []
-        st.session_state.pb_resultado_bytes = None
-        # Borrar estado de multiselects para que default=todas las opciones tome efecto
+# Clasificar al subir
+# Usamos file_id (único por cada acción de upload, aunque el nombre sea igual)
+# para detectar correctamente cuando el usuario sube archivos nuevos.
+if pdfs:
+    _ids = tuple(sorted(getattr(f, "file_id", f.name) for f in pdfs))
+else:
+    _ids = ()
+
+if _ids != st.session_state.get("_pb_ids", ()):
+    st.session_state._pb_ids = _ids
+    if pdfs:
+        _clas, _errs = clasificar_uploads(pdfs)
+        st.session_state.pb_clasificados = _clas
+        st.session_state.pb_log = ["PDFs cargados y clasificados."] + _errs
+        # Pre-fijar ms_* con TODOS los ítems seleccionados (evita depender de default=)
+        for _k in ("nomina", "complementos", "vacaciones"):
+            _its = _clas.get(_k, [])
+            st.session_state[f"ms_{_k}"] = [f"{n}  —  {d}" for n, d, _ in _its]
+    else:
+        st.session_state.pb_clasificados = {"nomina": [], "complementos": [], "vacaciones": [], "no_reconocidos": []}
+        st.session_state.pb_log = []
         for _mk in ("ms_nomina", "ms_complementos", "ms_vacaciones"):
-            st.session_state.pop(_mk, None)
+            st.session_state[_mk] = []
+    st.session_state.pb_resultado_bytes = None
+    # No se necesita st.rerun() — session_state ya tiene los valores correctos
 
 catalogo_path = None
 if catalogo_file:
@@ -167,10 +176,12 @@ def _render_lista(col, key, titulo, emoji):
     with col:
         st.markdown(f'<div class="listbox-header">{emoji} {titulo}</div>', unsafe_allow_html=True)
         opciones = [f"{n}  —  {d}" for n, d, _ in items] if items else []
-        # default=opciones solo aplica la primera vez que se crea el widget
-        # (cuando ms_key no existe en session_state)
+        # session_state ya fue pre-fijado en el bloque de clasificación;
+        # si por algún motivo no existe, lo inicializamos aquí también
+        if ms_key not in st.session_state:
+            st.session_state[ms_key] = opciones
         sel = st.multiselect(
-            titulo, options=opciones, default=opciones,
+            titulo, options=opciones,
             label_visibility="collapsed", key=ms_key,
         )
         # Botones Todos / Ninguno: escriben directo al session_state del multiselect

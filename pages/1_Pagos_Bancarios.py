@@ -50,26 +50,19 @@ if "pb_tmp" not in st.session_state:
 TMP = st.session_state.pb_tmp
 
 def _clasificar(path):
+    """Devuelve (categoria, descripcion). Propaga excepciones para que el caller las logee."""
     nombre = os.path.basename(path).upper()
-    try:
-        tipo = cn.detect_template(path)
-    except Exception:
-        return "no_reconocidos", os.path.basename(path)
-    try:
-        if tipo == "dispersion":
-            meta, _ = cn.parse_dispersion(path)
-        else:
-            meta, _ = cn.parse_pagos_transferencias(path)
-    except Exception:
-        return "no_reconocidos", os.path.basename(path)
+    tipo = cn.detect_template(path)           # puede lanzar excepción
+    if tipo == "dispersion":
+        meta, _ = cn.parse_dispersion(path)
+    else:
+        meta, _ = cn.parse_pagos_transferencias(path)
     desc = (meta.get("descripcion") or "").upper()
-    # Revisa descripción interna Y nombre del archivo para no perder casos
-    # donde el PDF viene con descripción genérica pero el nombre indica vacaciones/préstamo
     buscar = desc + " " + nombre
     if "VAC" in buscar:
         cat = "vacaciones"
-    elif "PRESTAMO" in buscar or "PRÉSTAMO" in buscar or "PRÉSTAMO" in nombre:
-        cat = "no_reconocidos"   # préstamos van a módulo Préstamos
+    elif "PRESTAMO" in buscar or "PRÉSTAMO" in buscar:
+        cat = "no_reconocidos"
     elif tipo == "dispersion":
         cat = "nomina"
     else:
@@ -77,13 +70,22 @@ def _clasificar(path):
     return cat, meta.get("descripcion") or os.path.basename(path)
 
 def clasificar_uploads(uploaded_files):
-    res = {"nomina": [], "complementos": [], "vacaciones": [], "no_reconocidos": []}
+    res  = {"nomina": [], "complementos": [], "vacaciones": [], "no_reconocidos": []}
+    errs = []
     for uf in uploaded_files:
         tmp_path = os.path.join(TMP, uf.name)
-        with open(tmp_path, "wb") as f:
-            f.write(uf.read())
-        cat, desc = _clasificar(tmp_path)
+        try:
+            uf.seek(0)                        # reset puntero — necesario en reruns de Streamlit
+            with open(tmp_path, "wb") as f:
+                f.write(uf.read())
+            cat, desc = _clasificar(tmp_path)
+        except Exception as e:
+            import traceback
+            cat, desc = "no_reconocidos", uf.name
+            errs.append(f"❌ {uf.name}: {e}")
+            errs.append(traceback.format_exc())
         res[cat].append((uf.name, desc, tmp_path))
+    return res, errs
     return res
 
 # ── Estilos adicionales ────────────────────────────────────────────────────────
@@ -133,8 +135,9 @@ if _pdf_names != st.session_state.get("pb_pdf_names", []):
     st.session_state.pb_pdf_names = _pdf_names
     with st.spinner("Clasificando PDFs..."):
         if pdfs:
-            st.session_state.pb_clasificados = clasificar_uploads(pdfs)
-            st.session_state.pb_log = ["PDFs cargados y clasificados."]
+            _clas, _errs = clasificar_uploads(pdfs)
+            st.session_state.pb_clasificados = _clas
+            st.session_state.pb_log = ["PDFs cargados y clasificados."] + _errs
         else:
             st.session_state.pb_clasificados = {"nomina": [], "complementos": [], "vacaciones": [], "no_reconocidos": []}
             st.session_state.pb_log = []

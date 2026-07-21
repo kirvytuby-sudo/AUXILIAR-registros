@@ -19,7 +19,7 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-[data-testid="stAppViewContainer"] { background: #F8FAFC; }
+[data-testid="stAppViewContainer"] { background: #dbeafe; }
 .block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
 .cba-header {
     background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);

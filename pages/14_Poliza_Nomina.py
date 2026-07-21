@@ -262,17 +262,6 @@ def generar_poliza_nomina(pagos_excel_path, out_path, plantilla_path=None):
 st.title("📋 Póliza de Nómina")
 st.caption("Archivos XML (CFDI de Nómina) → Póliza Excel con matriz empleados × semana")
 
-with st.sidebar:
-    st.header("Instrucciones")
-    st.markdown(
-        """
-        1. Sube el **Excel de Pagos Bancarios** consolidado.
-        2. La **plantilla** es opcional.
-        3. Presiona **Generar Póliza**.
-        4. Descarga con el botón **Descargar Excel**.
-        """
-    )
-
 col1, col2 = st.columns(2)
 with col1:
     pagos_file = st.file_uploader(

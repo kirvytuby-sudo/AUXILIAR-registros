@@ -10,19 +10,8 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown("""<style>
-[data-testid="stAppViewContainer"] { background: #dbeafe; }
-.header-bar{background:#B45309;padding:18px 28px;border-radius:10px;margin-bottom:20px;}
-.header-bar h1{color:#FFFFFF;font-size:1.5rem;margin:0;}
-.header-bar p{color:#FEF3C7;margin:4px 0 0;font-size:.9rem;}
-#MainMenu{visibility:hidden;}footer{visibility:hidden;}
-</style>
-<div class="header-bar">
-  <h1>📊 Control de Despacho vs Ventas del Día</h1>
-  <p>Concilia el control de despachos contra la póliza de ventas del día · 3 hojas: Conciliación, Detalle UUID, Resumen</p>
-</div>
-""", unsafe_allow_html=True)
-
+import _theme
+_theme.aplicar_header("📊 Control Despacho vs Ventas", "Concilia despachos contra póliza de ventas — UUID, IVA, IEPS por producto")
 try:
     import openpyxl
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side

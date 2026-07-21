@@ -13,46 +13,12 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"] { background: #dbeafe; }
-.block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
-.ec-header {
-    background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
-    color: white; border-radius: 10px;
-    padding: 1.2rem 1.8rem; margin-bottom: 1.5rem;
-}
-.ec-header h1 { margin: 0; font-size: 1.6rem; font-weight: 700; letter-spacing: .5px; }
-.ec-header p  { margin: .3rem 0 0; opacity: .8; font-size: .9rem; }
-.ec-card {
-    background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: 1.2rem 1.5rem;
-    margin-bottom: 1rem;
-}
-.ec-stat {
-    background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px; padding: .9rem 1.2rem;
-    text-align: center; margin-bottom: .5rem;
-}
-.ec-stat .val { font-size: 1.4rem; font-weight: 700; color: #1E3A8A; }
-.ec-stat .lbl { font-size: .75rem; color: #64748B; margin-top: .1rem; }
-.dep-val { color: #1E6FBF; font-weight: 600; }
-.ret-val { color: #E14B3D; font-weight: 600; }
-.sal-val { font-weight: 600; }
-.diff-ok  { background: #DCFCE7; border-radius: 6px; padding: .4rem .9rem; color: #166534; font-weight: 600; }
-.diff-err { background: #FEE2E2; border-radius: 6px; padding: .4rem .9rem; color: #991B1B; font-weight: 600; }
-.diff-na  { background: #F1F5F9; border-radius: 6px; padding: .4rem .9rem; color: #475569; }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div class="ec-header">
-  <h1>🏦 Estado de Cuenta</h1>
-  <p>Extrae movimientos de estados de cuenta bancarios (PDF o Excel) y genera reporte Excel con conciliación.</p>
-</div>
-""", unsafe_allow_html=True)
-
+import _theme
+_theme.aplicar_header("🏦 Estado de Cuenta", "Análisis y conciliación de estados de cuenta bancarios")
 # ── Imports opcionales ────────────────────────────────────────────────────────
 
 @st.cache_resource
+@st.cache_data
 def _get_pdfplumber():
     try:
         import pdfplumber
@@ -61,6 +27,7 @@ def _get_pdfplumber():
         return None
 
 @st.cache_resource
+@st.cache_data
 def _get_openpyxl():
     try:
         import openpyxl
@@ -68,6 +35,7 @@ def _get_openpyxl():
     except ImportError:
         return None
 
+@st.cache_data
 def _importar_parser():
     """Importa ec_parser. Busca en el directorio del repositorio."""
     import sys, os, importlib

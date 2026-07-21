@@ -17,40 +17,8 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"] { background: #dbeafe; }
-.block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
-.cba-header {
-    background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
-    color: white; border-radius: 10px;
-    padding: 1.2rem 1.8rem; margin-bottom: 1.5rem;
-}
-.cba-header h1 { margin: 0; font-size: 1.6rem; font-weight: 700; }
-.cba-header p  { margin: .3rem 0 0; opacity: .8; font-size: .9rem; }
-.cba-card {
-    background: white; border-radius: 8px; padding: 1.2rem 1.5rem;
-    box-shadow: 0 1px 6px rgba(0,0,0,.07); margin-bottom: 1rem;
-}
-.cba-stat {
-    background: #EEF2FF; border-radius: 8px; padding: .9rem 1.2rem;
-    text-align: center; margin-bottom: .5rem;
-}
-.cba-stat .val { font-size: 1.4rem; font-weight: 700; color: #1E3A8A; }
-.cba-stat .lbl { font-size: .75rem; color: #64748B; margin-top: .1rem; }
-.leg { display:inline-block; width:14px; height:14px; border-radius:3px;
-       margin-right:5px; vertical-align:middle; }
-#MainMenu { visibility:hidden; } footer { visibility:hidden; }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<div class="cba-header">
-  <h1>🔀 Conciliación Banco vs Auxiliar</h1>
-  <p>Excel del banco + Auxiliar contable → conciliación bilateral con reporte Excel</p>
-</div>
-""", unsafe_allow_html=True)
-
+import _theme
+_theme.aplicar_header("🔀 Conciliación Banco vs Auxiliar", "Compara movimientos bancarios contra el auxiliar contable")
 # ── Utilidades ────────────────────────────────────────────────────────────────
 
 def _to_date(v):

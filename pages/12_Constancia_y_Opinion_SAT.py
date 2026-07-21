@@ -27,32 +27,8 @@ st.set_page_config(
 )
 
 # ─── Estilos (tema azul corporativo) ──────────────────────────────────────────
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"] { background: #dbeafe; }
-.block-container { padding-top: 1.5rem; padding-bottom: 2rem; }
-.sat-header {
-    background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
-    color: white; border-radius: 10px;
-    padding: 1.2rem 1.8rem; margin-bottom: 1.5rem;
-}
-.sat-header h1 { margin: 0; font-size: 1.6rem; font-weight: 700; letter-spacing: .5px; }
-.sat-header p  { margin: .3rem 0 0; opacity: .85; font-size: .9rem; }
-.emp-card {
-    background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 8px;
-    padding: .9rem 1.2rem; margin-bottom: .6rem;
-}
-.emp-card .rfc  { font-weight: 700; color: #1E3A8A; font-size: 1.05rem; }
-.emp-card .name { color: #334155; font-size: .88rem; }
-.emp-card .vig  { color: #64748B; font-size: .78rem; margin-top: .15rem; }
-.ok-box   { background: #DCFCE7; border-radius: 6px; padding: .4rem .9rem; color: #166534; font-weight: 600; }
-.err-box  { background: #FEE2E2; border-radius: 6px; padding: .4rem .9rem; color: #991B1B; font-weight: 600; }
-.warn-box { background: #FEF3C7; border-radius: 6px; padding: .4rem .9rem; color: #92400E; font-weight: 600; }
-.priv-note { background:#F1F5F9; border:1px dashed #94A3B8; border-radius:8px;
-             padding:.6rem 1rem; color:#475569; font-size:.82rem; margin-bottom:1rem; }
-</style>
-""", unsafe_allow_html=True)
-
+import _theme
+_theme.aplicar_header("🏛️ Constancia y Opinión SAT", "Genera Constancia Fiscal y Opinión 32-D con e.firma")
 # ─── Dependencia satcfdi ──────────────────────────────────────────────────────
 try:
     from satcfdi.models import Signer
@@ -185,11 +161,6 @@ if _correos_aut:
     _correo = _correo_actual()
     _lista = [str(c).strip().lower() for c in _correos_aut]
     if not _correo or _correo not in _lista:
-        st.markdown("""
-        <div class="sat-header">
-            <h1>🏛️ Constancia y Opinión SAT</h1>
-            <p>Acceso restringido.</p>
-        </div>""", unsafe_allow_html=True)
         if _correo:
             st.markdown(f'<div class="err-box">⛔ El correo <b>{_correo}</b> no está '
                         'autorizado para usar este módulo. Pide al administrador '
@@ -243,11 +214,6 @@ except Exception:
 
 if _sat_users:
     if not st.session_state.get("sat_auth_user"):
-        st.markdown("""
-        <div class="sat-header">
-            <h1>🏛️ Constancia y Opinión SAT</h1>
-            <p>Módulo protegido — inicia sesión para continuar.</p>
-        </div>""", unsafe_allow_html=True)
         col_l, col_c, col_r = st.columns([1, 1.2, 1])
         with col_c:
             st.markdown("#### 🔐 Acceso al módulo SAT")
@@ -413,14 +379,6 @@ if _sat_users:
                             _get_pendientes()["lista"].remove(_req)
                             st.info(f"Solicitud de {_req['nombre']} rechazada.")
                             st.rerun()
-
-st.markdown("""
-<div class="sat-header">
-    <h1>🏛️ Constancia y Opinión SAT</h1>
-    <p>Genera la Constancia de Situación Fiscal y la Opinión de Cumplimiento (32-D)
-       de todas tus empresas con un solo botón, usando la e.firma.</p>
-</div>
-""", unsafe_allow_html=True)
 
 st.markdown("""
 <div class="priv-note">🔒 <b>Privacidad:</b> las e.firmas guardadas viven cifradas en los

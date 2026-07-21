@@ -6,19 +6,8 @@ from datetime import datetime
 
 st.set_page_config(page_title="Ventas del Día · Auxiliar", page_icon="⛽", layout="wide")
 
-st.markdown("""<style>
-[data-testid="stAppViewContainer"] { background: #dbeafe; }
-.header-bar{background:#1E3A8A;padding:18px 28px;border-radius:10px;margin-bottom:20px;}
-.header-bar h1{color:#FBCFE8;font-size:1.5rem;margin:0;}
-.header-bar p{color:#93C5FD;margin:4px 0 0;font-size:.9rem;}
-#MainMenu{visibility:hidden;}footer{visibility:hidden;}
-</style>
-<div class="header-bar">
-  <h1>⛽ Ventas del Día</h1>
-  <p>Genera la póliza contable de ventas diarias desde el control de despachos</p>
-</div>
-""", unsafe_allow_html=True)
-
+import _theme
+_theme.aplicar_header("⛽ Ventas del Día", "Reporte de ventas diarias — póliza contable")
 try:
     import xlsxwriter
     import openpyxl

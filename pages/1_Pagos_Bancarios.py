@@ -82,26 +82,53 @@ def clasificar_uploads(uploaded_files):
         res[cat].append((uf.name, desc, tmp_path))
     return res
 
-# ── Sección 1: Carga ───────────────────────────────────────────────────────────
-st.subheader("1️⃣  Cargar archivos")
-col_pdf, col_cat = st.columns([2, 1])
+# ── Estilos adicionales ────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+.listbox-header {
+    background:#1E3A8A; color:#FBCFE8; font-weight:700;
+    padding:5px 10px; border-radius:6px 6px 0 0; font-size:.9rem;
+}
+.listbox-body {
+    border:1.5px solid #1E3A8A; border-top:none;
+    border-radius:0 0 6px 6px; background:#fff;
+    min-height:140px; padding:6px 8px; margin-bottom:6px;
+}
+.listbox-item { padding:3px 4px; font-size:.85rem; color:#1e293b; }
+.reporte-bar {
+    background:#1E3A8A; color:#fff; padding:6px 14px;
+    border-radius:6px 6px 0 0; font-weight:700; font-size:.9rem;
+    display:flex; align-items:center; gap:8px;
+}
+.log-bar {
+    background:#0D1117; color:#93C5FD; padding:5px 12px;
+    border-radius:6px 6px 0 0; font-weight:700; font-size:.85rem;
+}
+div[data-testid="stButton"] > button[kind="secondary"] {
+    background:#FFF0F5; border:1px solid #1E3A8A;
+    color:#1E3A8A; font-size:.82rem;
+}
+</style>
+""", unsafe_allow_html=True)
 
-with col_pdf:
+# ── Área de carga ──────────────────────────────────────────────────────────────
+_c_pdf, _c_cat = st.columns([3, 2])
+with _c_pdf:
     pdfs = st.file_uploader(
-        "📂 PDFs de nómina (puedes seleccionar varios)",
-        type=["pdf"], accept_multiple_files=True,
+        "📂 PDFs...", type=["pdf"], accept_multiple_files=True, label_visibility="collapsed",
+        help="Selecciona uno o varios PDFs de nómina BBVA Net Cash",
     )
-
-with col_cat:
+with _c_cat:
     catalogo_file = st.file_uploader(
-        "📊 Catálogo de cuentas (.xlsx)",
-        type=["xlsx", "xls"],
+        "📊 Catálogo de cuentas (.xlsx)", type=["xlsx","xls"], label_visibility="visible",
     )
 
+# Clasificar al subir
 if pdfs:
     with st.spinner("Clasificando PDFs..."):
         st.session_state.pb_clasificados = clasificar_uploads(pdfs)
         st.session_state.pb_resultado_bytes = None
+        st.session_state.pb_log = ["PDFs cargados y clasificados."]
 
 catalogo_path = None
 if catalogo_file:
@@ -109,96 +136,155 @@ if catalogo_file:
     with open(catalogo_path, "wb") as f:
         f.write(catalogo_file.read())
 
-# ── Sección 2: Selección ───────────────────────────────────────────────────────
+# ── Inicializar log y selecciones ─────────────────────────────────────────────
+if "pb_log" not in st.session_state:
+    st.session_state.pb_log = []
+if "pb_todos_nom" not in st.session_state:
+    st.session_state.pb_todos_nom = True
+if "pb_todos_comp" not in st.session_state:
+    st.session_state.pb_todos_comp = True
+if "pb_todos_vac" not in st.session_state:
+    st.session_state.pb_todos_vac = True
+
 clas = st.session_state.pb_clasificados
-total_pdfs = sum(len(v) for v in clas.values())
 
-if total_pdfs > 0:
-    st.subheader("2️⃣  Seleccionar archivos a procesar")
-    CATEGORIAS = [
-        ("nomina",       "💼 Nómina principal"),
-        ("complementos", "💗 Complementos"),
-        ("vacaciones",   "🌴 Vacaciones"),
-    ]
-    col1, col2, col3 = st.columns(3)
-    cols_ui = [col1, col2, col3]
-    seleccionados = {}
-    for (key, titulo), col in zip(CATEGORIAS, cols_ui):
-        items = clas[key]
-        with col:
-            st.markdown(f"**{titulo}** — {len(items)} archivo(s)")
-            if items:
-                opciones = [f"{n}  —  {d}" for n, d, _ in items]
-                sel = st.multiselect(
-                    titulo, options=opciones, default=opciones,
-                    label_visibility="collapsed", key=f"sel_{key}",
-                )
-                seleccionados[key] = [
-                    p for (n, d, p), etq in zip(items, opciones) if etq in sel
-                ]
-            else:
-                st.caption("Sin archivos en esta categoría")
-                seleccionados[key] = []
+# ── Tres listboxes ─────────────────────────────────────────────────────────────
+_col1, _col2, _col3 = st.columns(3)
 
-    if clas["no_reconocidos"]:
-        nombres_nr = ", ".join(n for n, _, _ in clas["no_reconocidos"])
-        st.warning(f"⚠️ No reconocidos (posibles préstamos, úsalos en el módulo Préstamos): {nombres_nr}")
-
-    # ── Sección 3: Generar ─────────────────────────────────────────────────────
-    st.subheader("3️⃣  Generar reporte")
-    todos_pdfs = (
-        seleccionados.get("nomina", []) +
-        seleccionados.get("complementos", []) +
-        seleccionados.get("vacaciones", [])
-    )
-    n_sel = len(todos_pdfs)
-    st.caption(f"Total seleccionado: **{n_sel}** PDF(s)")
-
-    col_btn, col_dl = st.columns([1, 2])
-    with col_btn:
-        generar = st.button(
-            "📦 Generar Excel consolidado",
-            disabled=(n_sel == 0 or catalogo_file is None),
-            use_container_width=True, type="primary",
+def _render_lista(col, key, titulo, emoji):
+    items = clas.get(key, [])
+    todos_key = f"pb_todos_{key[:3]}"
+    with col:
+        st.markdown(f'<div class="listbox-header">{emoji} {titulo}</div>', unsafe_allow_html=True)
+        # Multiselect como listbox
+        opciones = [f"{n}  —  {d}" for n, d, _ in items] if items else []
+        default  = opciones if st.session_state.get(todos_key, True) else []
+        sel = st.multiselect(
+            titulo, options=opciones, default=default,
+            label_visibility="collapsed", key=f"ms_{key}",
         )
-        if n_sel == 0:
-            st.caption("Selecciona al menos un PDF.")
-        if catalogo_file is None:
-            st.caption("Carga el catálogo de cuentas.")
+        # Botones Todos / Ninguno
+        _bt, _bn = st.columns(2)
+        with _bt:
+            if st.button("✔ Todos",  key=f"btn_todos_{key}", use_container_width=True):
+                st.session_state[todos_key] = True
+                st.rerun()
+        with _bn:
+            if st.button("✖ Ninguno", key=f"btn_ning_{key}", use_container_width=True):
+                st.session_state[todos_key] = False
+                st.rerun()
+        # Rutas seleccionadas
+        paths_sel = [p for (n, d, p), etq in zip(items, opciones) if etq in sel]
+        return paths_sel
 
-    if generar:
-        with st.spinner(f"Procesando {n_sel} PDF(s)..."):
-            try:
-                catalogo = {"empleados": {}, "prestamos": {}}
-                if catalogo_path and os.path.isfile(catalogo_path):
-                    mapa = cn.load_poliza(catalogo_path)
-                    for k in ("empleados", "prestamos"):
-                        df = mapa.get(k)
-                        if df is not None and not df.empty:
-                            catalogo[k] = {idx: str(row["Cuenta"]) for idx, row in df.iterrows()}
+_sel_nom  = _render_lista(_col1, "nomina",       "Nómina principal", "💼")
+_sel_comp = _render_lista(_col2, "complementos", "Complementos",     "💗")
+_sel_vac  = _render_lista(_col3, "vacaciones",   "Vacaciones",       "🌴")
 
-                out_path = os.path.join(TMP, "PagosBancarios_Consolidado.xlsx")
-                cn.escribir_pagos_bancarios_todo(todos_pdfs, catalogo, out_path)
-                with open(out_path, "rb") as f:
-                    st.session_state.pb_resultado_bytes = f.read()
-                st.success("✅ Excel generado correctamente.")
-            except Exception as e:
-                import traceback
-                st.error(f"❌ Error: {e}")
-                with st.expander("Ver detalle"):
-                    st.code(traceback.format_exc())
+# ── Botones de proceso individuales ───────────────────────────────────────────
+_pb1, _pb2, _pb3 = st.columns(3)
 
-    if st.session_state.pb_resultado_bytes:
-        with col_dl:
-            st.download_button(
-                label="⬇️  Descargar Excel",
-                data=st.session_state.pb_resultado_bytes,
-                file_name="PagosBancarios_Consolidado.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True, type="secondary",
-            )
+def _procesar(pdfs_lista, etiqueta, out_nombre):
+    if not pdfs_lista:
+        st.session_state.pb_log.append(f"⚠ Sin PDFs seleccionados en {etiqueta}.")
+        return
+    if not catalogo_path:
+        st.session_state.pb_log.append("⚠ Carga el catálogo de cuentas primero.")
+        return
+    try:
+        catalogo = {"empleados": {}, "prestamos": {}}
+        mapa = cn.load_poliza(catalogo_path)
+        for k in ("empleados", "prestamos"):
+            df = mapa.get(k)
+            if df is not None and not df.empty:
+                catalogo[k] = {idx: str(row["Cuenta"]) for idx, row in df.iterrows()}
+        out_path = os.path.join(TMP, out_nombre)
+        cn.escribir_pagos_bancarios_todo(pdfs_lista, catalogo, out_path)
+        with open(out_path, "rb") as f:
+            st.session_state.pb_resultado_bytes = f.read()
+        st.session_state.pb_resultado_nombre = out_nombre
+        st.session_state.pb_log.append(f"✅ {etiqueta}: {len(pdfs_lista)} PDF(s) → {out_nombre}")
+    except Exception as e:
+        import traceback
+        st.session_state.pb_log.append(f"❌ Error en {etiqueta}: {e}")
+        st.session_state.pb_log.append(traceback.format_exc())
+
+with _pb1:
+    if st.button("▶ Conciliar seleccionados", use_container_width=True, key="btn_conc"):
+        with st.spinner("Procesando nómina..."):
+            _procesar(_sel_nom, "Nómina", "Nomina_Conciliada.xlsx")
+        st.rerun()
+
+with _pb2:
+    if st.button("▶ Procesar complementos", use_container_width=True, key="btn_comp"):
+        with st.spinner("Procesando complementos..."):
+            _procesar(_sel_comp, "Complementos", "Complementos.xlsx")
+        st.rerun()
+
+with _pb3:
+    if st.button("▶ Procesar vacaciones", use_container_width=True, key="btn_vac"):
+        with st.spinner("Procesando vacaciones..."):
+            _procesar(_sel_vac, "Vacaciones", "Vacaciones.xlsx")
+        st.rerun()
+
+# ── Generar TODO ───────────────────────────────────────────────────────────────
+_todos_pdfs = _sel_nom + _sel_comp + _sel_vac
+_hay_cat    = catalogo_path is not None
+if st.button(
+    f"⚙ Generar TODO en un solo Excel  (usa lo seleccionado en las 3 listas)  — {len(_todos_pdfs)} PDF(s)",
+    disabled=(len(_todos_pdfs) == 0 or not _hay_cat),
+    use_container_width=True, type="primary", key="btn_todo",
+):
+    with st.spinner(f"Procesando {len(_todos_pdfs)} PDF(s)..."):
+        _procesar(_todos_pdfs, "TODO", "PagosBancarios_Consolidado.xlsx")
+    st.rerun()
+
+if not _hay_cat:
+    st.caption("⚠️ Carga el catálogo de cuentas para habilitar los botones.")
+
+st.divider()
+
+# ── Reporte ────────────────────────────────────────────────────────────────────
+_nombre_rep = st.session_state.get("pb_resultado_nombre", "— (genera el reporte primero)")
+st.markdown(f'<div class="reporte-bar">📋 Reporte: {_nombre_rep}</div>', unsafe_allow_html=True)
+
+_r_bytes = st.session_state.get("pb_resultado_bytes")
+if _r_bytes:
+    _rc1, _rc2 = st.columns([1, 1])
+    with _rc1:
+        st.download_button(
+            "📂 Abrir / Descargar Excel",
+            data=_r_bytes,
+            file_name=_nombre_rep,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True, key="dl_rep",
+        )
+    # Vista previa
+    try:
+        import pandas as pd, io
+        _df_prev = pd.read_excel(io.BytesIO(_r_bytes), nrows=50)
+        st.dataframe(_df_prev, use_container_width=True, height=200)
+    except Exception:
+        st.info("Vista previa no disponible.")
 else:
-    st.info("👆 Carga los PDFs de nómina para comenzar.")
+    st.markdown(
+        '<div style="text-align:center;padding:30px;color:#94a3b8;">'
+        '📋 Genera el reporte para ver la vista previa aquí</div>',
+        unsafe_allow_html=True,
+    )
 
-st.markdown("---")
-st.caption("Módulo Pagos Bancarios · v2.0")
+st.divider()
+
+# ── Registro de actividad ──────────────────────────────────────────────────────
+st.markdown('<div class="log-bar">📜 Registro de actividad:</div>', unsafe_allow_html=True)
+_log_txt = "\n".join(st.session_state.pb_log[-30:]) if st.session_state.pb_log else "(sin actividad)"
+st.code(_log_txt, language=None)
+
+if st.session_state.pb_log:
+    if st.button("🗑 Limpiar log", key="btn_limpiar_log"):
+        st.session_state.pb_log = []
+        st.rerun()
+
+if clas.get("no_reconocidos"):
+    nombres_nr = ", ".join(n for n, _, _ in clas["no_reconocidos"])
+    st.warning(f"⚠️ No reconocidos (posibles préstamos — úsalos en el módulo Préstamos): {nombres_nr}")

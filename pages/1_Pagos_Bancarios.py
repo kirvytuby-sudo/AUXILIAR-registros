@@ -50,6 +50,7 @@ if "pb_tmp" not in st.session_state:
 TMP = st.session_state.pb_tmp
 
 def _clasificar(path):
+    nombre = os.path.basename(path).upper()
     try:
         tipo = cn.detect_template(path)
     except Exception:
@@ -62,9 +63,12 @@ def _clasificar(path):
     except Exception:
         return "no_reconocidos", os.path.basename(path)
     desc = (meta.get("descripcion") or "").upper()
-    if "VAC" in desc:
+    # Revisa descripción interna Y nombre del archivo para no perder casos
+    # donde el PDF viene con descripción genérica pero el nombre indica vacaciones/préstamo
+    buscar = desc + " " + nombre
+    if "VAC" in buscar:
         cat = "vacaciones"
-    elif "PRESTAMO" in desc or "PRÉSTAMO" in desc:
+    elif "PRESTAMO" in buscar or "PRÉSTAMO" in buscar or "PRÉSTAMO" in nombre:
         cat = "no_reconocidos"   # préstamos van a módulo Préstamos
     elif tipo == "dispersion":
         cat = "nomina"

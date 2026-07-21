@@ -127,12 +127,21 @@ with _c_cat:
         "📊 Catálogo de cuentas (.xlsx)", type=["xlsx","xls"], label_visibility="visible",
     )
 
-# Clasificar al subir
-if pdfs:
+# Clasificar al subir — solo cuando cambia el set de PDFs
+_pdf_names = sorted([f.name for f in pdfs]) if pdfs else []
+if _pdf_names != st.session_state.get("pb_pdf_names", []):
+    st.session_state.pb_pdf_names = _pdf_names
     with st.spinner("Clasificando PDFs..."):
-        st.session_state.pb_clasificados = clasificar_uploads(pdfs)
+        if pdfs:
+            st.session_state.pb_clasificados = clasificar_uploads(pdfs)
+            st.session_state.pb_log = ["PDFs cargados y clasificados."]
+        else:
+            st.session_state.pb_clasificados = {"nomina": [], "complementos": [], "vacaciones": [], "no_reconocidos": []}
+            st.session_state.pb_log = []
         st.session_state.pb_resultado_bytes = None
-        st.session_state.pb_log = ["PDFs cargados y clasificados."]
+        # Borrar estado de multiselects para que default=todas las opciones tome efecto
+        for _mk in ("ms_nomina", "ms_complementos", "ms_vacaciones"):
+            st.session_state.pop(_mk, None)
 
 catalogo_path = None
 if catalogo_file:
@@ -140,15 +149,9 @@ if catalogo_file:
     with open(catalogo_path, "wb") as f:
         f.write(catalogo_file.read())
 
-# ── Inicializar log y selecciones ─────────────────────────────────────────────
+# ── Inicializar log ────────────────────────────────────────────────────────────
 if "pb_log" not in st.session_state:
     st.session_state.pb_log = []
-if "pb_todos_nom" not in st.session_state:
-    st.session_state.pb_todos_nom = True
-if "pb_todos_comp" not in st.session_state:
-    st.session_state.pb_todos_comp = True
-if "pb_todos_vac" not in st.session_state:
-    st.session_state.pb_todos_vac = True
 
 clas = st.session_state.pb_clasificados
 
@@ -157,25 +160,25 @@ _col1, _col2, _col3 = st.columns(3)
 
 def _render_lista(col, key, titulo, emoji):
     items = clas.get(key, [])
-    todos_key = f"pb_todos_{key[:3]}"
+    ms_key = f"ms_{key}"
     with col:
         st.markdown(f'<div class="listbox-header">{emoji} {titulo}</div>', unsafe_allow_html=True)
-        # Multiselect como listbox
         opciones = [f"{n}  —  {d}" for n, d, _ in items] if items else []
-        default  = opciones if st.session_state.get(todos_key, True) else []
+        # default=opciones solo aplica la primera vez que se crea el widget
+        # (cuando ms_key no existe en session_state)
         sel = st.multiselect(
-            titulo, options=opciones, default=default,
-            label_visibility="collapsed", key=f"ms_{key}",
+            titulo, options=opciones, default=opciones,
+            label_visibility="collapsed", key=ms_key,
         )
-        # Botones Todos / Ninguno
+        # Botones Todos / Ninguno: escriben directo al session_state del multiselect
         _bt, _bn = st.columns(2)
         with _bt:
             if st.button("✔ Todos",  key=f"btn_todos_{key}", use_container_width=True):
-                st.session_state[todos_key] = True
+                st.session_state[ms_key] = opciones
                 st.rerun()
         with _bn:
             if st.button("✖ Ninguno", key=f"btn_ning_{key}", use_container_width=True):
-                st.session_state[todos_key] = False
+                st.session_state[ms_key] = []
                 st.rerun()
         # Rutas seleccionadas
         paths_sel = [p for (n, d, p), etq in zip(items, opciones) if etq in sel]

@@ -134,7 +134,7 @@ def _footer_top(ws):
     if not all_tops: return float("inf")
     max_top = max(all_tops)
     tops = [top for x0, top, t in ws if t == "BBVA" and top > max_top * 0.7]
-    return min(tops) if tops else float("inf")
+    return max(tops) if tops else float("inf")
 
 def _is_header_label(t):
     return any(c.islower() for c in t)
@@ -221,13 +221,13 @@ def parse_pagos_transferencias(pdf_path):
         anchor_list = [(i, top) for i, (top, _) in enumerate(anchors)]
         banco_words, monto_words, motivo_words, titular_words = [], [], [], []
         for x0, top, t in ws:
-            if 200 <= x0 < 263 and not _is_header_label(t):
+            if 200 <= x0 < 263 and not _is_header_label(t) and not re.search(r"[\d,]+\.\d{2}", t):
                 banco_words.append((top, t))
-            elif 258 <= x0 < 295 and re.search(r"[\d,]+\.\d{2}", t):
+            elif 240 <= x0 < 295 and re.search(r"[\d,]+\.\d{2}", t):
                 monto_words.append((top, t))
             elif 295 <= x0 < 368 and not _is_header_label(t) and t not in _DIVISAS:
                 motivo_words.append((top, t))
-            elif 375 <= x0 < 430 and not _is_header_label(t) and t not in _DIVISAS:
+            elif 368 <= x0 < 430 and not _is_header_label(t) and t not in _DIVISAS:
                 if t not in {"MISMO","DIA","SIGUIENTE","Disponibilidad"}:
                     titular_words.append((top, t))
         banco_by_idx   = _assign_to_nearest_anchor(banco_words,   anchor_list)

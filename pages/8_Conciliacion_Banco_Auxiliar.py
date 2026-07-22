@@ -149,11 +149,14 @@ def fecha_ok(f1, f2, dias):
     return abs((f1 - f2).days) <= dias
 
 
-def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_min, max_combo):
+def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_min, max_combo,
+              combo_min_pct=0.01, combo_sim_min=0.10):
     """
     Tres pasos:
       1. Exacto:    1-a-1, fecha ±dias, monto ±tol1
       2. Combinado: N-a-1, fecha ±dias, suma ±tol_n, máx max_combo entradas
+                    · cada entrada ≥ max($1, combo_min_pct × total_banco)
+                    · al menos una entrada con similitud texto ≥ combo_sim_min
       3. Texto:     1-a-1, fecha ±dias, monto ±tol_text, similitud texto ≥ sim_min
     """
     libre = [dict(a) for a in aux_pool]
@@ -175,13 +178,20 @@ def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_
         if bi in matched_idx: continue
         target = banco[monto_key]
         if target < 10: continue
+        min_monto = max(1.0, target * combo_min_pct)   # ej. 1% de $2600 = $26
+        desc_b = banco["desc"]
         candidatos = [a for a in libres_p2
                       if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"], dias)
+                      and a["monto"] >= min_monto                   # filtro monto mínimo
                       and a["monto"] <= target + tol_n]
         found = False
         for n in range(2, min(max_combo + 1, len(candidatos) + 1)):
             for combo in itertools.combinations(candidatos, n):
                 if abs(sum(c["monto"] for c in combo) - target) <= tol_n:
+                    # filtro descripción: al menos una entrada debe parecerse
+                    max_sim = max(text_sim(desc_b, c["concepto"]) for c in combo)
+                    if max_sim < combo_sim_min:
+                        continue
                     results.append({"tipo": f"🔀 COMBINADO ({n})", "banco": banco,
                                     "aux_entries": list(combo),
                                     "diferencia": sum(c["monto"] for c in combo) - target})
@@ -473,16 +483,21 @@ with st.expander("⚙️ Parámetros de conciliación", expanded=False):
     st.caption("Ajusta las tolerancias manualmente o usa las sugerencias automáticas abajo.")
     c1, c2, c3 = st.columns(3)
     with c1:
-        p_tol1     = st.slider("Exacto — tolerancia monto ($)", 0.01, 5.0,  0.05, 0.01, key="p_tol1")
-        p_tol_n    = st.slider("Combo  — tolerancia monto ($)", 0.5,  20.0, 2.0,  0.5,  key="p_toln")
+        p_tol1          = st.slider("Exacto — tolerancia monto ($)",        0.01, 5.0,  0.05, 0.01, key="p_tol1")
+        p_tol_n         = st.slider("Combo  — tolerancia suma ($)",          0.5,  20.0, 2.0,  0.5,  key="p_toln")
+        p_combo_min_pct = st.slider("Combo  — monto mínimo por entrada (%)", 0,    10,   1,    1,    key="p_cminpct",
+                                    help="Cada entrada del combo debe ser al menos este % del total del banco. Evita combinar centavos con pagos grandes.")
     with c2:
-        p_dias     = st.slider("Días de tolerancia fecha",       0,    15,   3,    1,    key="p_dias")
-        p_tol_text = st.slider("Texto  — tolerancia monto ($)",  1.0,  50.0, 5.0,  1.0,  key="p_tolt")
+        p_dias          = st.slider("Días de tolerancia fecha",              0,    15,   3,    1,    key="p_dias")
+        p_tol_text      = st.slider("Texto  — tolerancia monto ($)",         1.0,  50.0, 5.0,  1.0,  key="p_tolt")
+        p_combo_sim_min = st.slider("Combo  — similitud mínima descripción", 0,    50,   10,   5,    key="p_csim",
+                                    format="%d%%",
+                                    help="Al menos una entrada del combo debe parecerse en descripción al banco. 10% es muy permisivo; sube si hay falsos positivos.")
     with c3:
-        p_sim_min  = st.slider("Texto  — similitud mínima",      0.20, 0.90, 0.45, 0.05, key="p_sim",
-                               format="%.2f",
-                               help="0.45 = 45 % de similitud entre descripción del banco y concepto del auxiliar")
-        p_max_combo = st.slider("Combo  — máx. entradas",        2,    8,    6,    1,    key="p_maxc")
+        p_sim_min       = st.slider("Texto  — similitud mínima",             0.20, 0.90, 0.45, 0.05, key="p_sim",
+                                    format="%.2f",
+                                    help="0.45 = 45% de similitud entre descripción del banco y concepto del auxiliar")
+        p_max_combo     = st.slider("Combo  — máx. entradas",                2,    8,    6,    1,    key="p_maxc")
 
     if st.session_state.cba_sugerencias:
         sugs = st.session_state.cba_sugerencias
@@ -589,7 +604,9 @@ if generar:
             meses_ord  = sorted(set(m["fecha"].month for m in movs_banco))
 
             params = dict(tol1=p_tol1, tol_n=p_tol_n, dias=p_dias,
-                          tol_text=p_tol_text, sim_min=p_sim_min, max_combo=p_max_combo)
+                          tol_text=p_tol_text, sim_min=p_sim_min, max_combo=p_max_combo,
+                          combo_min_pct=p_combo_min_pct / 100,
+                          combo_sim_min=p_combo_sim_min / 100)
 
             res_dep, sin_dep_banco, sin_dep_aux = conciliar(deps_banco, aux_cargo_rng, "dep", **params)
             res_ret, sin_ret_banco, sin_ret_aux = conciliar(rets_banco, aux_abono_rng, "ret", **params)
@@ -723,4 +740,4 @@ else:
 """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("Módulo Conciliación Banco vs Auxiliar · v2.2  ·  Exacto ±$0.05 · Combo ±$2.00 · Texto ≥45% · Fecha ±3 días · Auto-sugerencias")
+st.caption("Módulo Conciliación Banco vs Auxiliar · v2.3  ·  Exacto ±$0.05 · Combo ±$2.00 (min 1% por entrada, sim ≥10%) · Texto ≥45% · Fecha ±3 días · Auto-sugerencias")

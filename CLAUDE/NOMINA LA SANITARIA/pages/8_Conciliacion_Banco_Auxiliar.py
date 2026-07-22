@@ -146,8 +146,8 @@ def mismo_mes(f1, f2):
 def conciliar(banco_movs, aux_pool, monto_key):
     """
     Dos pasos:
-      1. Exacto: 1-a-1, mismo mes, diferencia ≤ $0.05
-      2. Combinado: N-a-1, mismo mes, suma ≤ $2.00, máx 6 entradas
+      1. Exacto: 1-a-1, mismo mes, diferencia <= $0.05
+      2. Combinado: N-a-1, mismo mes, suma <= $2.00, max 6 entradas
     Devuelve (resultados, sin_banco, sin_aux).
     """
     libre = [dict(a) for a in aux_pool]
@@ -316,12 +316,12 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
             row += 1
             hdr(ws, row, L[0], "FECHA",             mfill_l)
             hdr(ws, row, L[1], "MONTO",             mfill_l)
-            hdr(ws, row, L[2], "DESCRIPCIÓN BANCO", mfill_l)
+            hdr(ws, row, L[2], "DESCRIPCION BANCO", mfill_l)
             ws.cell(row=row, column=SEP, value="").border = brd
             hdr(ws, row, R[0], "FECHA",       mfill_r)
             hdr(ws, row, R[1], "MONTO",       mfill_r)
             hdr(ws, row, R[2], "CONCEPTO AUX",mfill_r)
-            hdr(ws, row, R[3], "PÓLIZA",      mfill_r)
+            hdr(ws, row, R[3], "POLIZA",      mfill_r)
             row += 1; sub_l = 0; sub_r = 0
             for i in range(max(len(its_l), len(its_r))):
                 ws.cell(row=row, column=SEP, value="").border = brd
@@ -359,10 +359,10 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
         return row + 2
 
     wb = Workbook()
-    ws1 = wb.active; ws1.title = "💰 Depósitos"; ws1.sheet_properties.tabColor = "1E3A8A"
+    ws1 = wb.active; ws1.title = "\U0001f4b0 Depósitos"; ws1.sheet_properties.tabColor = "1E3A8A"
     write_conc_por_mes(ws1, res_dep, "dep", DEP_M)
 
-    ws2 = wb.create_sheet("💳 Cargos"); ws2.sheet_properties.tabColor = "BE185D"
+    ws2 = wb.create_sheet("\U0001f4b3 Cargos"); ws2.sheet_properties.tabColor = "BE185D"
     write_conc_por_mes(ws2, res_ret, "ret", RET_M)
 
     ws3 = wb.create_sheet("⚠ Sin conciliar"); ws3.sheet_properties.tabColor = "D97706"
@@ -425,7 +425,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("""
-> **Algoritmo:** Paso 1 — coincidencia exacta ±$0.05 · Paso 2 — combinaciones N-a-1 ±$2.00  
+> **Algoritmo:** Paso 1 — coincidencia exacta ±$0.05 · Paso 2 — combinaciones N-a-1 ±$2.00
 > Ambos pasos exigen que banco y auxiliar estén **en el mismo mes**.
 """)
 
@@ -467,7 +467,6 @@ if generar:
 
     with st.spinner("Conciliando (paso 1: exacto · paso 2: combinaciones)..."):
         try:
-            # Filtrar aux al rango del banco
             if movs_banco:
                 f_min = min(m["fecha"] for m in movs_banco)
                 f_max = max(m["fecha"] for m in movs_banco)

@@ -542,13 +542,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown(f"""
-> **Algoritmo v2.2:**
-> Paso 1 — exacto ±${st.session_state.get('p_tol1', 0.05):.2f} ·
-> Paso 2 — combinaciones ±${st.session_state.get('p_toln', 2.0):.1f} ·
-> Paso 3 — texto ≥{st.session_state.get('p_sim', 0.45):.0%} ±${st.session_state.get('p_tolt', 5.0):.0f} ·
-> Fecha ±{st.session_state.get('p_dias', 3)} días
-""")
 
 # ── Botón generar ─────────────────────────────────────────────────────────────
 st.subheader("2️⃣  Generar conciliación")

@@ -18,7 +18,6 @@ _theme.aplicar_header("🏦 Estado de Cuenta", "Análisis y conciliación de est
 # ── Imports opcionales ────────────────────────────────────────────────────────
 
 @st.cache_resource
-@st.cache_data
 def _get_pdfplumber():
     try:
         import pdfplumber
@@ -27,7 +26,6 @@ def _get_pdfplumber():
         return None
 
 @st.cache_resource
-@st.cache_data
 def _get_openpyxl():
     try:
         import openpyxl
@@ -35,7 +33,7 @@ def _get_openpyxl():
     except ImportError:
         return None
 
-@st.cache_data
+@st.cache_resource
 def _importar_parser():
     """Importa ec_parser. Busca en el directorio del repositorio."""
     import sys, os, importlib

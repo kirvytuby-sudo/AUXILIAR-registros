@@ -496,10 +496,11 @@ st.subheader("1️⃣  Cargar archivos")
 col_banco, col_aux = st.columns(2)
 
 with col_banco:
-    banco_file = st.file_uploader(
-        "🏦 Archivo del banco (.xlsx)",
+    banco_files = st.file_uploader(
+        "🏦 Archivo(s) del banco (.xlsx)",
         type=["xlsx", "xls"],
-        help="Estado de cuenta o movimientos bancarios en Excel.",
+        accept_multiple_files=True,
+        help="Uno o más estados de cuenta en Excel. Se combinan automáticamente.",
         key="cba_banco",
     )
 
@@ -526,7 +527,7 @@ st.subheader("2️⃣  Generar conciliación")
 
 col_btn, col_dl = st.columns([1, 2])
 with col_btn:
-    can_gen = banco_file is not None and aux_file is not None
+    can_gen = bool(banco_files) and aux_file is not None
     generar = st.button(
         "🔀 Generar conciliación",
         disabled=not can_gen,
@@ -534,7 +535,7 @@ with col_btn:
         use_container_width=True,
     )
     if not can_gen:
-        st.caption("Carga ambos archivos para continuar.")
+        st.caption("Carga al menos un archivo del banco y el auxiliar para continuar.")
 
 if generar:
     st.session_state.cba_resultado_bytes = None
@@ -544,13 +545,21 @@ if generar:
         try:
             from openpyxl import load_workbook
 
-            # Banco
-            wb_banco = load_workbook(
-                filename=io.BytesIO(banco_file.read()),
-                read_only=True, data_only=True,
-            )
-            movs_banco = _read_banco(wb_banco)
-            wb_banco.close()
+            # Banco — combinar todos los archivos cargados
+            movs_banco = []
+            archivos_leidos = []
+            for bf in banco_files:
+                wb_banco = load_workbook(
+                    filename=io.BytesIO(bf.read()),
+                    read_only=True, data_only=True,
+                )
+                movs_bf = _read_banco(wb_banco)
+                wb_banco.close()
+                movs_banco.extend(movs_bf)
+                archivos_leidos.append(f"{bf.name} ({len(movs_bf)} movimientos)")
+
+            # Ordenar por fecha
+            movs_banco.sort(key=lambda m: m["fecha"])
 
             # Auxiliar
             wb_aux = load_workbook(
@@ -597,6 +606,7 @@ if generar:
                 "n_banco": len(movs_banco),
                 "n_aux_cargo": len(aux_cargo_raw),
                 "n_aux_abono": len(aux_abono_raw),
+                "archivos_banco": archivos_leidos,
             }
         except Exception as e:
             st.error(f"❌ Error generando Excel: {e}")
@@ -609,6 +619,13 @@ if st.session_state.cba_resultado_bytes and st.session_state.cba_resumen:
     res = st.session_state.cba_resumen
 
     st.success("✅ Conciliación completada")
+
+    # Archivos del banco procesados
+    if res.get("archivos_banco"):
+        n = len(res["archivos_banco"])
+        with st.expander(f"📂 {n} archivo{'s' if n > 1 else ''} del banco combinado{'s' if n > 1 else ''}", expanded=n > 1):
+            for a in res["archivos_banco"]:
+                st.markdown(f"- {a}")
 
     # Métricas
     m1, m2, m3, m4 = st.columns(4)

@@ -9749,42 +9749,79 @@ class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
                     if c in k: return v
             return None
 
-        def mismo_mes(f1, f2):
-            return f1.year == f2.year and f1.month == f2.month
+        def fecha_ok(f1, f2):
+            """Fechas iguales o dentro de ±3 días."""
+            return abs((f1 - f2).days) <= 3
 
+        def _text_sim(a, b):
+            import difflib
+            if not a or not b: return 0.0
+            return difflib.SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
+
+        import itertools as _it
         TOL1 = 0.05; TOL_N = 2.00; MAX_COMBO = 6
+        COMBO_MIN_PCT = 0.01   # cada entrada combo >= 1% del total banco
+        COMBO_SIM_MIN = 0.10   # al menos una entrada combo con >= 10% similitud desc
+        TOL_TEXT = 5.0         # Paso 3: tolerancia monto para match por texto
+        SIM_MIN  = 0.45        # Paso 3: similitud mínima descripción
         MESES = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
                  7:"JULIO",8:"AGOSTO",9:"SEPTIEMBRE",10:"OCTUBRE",11:"NOVIEMBRE",12:"DICIEMBRE"}
 
         def conciliar(banco_movs, aux_pool, monto_key):
             libre = [dict(a) for a in aux_pool]
             results = []; matched_idx = set()
+
+            # Paso 1 — exacto (±$0.05, fecha ±3 días)
             for bi, banco in enumerate(banco_movs):
                 target = banco[monto_key]
                 for aux in libre:
-                    if aux["matched"] or not mismo_mes(banco["fecha"], aux["fecha"]): continue
+                    if aux["matched"] or not fecha_ok(banco["fecha"], aux["fecha"]): continue
                     if abs(aux["monto"] - target) <= TOL1:
                         results.append({"tipo": "EXACTO", "banco": banco,
                                         "aux_entries": [aux], "diferencia": aux["monto"] - target})
                         aux["matched"] = True; matched_idx.add(bi); break
+
+            # Paso 2 — combinado (N-a-1, ±$2.00, fecha ±3 días,
+            #           cada entrada >= 1% total, al menos una desc >= 10% similar)
             libres_p2 = [a for a in libre if not a["matched"]]
             for bi, banco in enumerate(banco_movs):
                 if bi in matched_idx: continue
                 target = banco[monto_key]
                 if target < 10: continue
+                min_m = max(1.0, target * COMBO_MIN_PCT)
+                desc_b = banco["desc"]
                 candidatos = [a for a in libres_p2
-                              if not a["matched"] and mismo_mes(banco["fecha"], a["fecha"])
+                              if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"])
+                              and a["monto"] >= min_m
                               and a["monto"] <= target + TOL_N]
                 found = False
                 for n in range(2, min(MAX_COMBO + 1, len(candidatos) + 1)):
                     for combo in _it.combinations(candidatos, n):
                         if abs(sum(c["monto"] for c in combo) - target) <= TOL_N:
+                            if max(_text_sim(desc_b, c["concepto"]) for c in combo) < COMBO_SIM_MIN:
+                                continue
                             results.append({"tipo": f"COMBO({n})", "banco": banco,
                                             "aux_entries": list(combo),
                                             "diferencia": sum(c["monto"] for c in combo) - target})
                             for c in combo: c["matched"] = True
                             matched_idx.add(bi); found = True; break
                     if found: break
+
+            # Paso 3 — similitud de texto (±$5.00, fecha ±3 días, sim >= 45%)
+            libres_p3 = [a for a in libre if not a["matched"]]
+            for bi, banco in enumerate(banco_movs):
+                if bi in matched_idx: continue
+                target = banco[monto_key]; desc_b = banco["desc"]
+                cands = [(a, _text_sim(desc_b, a["concepto"])) for a in libres_p3
+                         if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"])
+                         and abs(a["monto"] - target) <= TOL_TEXT]
+                cands.sort(key=lambda x: -x[1])
+                for aux, sim in cands:
+                    if sim >= SIM_MIN:
+                        results.append({"tipo": f"TEXTO({sim:.0%})", "banco": banco,
+                                        "aux_entries": [aux], "diferencia": aux["monto"] - target})
+                        aux["matched"] = True; matched_idx.add(bi); break
+
             sin_banco = [banco_movs[i] for i in range(len(banco_movs)) if i not in matched_idx]
             sin_aux   = [a for a in libre if not a["matched"]]
             return results, sin_banco, sin_aux

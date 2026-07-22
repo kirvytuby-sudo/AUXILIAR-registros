@@ -1,8 +1,11 @@
 """
-pages/8_Conciliacion_Banco_Auxiliar.py — Módulo Conciliación Banco vs Auxiliar
-Paso 1: coincidencia exacta (±$0.05, mismo mes)
-Paso 2: combinaciones N-a-1 (±$2.00, mismo mes, máx 6 entradas)
+pages/8_Conciliacion_Banco_Auxiliar.py — v2.2
+Paso 1: exacto    ±$TOL1,    fecha ±DIAS días
+Paso 2: combinado ±$TOL_N,   fecha ±DIAS días, máx MAX_COMBO entradas
+Paso 3: texto     ±$TOL_TEXT, fecha ±DIAS días, similitud ≥ SIM_MIN
+Auto-sugerencia de parámetros basada en near-misses de no conciliados.
 """
+import difflib
 import io
 import itertools
 import os
@@ -22,12 +25,8 @@ st.set_page_config(
 import _theme
 _theme.aplicar_header("🔀 Conciliación Banco vs Auxiliar", "Compara movimientos bancarios contra el auxiliar contable")
 
-# ── Constantes ────────────────────────────────────────────────────────────────
-TOL1      = 0.05
-TOL_N     = 2.00
-MAX_COMBO = 6
-MESES     = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
-             7:"JULIO",8:"AGOSTO",9:"SEPTIEMBRE",10:"OCTUBRE",11:"NOVIEMBRE",12:"DICIEMBRE"}
+MESES = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
+         7:"JULIO",8:"AGOSTO",9:"SEPTIEMBRE",10:"OCTUBRE",11:"NOVIEMBRE",12:"DICIEMBRE"}
 
 # ── Utilidades ────────────────────────────────────────────────────────────────
 
@@ -67,6 +66,13 @@ def _col(mapping, *candidates):
         for k, v in mapping.items():
             if cand in k: return v
     return None
+
+
+def text_sim(a, b):
+    """Similitud de texto [0-1] entre descripción de banco y concepto auxiliar."""
+    if not a or not b: return 0.0
+    a = a.lower().strip(); b = b.lower().strip()
+    return difflib.SequenceMatcher(None, a, b).ratio()
 
 
 def _read_banco(wb):
@@ -139,17 +145,16 @@ def _read_auxiliar(wb):
 
 # ── Algoritmo de conciliación ─────────────────────────────────────────────────
 
-def fecha_ok(f1, f2):
-    """Fechas iguales o dentro de ±3 días."""
-    return abs((f1 - f2).days) <= 3
+def fecha_ok(f1, f2, dias):
+    return abs((f1 - f2).days) <= dias
 
 
-def conciliar(banco_movs, aux_pool, monto_key):
+def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_min, max_combo):
     """
-    Dos pasos:
-      1. Exacto: 1-a-1, fecha ±3 días, diferencia <= $0.05
-      2. Combinado: N-a-1, fecha ±3 días, suma <= $2.00, max 6 entradas
-    Devuelve (resultados, sin_banco, sin_aux).
+    Tres pasos:
+      1. Exacto:    1-a-1, fecha ±dias, monto ±tol1
+      2. Combinado: N-a-1, fecha ±dias, suma ±tol_n, máx max_combo entradas
+      3. Texto:     1-a-1, fecha ±dias, monto ±tol_text, similitud texto ≥ sim_min
     """
     libre = [dict(a) for a in aux_pool]
     results = []; matched_idx = set()
@@ -158,8 +163,8 @@ def conciliar(banco_movs, aux_pool, monto_key):
     for bi, banco in enumerate(banco_movs):
         target = banco[monto_key]
         for aux in libre:
-            if aux["matched"] or not fecha_ok(banco["fecha"], aux["fecha"]): continue
-            if abs(aux["monto"] - target) <= TOL1:
+            if aux["matched"] or not fecha_ok(banco["fecha"], aux["fecha"], dias): continue
+            if abs(aux["monto"] - target) <= tol1:
                 results.append({"tipo": "✅ EXACTO", "banco": banco,
                                  "aux_entries": [aux], "diferencia": aux["monto"] - target})
                 aux["matched"] = True; matched_idx.add(bi); break
@@ -171,12 +176,12 @@ def conciliar(banco_movs, aux_pool, monto_key):
         target = banco[monto_key]
         if target < 10: continue
         candidatos = [a for a in libres_p2
-                      if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"])
-                      and a["monto"] <= target + TOL_N]
+                      if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"], dias)
+                      and a["monto"] <= target + tol_n]
         found = False
-        for n in range(2, min(MAX_COMBO + 1, len(candidatos) + 1)):
+        for n in range(2, min(max_combo + 1, len(candidatos) + 1)):
             for combo in itertools.combinations(candidatos, n):
-                if abs(sum(c["monto"] for c in combo) - target) <= TOL_N:
+                if abs(sum(c["monto"] for c in combo) - target) <= tol_n:
                     results.append({"tipo": f"🔀 COMBINADO ({n})", "banco": banco,
                                     "aux_entries": list(combo),
                                     "diferencia": sum(c["monto"] for c in combo) - target})
@@ -184,9 +189,72 @@ def conciliar(banco_movs, aux_pool, monto_key):
                     matched_idx.add(bi); found = True; break
             if found: break
 
+    # Paso 3 — similitud de texto
+    libres_p3 = [a for a in libre if not a["matched"]]
+    for bi, banco in enumerate(banco_movs):
+        if bi in matched_idx: continue
+        target = banco[monto_key]
+        desc_b = banco["desc"]
+        candidatos = [
+            (a, text_sim(desc_b, a["concepto"]))
+            for a in libres_p3
+            if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"], dias)
+            and abs(a["monto"] - target) <= tol_text
+        ]
+        candidatos.sort(key=lambda x: -x[1])
+        for aux, sim in candidatos:
+            if sim >= sim_min:
+                results.append({"tipo": f"🔤 TEXTO ({sim:.0%})", "banco": banco,
+                                 "aux_entries": [aux], "diferencia": aux["monto"] - target})
+                aux["matched"] = True; matched_idx.add(bi); break
+
     sin_banco = [banco_movs[i] for i in range(len(banco_movs)) if i not in matched_idx]
     sin_aux   = [a for a in libre if not a["matched"]]
     return results, sin_banco, sin_aux
+
+
+def analizar_near_misses(sin_banco, sin_aux, monto_key, dias_act, tol_text_act, sim_act):
+    """
+    Para cada item bancario sin conciliar busca el mejor candidato en sin_aux.
+    Devuelve lista de near-misses y parámetros sugeridos.
+    """
+    near = []
+    for b in sin_banco:
+        mejor = None; mejor_sim = -1
+        for a in sin_aux:
+            dd = abs((b["fecha"] - a["fecha"]).days)
+            da = abs(a["monto"] - b[monto_key])
+            if da > 500 or dd > 60: continue
+            sim = text_sim(b["desc"], a["concepto"])
+            score = sim - da / 5000 - dd / 200
+            if score > mejor_sim:
+                mejor_sim = score
+                mejor = {"damt": da, "ddias": dd, "sim": sim,
+                         "desc_b": b["desc"], "conc_a": a["concepto"],
+                         "monto_b": b[monto_key], "monto_a": a["monto"],
+                         "fecha_b": b["fecha"], "fecha_a": a["fecha"]}
+        if mejor:
+            near.append(mejor)
+
+    sugs = {}
+    if near:
+        solo_monto = [m for m in near if m["ddias"] <= dias_act and m["sim"] >= sim_act]
+        if solo_monto:
+            vals = sorted(m["damt"] for m in solo_monto)
+            sugs["tol_text"] = round(vals[int(len(vals) * 0.8)], 2)
+
+        solo_fecha = [m for m in near if m["damt"] <= tol_text_act and m["sim"] >= sim_act]
+        if solo_fecha:
+            vals = sorted(m["ddias"] for m in solo_fecha)
+            sugs["dias"] = int(vals[int(len(vals) * 0.8)])
+
+        solo_texto = [m for m in near if m["damt"] <= tol_text_act and m["ddias"] <= dias_act]
+        if solo_texto:
+            vals = sorted(m["sim"] for m in solo_texto)
+            raw = vals[int(len(vals) * 0.2)]  # 20th percentile (lower = más permisivo)
+            sugs["sim_min"] = max(0.20, round(raw - 0.05, 2))
+
+    return near, sugs
 
 
 # ── Generación de Excel ───────────────────────────────────────────────────────
@@ -201,8 +269,9 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
     brd  = Border(left=thin, right=thin, top=thin, bottom=thin)
     HDR_FONT = Font(bold=True, color="FFFFFF", size=10)
 
-    EXACTO  = PatternFill("solid", fgColor="D1FAE5")
-    COMBO   = PatternFill("solid", fgColor="FCE4D6")
+    EXACTO  = PatternFill("solid", fgColor="D1FAE5")   # verde
+    COMBO   = PatternFill("solid", fgColor="FCE4D6")   # naranja claro
+    TEXTO   = PatternFill("solid", fgColor="EDE9FE")   # lila
     AUXF    = PatternFill("solid", fgColor="FFF3CD")
     DEP_M   = PatternFill("solid", fgColor="1E40AF")
     RET_M   = PatternFill("solid", fgColor="831843")
@@ -233,7 +302,12 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
 
     CONC_H = ["ESTATUS","FECHA BANCO","MONTO BANCO","DESCRIPCIÓN BANCO",
                "FECHA AUX","PÓLIZA","CONCEPTO AUX","MONTO AUX","DIFERENCIA"]
-    CONC_W = [18, 13, 15, 50, 13, 10, 50, 15, 12]
+    CONC_W = [22, 13, 15, 50, 13, 10, 50, 15, 12]
+
+    def _row_fill(tipo):
+        if tipo.startswith("✅"): return EXACTO
+        if tipo.startswith("🔀"): return COMBO
+        return TEXTO
 
     def write_conc_por_mes(ws, results, mkey, mfill):
         for ci, w in enumerate(CONC_W, 1):
@@ -254,7 +328,7 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
             for ci, h in enumerate(CONC_H, 1): hdr(ws, row, ci, h)
             row += 1; subtotal = 0
             for r2 in its:
-                fill = EXACTO if r2["tipo"].startswith("✅") else COMBO
+                fill = _row_fill(r2["tipo"])
                 a0 = r2["aux_entries"][0]; b = r2["banco"]
                 dc(ws, row, 1, r2["tipo"], fill)
                 dc(ws, row, 2, b["fecha"], fill, fmt="DD/MM/YYYY", align="center")
@@ -390,9 +464,36 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
 
 
 # ── Estado de sesión ──────────────────────────────────────────────────────────
-for key in ("cba_resultado_bytes", "cba_resumen"):
+for key in ("cba_resultado_bytes", "cba_resumen", "cba_sugerencias"):
     if key not in st.session_state:
         st.session_state[key] = None
+
+# ── UI — Parámetros ───────────────────────────────────────────────────────────
+with st.expander("⚙️ Parámetros de conciliación", expanded=False):
+    st.caption("Ajusta las tolerancias manualmente o usa las sugerencias automáticas abajo.")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        p_tol1     = st.slider("Exacto — tolerancia monto ($)", 0.01, 5.0,  0.05, 0.01, key="p_tol1")
+        p_tol_n    = st.slider("Combo  — tolerancia monto ($)", 0.5,  20.0, 2.0,  0.5,  key="p_toln")
+    with c2:
+        p_dias     = st.slider("Días de tolerancia fecha",       0,    15,   3,    1,    key="p_dias")
+        p_tol_text = st.slider("Texto  — tolerancia monto ($)",  1.0,  50.0, 5.0,  1.0,  key="p_tolt")
+    with c3:
+        p_sim_min  = st.slider("Texto  — similitud mínima",      0.20, 0.90, 0.45, 0.05, key="p_sim",
+                               format="%.2f",
+                               help="0.45 = 45 % de similitud entre descripción del banco y concepto del auxiliar")
+        p_max_combo = st.slider("Combo  — máx. entradas",        2,    8,    6,    1,    key="p_maxc")
+
+    if st.session_state.cba_sugerencias:
+        sugs = st.session_state.cba_sugerencias
+        st.markdown("**💡 Sugerencias basadas en la última corrida:**")
+        cols = st.columns(4)
+        labels = {"tol_text": "Tolerancia texto ($)", "dias": "Días fecha", "sim_min": "Similitud mín."}
+        keys   = {"tol_text": "p_tolt",              "dias": "p_dias",     "sim_min": "p_sim"}
+        for i, (k, v) in enumerate(sugs.items()):
+            with cols[i % 4]:
+                st.metric(labels.get(k, k), v)
+        st.caption("👆 Mueve los sliders a estos valores y presiona **Generar** de nuevo para mejorar el resultado.")
 
 # ── UI — Carga de archivos ────────────────────────────────────────────────────
 st.subheader("1️⃣  Cargar archivos")
@@ -420,14 +521,18 @@ st.markdown("""
 <div style="margin:0.5rem 0 1rem; font-size:0.85rem; display:flex; gap:1rem; flex-wrap:wrap;">
   <span style="background:#D1FAE5; padding:2px 8px; border-radius:4px;">✅ Exacto</span>
   <span style="background:#FCE4D6; padding:2px 8px; border-radius:4px;">🔀 Combinado</span>
+  <span style="background:#EDE9FE; padding:2px 8px; border-radius:4px;">🔤 Texto (similitud)</span>
   <span style="background:#DBEAFE; padding:2px 8px; border-radius:4px;">⚠ Sin conciliar (banco)</span>
   <span style="background:#BFDBFE; padding:2px 8px; border-radius:4px;">⚠ Sin conciliar (aux)</span>
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-> **Algoritmo:** Paso 1 — coincidencia exacta ±$0.05 · Paso 2 — combinaciones N-a-1 ±$2.00
-> Ambos pasos exigen que banco y auxiliar estén **a ±3 días de distancia**.
+st.markdown(f"""
+> **Algoritmo v2.2:**
+> Paso 1 — exacto ±${st.session_state.get('p_tol1', 0.05):.2f} ·
+> Paso 2 — combinaciones ±${st.session_state.get('p_toln', 2.0):.1f} ·
+> Paso 3 — texto ≥{st.session_state.get('p_sim', 0.45):.0%} ±${st.session_state.get('p_tolt', 5.0):.0f} ·
+> Fecha ±{st.session_state.get('p_dias', 3)} días
 """)
 
 # ── Botón generar ─────────────────────────────────────────────────────────────
@@ -447,6 +552,7 @@ with col_btn:
 if generar:
     st.session_state.cba_resultado_bytes = None
     st.session_state.cba_resumen = None
+    st.session_state.cba_sugerencias = None
 
     with st.spinner("Leyendo archivos..."):
         try:
@@ -466,7 +572,7 @@ if generar:
             with st.expander("Ver detalle"): st.code(traceback.format_exc())
             st.stop()
 
-    with st.spinner("Conciliando (paso 1: exacto · paso 2: combinaciones)..."):
+    with st.spinner("Conciliando (3 pasos: exacto · combinaciones · texto)..."):
         try:
             if movs_banco:
                 f_min = min(m["fecha"] for m in movs_banco)
@@ -482,8 +588,23 @@ if generar:
             rets_banco = [m for m in movs_banco if m["ret"] > 0]
             meses_ord  = sorted(set(m["fecha"].month for m in movs_banco))
 
-            res_dep, sin_dep_banco, sin_dep_aux = conciliar(deps_banco, aux_cargo_rng, "dep")
-            res_ret, sin_ret_banco, sin_ret_aux = conciliar(rets_banco, aux_abono_rng, "ret")
+            params = dict(tol1=p_tol1, tol_n=p_tol_n, dias=p_dias,
+                          tol_text=p_tol_text, sim_min=p_sim_min, max_combo=p_max_combo)
+
+            res_dep, sin_dep_banco, sin_dep_aux = conciliar(deps_banco, aux_cargo_rng, "dep", **params)
+            res_ret, sin_ret_banco, sin_ret_aux = conciliar(rets_banco, aux_abono_rng, "ret", **params)
+
+            # Near-miss analysis para sugerencias
+            near_dep, sugs_dep = analizar_near_misses(sin_dep_banco, sin_dep_aux, "dep",
+                                                       p_dias, p_tol_text, p_sim_min)
+            near_ret, sugs_ret = analizar_near_misses(sin_ret_banco, sin_ret_aux, "ret",
+                                                       p_dias, p_tol_text, p_sim_min)
+            # Combinar sugerencias (más permisivo)
+            sugs = {}
+            for k in set(list(sugs_dep.keys()) + list(sugs_ret.keys())):
+                vals = [v for v in [sugs_dep.get(k), sugs_ret.get(k)] if v is not None]
+                if vals: sugs[k] = max(vals)
+            st.session_state.cba_sugerencias = sugs if sugs else None
 
         except Exception as e:
             st.error(f"❌ Error en conciliación: {e}")
@@ -499,19 +620,22 @@ if generar:
             st.session_state.cba_resultado_bytes = excel_bytes
 
             exactos_dep = sum(1 for r in res_dep if r["tipo"].startswith("✅"))
-            combo_dep   = len(res_dep) - exactos_dep
+            combo_dep   = sum(1 for r in res_dep if r["tipo"].startswith("🔀"))
+            texto_dep   = sum(1 for r in res_dep if r["tipo"].startswith("🔤"))
             exactos_ret = sum(1 for r in res_ret if r["tipo"].startswith("✅"))
-            combo_ret   = len(res_ret) - exactos_ret
+            combo_ret   = sum(1 for r in res_ret if r["tipo"].startswith("🔀"))
+            texto_ret   = sum(1 for r in res_ret if r["tipo"].startswith("🔤"))
 
             st.session_state.cba_resumen = {
                 "conc_dep": len(res_dep),   "total_dep": len(deps_banco),
-                "exactos_dep": exactos_dep, "combo_dep": combo_dep,
+                "exactos_dep": exactos_dep, "combo_dep": combo_dep, "texto_dep": texto_dep,
                 "sin_dep_b": len(sin_dep_banco), "sin_dep_a": len(sin_dep_aux),
                 "conc_ret": len(res_ret),   "total_ret": len(rets_banco),
-                "exactos_ret": exactos_ret, "combo_ret": combo_ret,
+                "exactos_ret": exactos_ret, "combo_ret": combo_ret, "texto_ret": texto_ret,
                 "sin_ret_b": len(sin_ret_banco), "sin_ret_a": len(sin_ret_aux),
                 "n_banco": len(movs_banco),
                 "archivos_banco": archivos_leidos,
+                "near_dep": near_dep, "near_ret": near_ret,
             }
         except Exception as e:
             st.error(f"❌ Error generando Excel: {e}")
@@ -538,11 +662,11 @@ if st.session_state.cba_resultado_bytes and st.session_state.cba_resumen:
     with c2:
         st.metric("Depósitos conciliados",
                   f"{res['conc_dep']}/{res['total_dep']}",
-                  delta=f"{pct_dep:.1f}% · {res['exactos_dep']} exactos + {res['combo_dep']} combo")
+                  delta=f"{pct_dep:.1f}% · {res['exactos_dep']}✅ {res['combo_dep']}🔀 {res['texto_dep']}🔤")
     with c3:
         st.metric("Cargos conciliados",
                   f"{res['conc_ret']}/{res['total_ret']}",
-                  delta=f"{pct_ret:.1f}% · {res['exactos_ret']} exactos + {res['combo_ret']} combo")
+                  delta=f"{pct_ret:.1f}% · {res['exactos_ret']}✅ {res['combo_ret']}🔀 {res['texto_ret']}🔤")
     with c4:
         st.metric("Sin conciliar (banco)", sin_tot,
                   delta=f"Dep: {res['sin_dep_b']} · Cargos: {res['sin_ret_b']}",
@@ -556,7 +680,34 @@ if st.session_state.cba_resultado_bytes and st.session_state.cba_resumen:
         type="primary",
         use_container_width=True,
     )
-    st.caption("3 hojas: 💰 Depósitos conciliados · 💳 Cargos conciliados · ⚠ Sin conciliar (lado a lado por mes)")
+    st.caption("3 hojas: 💰 Depósitos · 💳 Cargos · ⚠ Sin conciliar (lado a lado por mes)")
+
+    # ── Near-miss analysis ────────────────────────────────────────────────────
+    near_all = res.get("near_dep", []) + res.get("near_ret", [])
+    if near_all:
+        with st.expander(f"📊 Análisis de no conciliados — {len(near_all)} near-misses", expanded=False):
+            st.markdown("Los items sin conciliar más cercanos a tener un match:")
+            top = sorted(near_all, key=lambda x: x["sim"], reverse=True)[:20]
+            rows_tbl = []
+            for m in top:
+                rows_tbl.append({
+                    "Fecha banco": m["fecha_b"].strftime("%d/%m/%Y"),
+                    "Monto banco": f"${m['monto_b']:,.2f}",
+                    "Descripción banco": m["desc_b"][:40],
+                    "Fecha aux": m["fecha_a"].strftime("%d/%m/%Y"),
+                    "Monto aux": f"${m['monto_a']:,.2f}",
+                    "Concepto aux": m["conc_a"][:40],
+                    "Δ monto": f"${m['damt']:.2f}",
+                    "Δ días": m["ddias"],
+                    "Similitud txt": f"{m['sim']:.0%}",
+                })
+            st.dataframe(rows_tbl, use_container_width=True)
+
+            if st.session_state.cba_sugerencias:
+                st.markdown("**💡 Para mejorar el resultado, ajusta los parámetros arriba a:**")
+                for k, v in st.session_state.cba_sugerencias.items():
+                    labels = {"tol_text": "Tolerancia texto ($)", "dias": "Días fecha", "sim_min": "Similitud mín."}
+                    st.markdown(f"- **{labels.get(k,k)}** → `{v}`")
 
 else:
     st.markdown("""
@@ -572,4 +723,4 @@ else:
 """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("Módulo Conciliación Banco vs Auxiliar · v2.1  ·  Exacto ±$0.05 · Combo ±$2.00 · Fecha ±3 días")
+st.caption("Módulo Conciliación Banco vs Auxiliar · v2.2  ·  Exacto ±$0.05 · Combo ±$2.00 · Texto ≥45% · Fecha ±3 días · Auto-sugerencias")

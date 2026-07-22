@@ -1,13 +1,15 @@
 """
 pages/8_Conciliacion_Banco_Auxiliar.py — Módulo Conciliación Banco vs Auxiliar
-Carga un Excel del banco y un auxiliar contable, concilia depósitos↔cargos
-y retiros↔abonos con tolerancia ±$0.05 y ±2 días.
+Paso 1: coincidencia exacta (±$0.05, mismo mes)
+Paso 2: combinaciones N-a-1 (±$2.00, mismo mes, máx 6 entradas)
 """
 import io
+import itertools
 import os
-import tempfile
 import traceback
-from datetime import date, datetime, timedelta
+from calendar import monthrange
+from collections import defaultdict
+from datetime import date, datetime
 
 import streamlit as st
 
@@ -19,470 +21,371 @@ st.set_page_config(
 
 import _theme
 _theme.aplicar_header("🔀 Conciliación Banco vs Auxiliar", "Compara movimientos bancarios contra el auxiliar contable")
+
+# ── Constantes ────────────────────────────────────────────────────────────────
+TOL1      = 0.05
+TOL_N     = 2.00
+MAX_COMBO = 6
+MESES     = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
+             7:"JULIO",8:"AGOSTO",9:"SEPTIEMBRE",10:"OCTUBRE",11:"NOVIEMBRE",12:"DICIEMBRE"}
+
 # ── Utilidades ────────────────────────────────────────────────────────────────
 
 def _to_date(v):
-    """Convierte un valor a date. Acepta date, datetime, string, número Excel."""
-    if v is None:
-        return None
-    if isinstance(v, datetime):
-        return v.date()
-    if isinstance(v, date):
-        return v
+    if v is None: return None
+    if isinstance(v, datetime): return v.date()
+    if isinstance(v, date): return v
     if isinstance(v, (int, float)):
         try:
             from openpyxl.utils.datetime import from_excel
             return from_excel(v).date()
-        except Exception:
-            return None
+        except Exception: return None
     s = str(v).strip()
     for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y"):
-        try:
-            return datetime.strptime(s, fmt).date()
-        except ValueError:
-            continue
+        try: return datetime.strptime(s, fmt).date()
+        except ValueError: continue
     return None
 
 
 def _to_float(v):
-    """Convierte valor a float, devuelve 0.0 si no se puede."""
-    if v is None:
-        return 0.0
-    if isinstance(v, (int, float)):
-        return float(v)
-    try:
-        return float(str(v).replace(",", "").replace("$", "").strip())
-    except Exception:
-        return 0.0
+    if v is None: return 0.0
+    if isinstance(v, (int, float)): return float(v)
+    try: return float(str(v).replace(",", "").replace("$", "").strip())
+    except Exception: return 0.0
 
 
 def _detect_header(rows, keywords):
-    """Devuelve (header_row_index, {col_name: index}) buscando keywords en todas las filas."""
     for i, row in enumerate(rows):
         vals = [str(v).strip().lower() if v is not None else "" for v in row]
         if all(kw in vals for kw in keywords):
-            # construir mapa nombre→índice
-            mapping = {v: j for j, v in enumerate(vals) if v}
-            return i, mapping
+            return i, {v: j for j, v in enumerate(vals) if v}
     return None, {}
 
 
 def _col(mapping, *candidates):
-    """Devuelve el primer índice que coincida con alguna de las palabras clave."""
     for cand in candidates:
         for k, v in mapping.items():
-            if cand in k:
-                return v
+            if cand in k: return v
     return None
 
 
 def _read_banco(wb):
-    """
-    Lee el archivo del banco (Excel).
-    Detecta encabezado dinámicamente buscando 'fecha'.
-    Devuelve lista de dicts: fecha, descripcion, deposito, retiro, saldo.
-    """
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
-
     hdr_idx, mapping = _detect_header(rows, ["fecha"])
     if hdr_idx is None:
         raise ValueError("No se encontró encabezado con columna 'Fecha' en el archivo del banco.")
-
     col_f   = _col(mapping, "fecha")
     col_d   = _col(mapping, "desc", "concepto", "referencia", "movimiento")
-    col_dep = _col(mapping, "dep", "abono", "crédito", "credito", "entrada")
-    col_ret = _col(mapping, "ret", "cargo", "débito", "debito", "salida")
+    col_dep = _col(mapping, "dep", "abono", "crédito", "credito", "entrada", "depósito", "deposito")
+    col_ret = _col(mapping, "ret", "cargo", "débito", "debito", "salida", "retiro")
     col_sal = _col(mapping, "saldo", "sal")
-
     if col_f is None:
         raise ValueError("No se detectó la columna 'Fecha' en el banco.")
-
     movs = []
     for row in rows[hdr_idx + 1:]:
-        if not row or all(v is None for v in row):
-            continue
+        if not row or all(v is None for v in row): continue
         fecha = _to_date(row[col_f] if col_f < len(row) else None)
-        if fecha is None:
-            continue
-        desc  = str(row[col_d]   if col_d   is not None and col_d   < len(row) else "").strip()
-        dep   = _to_float(row[col_dep] if col_dep is not None and col_dep < len(row) else 0)
-        ret   = _to_float(row[col_ret] if col_ret is not None and col_ret < len(row) else 0)
-        sal   = _to_float(row[col_sal] if col_sal is not None and col_sal < len(row) else 0)
+        if fecha is None: continue
+        desc = str(row[col_d] if col_d is not None and col_d < len(row) else "").strip()
+        dep  = _to_float(row[col_dep] if col_dep is not None and col_dep < len(row) else 0)
+        ret  = _to_float(row[col_ret] if col_ret is not None and col_ret < len(row) else 0)
+        sal  = _to_float(row[col_sal] if col_sal is not None and col_sal < len(row) else 0)
         movs.append({"fecha": fecha, "desc": desc, "dep": dep, "ret": ret, "sal": sal})
-
     return movs
 
 
 def _read_auxiliar(wb):
-    """
-    Lee el auxiliar contable (Excel).
-    Detecta encabezado dinámicamente buscando 'cargo' Y 'fecha'.
-    Devuelve (aux_cargo, aux_abono) — listas de dicts.
-    """
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
-
     hdr_idx, mapping = _detect_header(rows, ["cargo", "fecha"])
     if hdr_idx is None:
         raise ValueError("No se encontró encabezado con columnas 'Fecha' y 'Cargo' en el auxiliar.")
-
-    col_f     = _col(mapping, "fecha")
-
-    # Póliza: buscar número/folio primero para no confundir con "Tipo de Póliza"
-    col_pol   = _col(mapping, "núm. póliza", "num. póliza", "número póliza",
-                     "numero poliza", "num poliza", "folio póliza", "folio")
+    col_f = _col(mapping, "fecha")
+    col_pol = None
+    for c in ("núm. póliza", "num. póliza", "número póliza", "num poliza", "num. póliza"):
+        if c in mapping: col_pol = mapping[c]; break
     if col_pol is None:
-        # Fallback genérico — evitar columnas que empiecen con "tipo"
-        for cand in ("póliza", "poliza", "pol"):
+        for c in ("póliza", "poliza", "pol"):
             for k, v in mapping.items():
-                if cand in k and not k.startswith("tipo"):
-                    col_pol = v
-                    break
-            if col_pol is not None:
-                break
-
-    # Desc. Póliza (fuente principal para Concepto Aux)
-    col_dp    = _col(mapping, "desc. póliza", "desc poliza", "descripción póliza",
-                     "descripcion poliza", "descripción", "descripcion", "desc")
-
-    # Detalle / Concepto (secundario)
-    col_det   = _col(mapping, "detalle", "concepto", "cliente", "referencia")
-    if col_det is not None and col_det == col_dp:
-        col_det = None
-
+                if c in k and not k.startswith("tipo"): col_pol = v; break
+            if col_pol is not None: break
+    col_dp = None
+    for c in ("desc. póliza", "desc poliza", "descripción póliza", "desc. detalle", "descripción", "descripcion", "desc"):
+        if c in mapping: col_dp = mapping[c]; break
+    if col_dp is None: col_dp = _col(mapping, "desc")
     col_cargo = _col(mapping, "cargo")
     col_abono = _col(mapping, "abono")
 
     def _s(row, col):
-        """Extrae string de celda; devuelve '' para None/nan/None-literal."""
-        if col is None or col >= len(row):
-            return ""
-        v = row[col]
-        s = "" if v is None else str(v).strip()
+        if col is None or col >= len(row): return ""
+        v = row[col]; s = "" if v is None else str(v).strip()
         return "" if s.lower() in ("none", "nan", "#n/a", "") else s
 
-    aux_cargo = []
-    aux_abono = []
-
+    aux_cargo = []; aux_abono = []
     for row in rows[hdr_idx + 1:]:
-        if not row or all(v is None for v in row):
-            continue
+        if not row or all(v is None for v in row): continue
         fecha = _to_date(row[col_f] if col_f is not None and col_f < len(row) else None)
-        if fecha is None:
-            continue
-        pol      = _s(row, col_pol)
-        dp_val   = _s(row, col_dp)
-        det_val  = _s(row, col_det)
-        # Concepto Aux: priorizar Desc. Póliza; si vacía, usar Detalle/Concepto
-        concepto = dp_val or det_val
-        cargo    = _to_float(row[col_cargo] if col_cargo is not None and col_cargo < len(row) else 0)
-        abono    = _to_float(row[col_abono] if col_abono is not None and col_abono < len(row) else 0)
-
+        if fecha is None: continue
+        pol     = _s(row, col_pol)
+        concepto = _s(row, col_dp)
+        cargo = _to_float(row[col_cargo] if col_cargo is not None and col_cargo < len(row) else 0)
+        abono = _to_float(row[col_abono] if col_abono is not None and col_abono < len(row) else 0)
         base = {"fecha": fecha, "poliza": pol, "concepto": concepto, "matched": False}
-        if cargo > 0:
-            aux_cargo.append({**base, "monto": cargo})
-        if abono > 0:
-            aux_abono.append({**base, "monto": abono})
-
+        if cargo > 0: aux_cargo.append({**base, "monto": cargo})
+        if abono > 0: aux_abono.append({**base, "monto": abono})
     return aux_cargo, aux_abono
 
 
-def _match(banco_movs, aux_list, tipo_banco):
+# ── Algoritmo de conciliación ─────────────────────────────────────────────────
+
+def fecha_ok(f1, f2):
+    """Fechas iguales o dentro de ±3 días."""
+    return abs((f1 - f2).days) <= 3
+
+
+def conciliar(banco_movs, aux_pool, monto_key):
     """
-    banco_movs: lista de movs del banco con campo 'dep' o 'ret' según tipo_banco.
-    aux_list:   lista de entradas del auxiliar (cargo o abono).
-    tipo_banco: 'dep' o 'ret'.
-    Devuelve banco_movs con campo 'match_aux' relleno donde corresponda.
+    Dos pasos:
+      1. Exacto: 1-a-1, fecha ±3 días, diferencia <= $0.05
+      2. Combinado: N-a-1, fecha ±3 días, suma <= $2.00, max 6 entradas
+    Devuelve (resultados, sin_banco, sin_aux).
     """
-    TOL_AMT  = 0.05
+    libre = [dict(a) for a in aux_pool]
+    results = []; matched_idx = set()
 
-    aux_copy = [dict(a) for a in aux_list]  # copia para marcar matched
+    # Paso 1 — exacto
+    for bi, banco in enumerate(banco_movs):
+        target = banco[monto_key]
+        for aux in libre:
+            if aux["matched"] or not fecha_ok(banco["fecha"], aux["fecha"]): continue
+            if abs(aux["monto"] - target) <= TOL1:
+                results.append({"tipo": "✅ EXACTO", "banco": banco,
+                                 "aux_entries": [aux], "diferencia": aux["monto"] - target})
+                aux["matched"] = True; matched_idx.add(bi); break
 
-    for mov in banco_movs:
-        monto_b = mov[tipo_banco]
-        if monto_b <= 0:
-            mov["match_aux"] = None
-            continue
-        fecha_b = mov["fecha"]
-        best_i = None
-        best_diff = None
-        for i, a in enumerate(aux_copy):
-            if a["matched"]:
-                continue
-            if abs(a["monto"] - monto_b) > TOL_AMT:
-                continue
-            diff_d = abs((a["fecha"] - fecha_b).days)
-            if best_diff is None or diff_d < best_diff:
-                best_diff = diff_d
-                best_i = i
-        if best_i is not None:
-            aux_copy[best_i]["matched"] = True
-            mov["match_aux"] = aux_copy[best_i]
-        else:
-            mov["match_aux"] = None
+    # Paso 2 — combinado
+    libres_p2 = [a for a in libre if not a["matched"]]
+    for bi, banco in enumerate(banco_movs):
+        if bi in matched_idx: continue
+        target = banco[monto_key]
+        if target < 10: continue
+        candidatos = [a for a in libres_p2
+                      if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"])
+                      and a["monto"] <= target + TOL_N]
+        found = False
+        for n in range(2, min(MAX_COMBO + 1, len(candidatos) + 1)):
+            for combo in itertools.combinations(candidatos, n):
+                if abs(sum(c["monto"] for c in combo) - target) <= TOL_N:
+                    results.append({"tipo": f"🔀 COMBINADO ({n})", "banco": banco,
+                                    "aux_entries": list(combo),
+                                    "diferencia": sum(c["monto"] for c in combo) - target})
+                    for c in combo: c["matched"] = True
+                    matched_idx.add(bi); found = True; break
+            if found: break
 
-    return banco_movs, aux_copy
-
-
-def _fmt_date(v):
-    if v is None:
-        return ""
-    if isinstance(v, (date, datetime)):
-        return v.strftime("%d/%m/%Y")
-    return str(v)
-
-
-def _fmt_money(v):
-    if not v:
-        return ""
-    return f"${v:,.2f}"
+    sin_banco = [banco_movs[i] for i in range(len(banco_movs)) if i not in matched_idx]
+    sin_aux   = [a for a in libre if not a["matched"]]
+    return results, sin_banco, sin_aux
 
 
 # ── Generación de Excel ───────────────────────────────────────────────────────
 
-def _generar_excel(depositos, retiros, aux_cargo_list, aux_abono_list):
-    """Genera el Excel de conciliación en memoria y devuelve bytes."""
-    try:
-        from openpyxl import Workbook
-        from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-        from openpyxl.utils import get_column_letter
-    except ImportError:
-        raise ImportError("Se requiere openpyxl para generar el Excel.")
-
-    wb = Workbook()
-
-    # Colores
-    fill_conc_dep = PatternFill("solid", fgColor="C6EFCE")   # verde — dep conciliado
-    fill_conc_ret = PatternFill("solid", fgColor="DDEEFF")   # azul claro — ret conciliado
-    fill_no_conc  = PatternFill("solid", fgColor="FFC7CE")   # rojo — no conciliado
-    fill_solo     = PatternFill("solid", fgColor="FFEB9C")   # amarillo — solo en banco
-    fill_hdr      = PatternFill("solid", fgColor="1E3A8A")   # azul encabezado
-    fill_tot      = PatternFill("solid", fgColor="FFC000")   # ámbar totales
-
-    font_hdr  = Font(color="FFFFFF", bold=True, size=10)
-    font_bold = Font(bold=True)
-    font_tot  = Font(bold=True, size=10)
-    al_c      = Alignment(horizontal="center", vertical="center")
-    al_r      = Alignment(horizontal="right",  vertical="center")
-    al_l      = Alignment(horizontal="left",   vertical="center")
+def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
+                   res_ret, sin_ret_banco, sin_ret_aux, meses_ord):
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
 
     thin = Side(style="thin", color="CCCCCC")
-    bord = Border(left=thin, right=thin, top=thin, bottom=thin)
+    brd  = Border(left=thin, right=thin, top=thin, bottom=thin)
+    HDR_FONT = Font(bold=True, color="FFFFFF", size=10)
 
-    def _hdr_cell(ws, row, col, text, width=None):
-        c = ws.cell(row=row, column=col, value=text)
-        c.fill = fill_hdr; c.font = font_hdr
-        c.alignment = al_c; c.border = bord
-        if width:
-            ws.column_dimensions[get_column_letter(col)].width = width
-        return c
+    EXACTO  = PatternFill("solid", fgColor="D1FAE5")
+    COMBO   = PatternFill("solid", fgColor="FCE4D6")
+    AUXF    = PatternFill("solid", fgColor="FFF3CD")
+    DEP_M   = PatternFill("solid", fgColor="1E40AF")
+    RET_M   = PatternFill("solid", fgColor="831843")
+    DEP_S   = PatternFill("solid", fgColor="1D4ED8")
+    RET_S   = PatternFill("solid", fgColor="9D174D")
+    DEP_R   = PatternFill("solid", fgColor="DBEAFE")
+    RET_R   = PatternFill("solid", fgColor="FCE7F3")
+    DEP_A   = PatternFill("solid", fgColor="BFDBFE")
+    RET_A   = PatternFill("solid", fgColor="FBCFE8")
+    TOT_F   = PatternFill("solid", fgColor="FEF3C7")
+    GRAND_F = PatternFill("solid", fgColor="FCD34D")
+    BLANK   = PatternFill("solid", fgColor="F9FAFB")
 
-    def _data_cell(ws, row, col, val, fill=None, align=None, bold=False):
-        c = ws.cell(row=row, column=col, value=val)
-        if fill:  c.fill = fill
-        if align: c.alignment = align
-        if bold:  c.font = Font(bold=True)
-        c.border = bord
-        return c
+    def hdr(ws, r, c, v, f=None):
+        cell = ws.cell(row=r, column=c, value=v)
+        cell.fill = f or PatternFill("solid", fgColor="1E3A8A")
+        cell.font = HDR_FONT
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = brd
 
-    # ── Hoja Depósitos ────────────────────────────────────────────────────────
-    ws_dep = wb.active
-    ws_dep.title = "Depositos"
-    ws_dep.row_dimensions[1].height = 22
+    def dc(ws, r, c, v, fill=None, fmt=None, bold=False, align="left"):
+        cell = ws.cell(row=r, column=c, value=v)
+        if fill: cell.fill = fill
+        if fmt:  cell.number_format = fmt
+        cell.font = Font(bold=bold, size=10)
+        cell.alignment = Alignment(horizontal=align, vertical="center")
+        cell.border = brd
 
-    headers_dep = [
-        ("Fecha Banco",   12),
-        ("Descripción",   35),
-        ("Depósito",      13),
-        ("Saldo",         13),
-        ("Estatus",       16),
-        ("Fecha Aux",     12),
-        ("Póliza",        12),
-        ("Concepto Aux",  30),
-        ("Monto Aux",     13),
-    ]
-    for c_idx, (h, w) in enumerate(headers_dep, 1):
-        _hdr_cell(ws_dep, 1, c_idx, h, w)
+    CONC_H = ["ESTATUS","FECHA BANCO","MONTO BANCO","DESCRIPCIÓN BANCO",
+               "FECHA AUX","PÓLIZA","CONCEPTO AUX","MONTO AUX","DIFERENCIA"]
+    CONC_W = [18, 13, 15, 50, 13, 10, 50, 15, 12]
 
-    conc = 0; no_conc = 0
-    mto_conc = 0.0; mto_no = 0.0
+    def write_conc_por_mes(ws, results, mkey, mfill):
+        for ci, w in enumerate(CONC_W, 1):
+            ws.column_dimensions[get_column_letter(ci)].width = w
+        ws.freeze_panes = "A2"
+        por_mes = defaultdict(list)
+        for r in results: por_mes[r["banco"]["fecha"].month].append(r)
+        row = 1; grand_total = 0
+        for mes in meses_ord:
+            its = por_mes.get(mes, [])
+            if not its: continue
+            ws.row_dimensions[row].height = 24
+            for ci in range(1, 10):
+                cell = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == 1 else "")
+                cell.fill = mfill; cell.font = Font(bold=True, color="FFFFFF", size=11)
+                cell.alignment = Alignment(vertical="center"); cell.border = brd
+            row += 1
+            for ci, h in enumerate(CONC_H, 1): hdr(ws, row, ci, h)
+            row += 1; subtotal = 0
+            for r2 in its:
+                fill = EXACTO if r2["tipo"].startswith("✅") else COMBO
+                a0 = r2["aux_entries"][0]; b = r2["banco"]
+                dc(ws, row, 1, r2["tipo"], fill)
+                dc(ws, row, 2, b["fecha"], fill, fmt="DD/MM/YYYY", align="center")
+                dc(ws, row, 3, b[mkey], fill, fmt='#,##0.00', align="right")
+                dc(ws, row, 4, b["desc"], fill)
+                dc(ws, row, 5, a0["fecha"], fill, fmt="DD/MM/YYYY", align="center")
+                dc(ws, row, 6, a0["poliza"], fill, align="center")
+                dc(ws, row, 7, a0["concepto"], fill)
+                dc(ws, row, 8, a0["monto"], fill, fmt='#,##0.00', align="right")
+                dc(ws, row, 9, r2["diferencia"], fill, fmt='#,##0.00', align="right")
+                subtotal += b[mkey]; row += 1
+                for a in r2["aux_entries"][1:]:
+                    for ci in range(1, 5): dc(ws, row, ci, "", AUXF)
+                    dc(ws, row, 5, a["fecha"], AUXF, fmt="DD/MM/YYYY", align="center")
+                    dc(ws, row, 6, a["poliza"], AUXF, align="center")
+                    dc(ws, row, 7, a["concepto"], AUXF)
+                    dc(ws, row, 8, a["monto"], AUXF, fmt='#,##0.00', align="right")
+                    dc(ws, row, 9, "", AUXF); row += 1
+            for ci in range(1, 10): dc(ws, row, ci, "", TOT_F)
+            dc(ws, row, 1, f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+            dc(ws, row, 3, subtotal, TOT_F, fmt='#,##0.00', align="right", bold=True)
+            grand_total += subtotal; row += 1
+        for ci in range(1, 10): dc(ws, row, ci, "", GRAND_F)
+        dc(ws, row, 1, "TOTAL", GRAND_F, bold=True, align="right")
+        dc(ws, row, 3, grand_total, GRAND_F, fmt='#,##0.00', align="right", bold=True)
 
-    for r_idx, mov in enumerate(depositos, 2):
-        dep = mov["dep"]
-        if dep <= 0:
-            continue
-        ma = mov.get("match_aux")
-        if ma:
-            fill = fill_conc_dep; est = "✅ CONCILIADO"; conc += 1; mto_conc += dep
-        else:
-            fill = fill_no_conc;  est = "❌ NO CONCILIADO"; no_conc += 1; mto_no += dep
+    def write_pair_by_month(ws, start_row,
+                             items_l, monto_l, label_l, fill_l, mfill_l, sfill_l, sec_l,
+                             items_r, monto_r, label_r, pol_r,  fill_r, mfill_r, sfill_r, sec_r):
+        row = start_row; L = (1, 2, 3); R = (5, 6, 7, 8); SEP = 4
+        ws.row_dimensions[row].height = 26
+        for ci in L:
+            cell = ws.cell(row=row, column=ci, value=sec_l if ci == L[0] else "")
+            cell.fill = sfill_l; cell.font = Font(bold=True, color="FFFFFF", size=11)
+            cell.alignment = Alignment(vertical="center"); cell.border = brd
+        ws.cell(row=row, column=SEP, value="").border = brd
+        for ci in R:
+            cell = ws.cell(row=row, column=ci, value=sec_r if ci == R[0] else "")
+            cell.fill = sfill_r; cell.font = Font(bold=True, color="FFFFFF", size=11)
+            cell.alignment = Alignment(vertical="center"); cell.border = brd
+        row += 1
+        por_mes_l = defaultdict(list); por_mes_r = defaultdict(list)
+        for it in items_l: por_mes_l[it["fecha"].month].append(it)
+        for it in items_r: por_mes_r[it["fecha"].month].append(it)
+        grand_l = 0; grand_r = 0
+        for mes in meses_ord:
+            its_l = sorted(por_mes_l.get(mes, []), key=lambda x: x["fecha"])
+            its_r = sorted(por_mes_r.get(mes, []), key=lambda x: x["fecha"])
+            if not its_l and not its_r: continue
+            ws.row_dimensions[row].height = 20
+            for ci in L:
+                cell = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == L[0] else "")
+                cell.fill = mfill_l; cell.font = Font(bold=True, color="FFFFFF", size=10)
+                cell.alignment = Alignment(vertical="center"); cell.border = brd
+            ws.cell(row=row, column=SEP, value="").border = brd
+            for ci in R:
+                cell = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == R[0] else "")
+                cell.fill = mfill_r; cell.font = Font(bold=True, color="FFFFFF", size=10)
+                cell.alignment = Alignment(vertical="center"); cell.border = brd
+            row += 1
+            hdr(ws, row, L[0], "FECHA",             mfill_l)
+            hdr(ws, row, L[1], "MONTO",             mfill_l)
+            hdr(ws, row, L[2], "DESCRIPCION BANCO", mfill_l)
+            ws.cell(row=row, column=SEP, value="").border = brd
+            hdr(ws, row, R[0], "FECHA",       mfill_r)
+            hdr(ws, row, R[1], "MONTO",       mfill_r)
+            hdr(ws, row, R[2], "CONCEPTO AUX",mfill_r)
+            hdr(ws, row, R[3], "POLIZA",      mfill_r)
+            row += 1; sub_l = 0; sub_r = 0
+            for i in range(max(len(its_l), len(its_r))):
+                ws.cell(row=row, column=SEP, value="").border = brd
+                if i < len(its_l):
+                    it = its_l[i]; m = monto_l(it); sub_l += m
+                    dc(ws, row, L[0], it["fecha"], fill_l, fmt="DD/MM/YYYY", align="center")
+                    dc(ws, row, L[1], m,           fill_l, fmt='#,##0.00',   align="right")
+                    dc(ws, row, L[2], label_l(it), fill_l)
+                else:
+                    for ci in L: dc(ws, row, ci, "", BLANK)
+                if i < len(its_r):
+                    it = its_r[i]; m = monto_r(it); sub_r += m
+                    dc(ws, row, R[0], it["fecha"], fill_r, fmt="DD/MM/YYYY", align="center")
+                    dc(ws, row, R[1], m,           fill_r, fmt='#,##0.00',   align="right")
+                    dc(ws, row, R[2], label_r(it), fill_r)
+                    dc(ws, row, R[3], pol_r(it),   fill_r, align="center")
+                else:
+                    for ci in R: dc(ws, row, ci, "", BLANK)
+                row += 1
+            ws.cell(row=row, column=SEP, value="").border = brd
+            dc(ws, row, L[0], f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+            dc(ws, row, L[1], sub_l, TOT_F, fmt='#,##0.00', align="right", bold=True)
+            dc(ws, row, L[2], "", TOT_F)
+            dc(ws, row, R[0], f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+            dc(ws, row, R[1], sub_r, TOT_F, fmt='#,##0.00', align="right", bold=True)
+            dc(ws, row, R[2], "", TOT_F); dc(ws, row, R[3], "", TOT_F)
+            grand_l += sub_l; grand_r += sub_r; row += 1
+        ws.cell(row=row, column=SEP, value="").border = brd
+        dc(ws, row, L[0], "TOTAL", GRAND_F, bold=True, align="right")
+        dc(ws, row, L[1], grand_l, GRAND_F, fmt='#,##0.00', align="right", bold=True)
+        dc(ws, row, L[2], "", GRAND_F)
+        dc(ws, row, R[0], "TOTAL", GRAND_F, bold=True, align="right")
+        dc(ws, row, R[1], grand_r, GRAND_F, fmt='#,##0.00', align="right", bold=True)
+        dc(ws, row, R[2], "", GRAND_F); dc(ws, row, R[3], "", GRAND_F)
+        return row + 2
 
-        ws_dep.row_dimensions[r_idx].height = 18
-        _data_cell(ws_dep, r_idx, 1, _fmt_date(mov["fecha"]), fill, al_c)
-        _data_cell(ws_dep, r_idx, 2, mov["desc"],             fill, al_l)
-        _data_cell(ws_dep, r_idx, 3, dep,                     fill, al_r)
-        ws_dep.cell(r_idx, 3).number_format = '#,##0.00'
-        _data_cell(ws_dep, r_idx, 4, mov["sal"] or None,      fill, al_r)
-        ws_dep.cell(r_idx, 4).number_format = '#,##0.00'
-        _data_cell(ws_dep, r_idx, 5, est,                     fill, al_c)
-        if ma:
-            _data_cell(ws_dep, r_idx, 6, _fmt_date(ma["fecha"]),  fill, al_c)
-            _data_cell(ws_dep, r_idx, 7, ma["poliza"],            fill, al_c)
-            _data_cell(ws_dep, r_idx, 8, ma["concepto"],          fill, al_l)
-            _data_cell(ws_dep, r_idx, 9, ma["monto"],             fill, al_r)
-            ws_dep.cell(r_idx, 9).number_format = '#,##0.00'
-        else:
-            for c in range(6, 10):
-                _data_cell(ws_dep, r_idx, c, "", fill)
+    wb = Workbook()
+    ws1 = wb.active; ws1.title = "\U0001f4b0 Depósitos"; ws1.sheet_properties.tabColor = "1E3A8A"
+    write_conc_por_mes(ws1, res_dep, "dep", DEP_M)
 
-    # Solo en auxiliar (no conciliados del aux)
-    aux_no_match = [a for a in aux_cargo_list if not a["matched"]]
-    if aux_no_match:
-        r_solo = ws_dep.max_row + 2
-        ws_dep.cell(r_solo, 1).value = "⬇ Solo en Auxiliar (sin match en banco)"
-        ws_dep.cell(r_solo, 1).font = Font(bold=True, italic=True, color="FF0000")
-        for a in aux_no_match:
-            r_solo += 1
-            ws_dep.row_dimensions[r_solo].height = 18
-            _data_cell(ws_dep, r_solo, 1, "",                    fill_solo, al_c)
-            _data_cell(ws_dep, r_solo, 2, "(sin mov. en banco)", fill_solo, al_l)
-            _data_cell(ws_dep, r_solo, 3, "",                    fill_solo)
-            _data_cell(ws_dep, r_solo, 4, "",                    fill_solo)
-            _data_cell(ws_dep, r_solo, 5, "⚠ SOLO AUXILIAR",    fill_solo, al_c)
-            _data_cell(ws_dep, r_solo, 6, _fmt_date(a["fecha"]), fill_solo, al_c)
-            _data_cell(ws_dep, r_solo, 7, a["poliza"],           fill_solo, al_c)
-            _data_cell(ws_dep, r_solo, 8, a["concepto"],         fill_solo, al_l)
-            _data_cell(ws_dep, r_solo, 9, a["monto"],            fill_solo, al_r)
-            ws_dep.cell(r_solo, 9).number_format = '#,##0.00'
+    ws2 = wb.create_sheet("\U0001f4b3 Cargos"); ws2.sheet_properties.tabColor = "BE185D"
+    write_conc_por_mes(ws2, res_ret, "ret", RET_M)
 
-    # ── Hoja Retiros ──────────────────────────────────────────────────────────
-    ws_ret = wb.create_sheet("Retiros")
-    ws_ret.row_dimensions[1].height = 22
+    ws3 = wb.create_sheet("⚠ Sin conciliar"); ws3.sheet_properties.tabColor = "D97706"
+    for ci, w in {1: 13, 2: 15, 3: 52, 4: 2, 5: 13, 6: 15, 7: 50, 8: 10}.items():
+        ws3.column_dimensions[get_column_letter(ci)].width = w
+    row = 1
+    row = write_pair_by_month(
+        ws3, row,
+        sin_dep_banco, lambda x: x["dep"],   lambda x: x["desc"],    DEP_R, DEP_M, DEP_S,
+        "BANCO — DEPÓSITOS SIN CONCILIAR",
+        sin_dep_aux,   lambda x: x["monto"], lambda x: x["concepto"], lambda x: x.get("poliza", ""),
+        DEP_A, DEP_M, PatternFill("solid", fgColor="1E40AF"),
+        "AUXILIAR — CARGOS SIN CONCILIAR")
+    row = write_pair_by_month(
+        ws3, row,
+        sin_ret_banco, lambda x: x["ret"],   lambda x: x["desc"],    RET_R, RET_M, RET_S,
+        "BANCO — CARGOS SIN CONCILIAR",
+        sin_ret_aux,   lambda x: x["monto"], lambda x: x["concepto"], lambda x: x.get("poliza", ""),
+        RET_A, RET_M, PatternFill("solid", fgColor="831843"),
+        "AUXILIAR — ABONOS SIN CONCILIAR")
 
-    headers_ret = [
-        ("Fecha Banco",   12),
-        ("Descripción",   35),
-        ("Retiro",        13),
-        ("Saldo",         13),
-        ("Estatus",       16),
-        ("Fecha Aux",     12),
-        ("Póliza",        12),
-        ("Concepto Aux",  30),
-        ("Monto Aux",     13),
-    ]
-    for c_idx, (h, w) in enumerate(headers_ret, 1):
-        _hdr_cell(ws_ret, 1, c_idx, h, w)
-
-    conc_r = 0; no_conc_r = 0
-    mto_conc_r = 0.0; mto_no_r = 0.0
-
-    for r_idx, mov in enumerate(retiros, 2):
-        ret_v = mov["ret"]
-        if ret_v <= 0:
-            continue
-        ma = mov.get("match_aux")
-        if ma:
-            fill = fill_conc_ret; est = "✅ CONCILIADO"; conc_r += 1; mto_conc_r += ret_v
-        else:
-            fill = fill_no_conc;  est = "❌ NO CONCILIADO"; no_conc_r += 1; mto_no_r += ret_v
-
-        ws_ret.row_dimensions[r_idx].height = 18
-        _data_cell(ws_ret, r_idx, 1, _fmt_date(mov["fecha"]), fill, al_c)
-        _data_cell(ws_ret, r_idx, 2, mov["desc"],             fill, al_l)
-        _data_cell(ws_ret, r_idx, 3, ret_v,                   fill, al_r)
-        ws_ret.cell(r_idx, 3).number_format = '#,##0.00'
-        _data_cell(ws_ret, r_idx, 4, mov["sal"] or None,      fill, al_r)
-        ws_ret.cell(r_idx, 4).number_format = '#,##0.00'
-        _data_cell(ws_ret, r_idx, 5, est,                     fill, al_c)
-        if ma:
-            _data_cell(ws_ret, r_idx, 6, _fmt_date(ma["fecha"]),  fill, al_c)
-            _data_cell(ws_ret, r_idx, 7, ma["poliza"],            fill, al_c)
-            _data_cell(ws_ret, r_idx, 8, ma["concepto"],          fill, al_l)
-            _data_cell(ws_ret, r_idx, 9, ma["monto"],             fill, al_r)
-            ws_ret.cell(r_idx, 9).number_format = '#,##0.00'
-        else:
-            for c in range(6, 10):
-                _data_cell(ws_ret, r_idx, c, "", fill)
-
-    # Solo en auxiliar (abonos sin match)
-    aux_abono_no_match = [a for a in aux_abono_list if not a["matched"]]
-    if aux_abono_no_match:
-        r_solo = ws_ret.max_row + 2
-        ws_ret.cell(r_solo, 1).value = "⬇ Solo en Auxiliar — Abonos (sin match en banco)"
-        ws_ret.cell(r_solo, 1).font = Font(bold=True, italic=True, color="FF0000")
-        for a in aux_abono_no_match:
-            r_solo += 1
-            ws_ret.row_dimensions[r_solo].height = 18
-            _data_cell(ws_ret, r_solo, 1, "",                    fill_solo, al_c)
-            _data_cell(ws_ret, r_solo, 2, "(sin mov. en banco)", fill_solo, al_l)
-            _data_cell(ws_ret, r_solo, 3, "",                    fill_solo)
-            _data_cell(ws_ret, r_solo, 4, "",                    fill_solo)
-            _data_cell(ws_ret, r_solo, 5, "⚠ SOLO AUXILIAR",    fill_solo, al_c)
-            _data_cell(ws_ret, r_solo, 6, _fmt_date(a["fecha"]), fill_solo, al_c)
-            _data_cell(ws_ret, r_solo, 7, a["poliza"],           fill_solo, al_c)
-            _data_cell(ws_ret, r_solo, 8, a["concepto"],         fill_solo, al_l)
-            _data_cell(ws_ret, r_solo, 9, a["monto"],            fill_solo, al_r)
-            ws_ret.cell(r_solo, 9).number_format = '#,##0.00'
-
-    # ── Hoja Resumen ──────────────────────────────────────────────────────────
-    ws_res = wb.create_sheet("Resumen")
-    ws_res.column_dimensions["A"].width = 32
-    ws_res.column_dimensions["B"].width = 18
-    ws_res.column_dimensions["C"].width = 18
-
-    def _res_hdr(row, text):
-        c = ws_res.cell(row=row, column=1, value=text)
-        c.fill = fill_hdr; c.font = font_hdr
-        ws_res.merge_cells(start_row=row, start_column=1, end_row=row, end_column=3)
-        c.alignment = al_c; c.border = bord
-        ws_res.row_dimensions[row].height = 20
-
-    def _res_row(row, label, cant, monto, fill=None):
-        for col, val, al in [(1, label, al_l), (2, cant, al_c), (3, monto, al_r)]:
-            c = ws_res.cell(row=row, column=col, value=val)
-            if fill: c.fill = fill
-            c.alignment = al; c.border = bord
-        ws_res.cell(row, 3).number_format = '#,##0.00'
-        ws_res.row_dimensions[row].height = 18
-
-    r = 1
-    _res_hdr(r, "DEPÓSITOS"); r += 1
-    _res_row(r, "Conciliados",     conc,   mto_conc,  fill_conc_dep); r += 1
-    _res_row(r, "No conciliados",  no_conc, mto_no,   fill_no_conc);  r += 1
-    total_dep_cnt = conc + no_conc
-    total_dep_mto = mto_conc + mto_no
-    c_tot = ws_res.cell(r, 1, "TOTAL DEPÓSITOS"); c_tot.fill = fill_tot; c_tot.font = font_tot; c_tot.border = bord; c_tot.alignment = al_l
-    c_tot2 = ws_res.cell(r, 2, total_dep_cnt);    c_tot2.fill = fill_tot; c_tot2.font = font_tot; c_tot2.border = bord; c_tot2.alignment = al_c
-    c_tot3 = ws_res.cell(r, 3, total_dep_mto);    c_tot3.fill = fill_tot; c_tot3.font = font_tot; c_tot3.border = bord; c_tot3.alignment = al_r; c_tot3.number_format = '#,##0.00'
-    ws_res.row_dimensions[r].height = 20; r += 2
-
-    _res_hdr(r, "RETIROS"); r += 1
-    _res_row(r, "Conciliados",     conc_r,    mto_conc_r, fill_conc_ret); r += 1
-    _res_row(r, "No conciliados",  no_conc_r, mto_no_r,   fill_no_conc);  r += 1
-    total_ret_cnt = conc_r + no_conc_r
-    total_ret_mto = mto_conc_r + mto_no_r
-    c_tot = ws_res.cell(r, 1, "TOTAL RETIROS");   c_tot.fill = fill_tot; c_tot.font = font_tot; c_tot.border = bord; c_tot.alignment = al_l
-    c_tot2 = ws_res.cell(r, 2, total_ret_cnt);    c_tot2.fill = fill_tot; c_tot2.font = font_tot; c_tot2.border = bord; c_tot2.alignment = al_c
-    c_tot3 = ws_res.cell(r, 3, total_ret_mto);    c_tot3.fill = fill_tot; c_tot3.font = font_tot; c_tot3.border = bord; c_tot3.alignment = al_r; c_tot3.number_format = '#,##0.00'
-    ws_res.row_dimensions[r].height = 20; r += 2
-
-    # Leyenda
-    _res_hdr(r, "LEYENDA DE COLORES"); r += 1
-    for label, fill in [
-        ("Verde  — Depósito conciliado",       fill_conc_dep),
-        ("Azul   — Retiro conciliado",          fill_conc_ret),
-        ("Rojo   — No conciliado",              fill_no_conc),
-        ("Amarillo — Solo en auxiliar / banco", fill_solo),
-    ]:
-        for col in range(1, 4):
-            c = ws_res.cell(r, col, label if col == 1 else "")
-            c.fill = fill; c.border = bord; c.alignment = al_l
-        ws_res.row_dimensions[r].height = 18; r += 1
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf.getvalue()
 
 
@@ -514,17 +417,21 @@ with col_aux:
 
 # ── Leyenda ───────────────────────────────────────────────────────────────────
 st.markdown("""
-<div style="margin:0.5rem 0 1rem; font-size:0.85rem;">
-  <span class="leg" style="background:#C6EFCE;"></span>Depósito conciliado &nbsp;
-  <span class="leg" style="background:#DDEEFF;"></span>Retiro conciliado &nbsp;
-  <span class="leg" style="background:#FFC7CE;"></span>No conciliado &nbsp;
-  <span class="leg" style="background:#FFEB9C;"></span>Solo en auxiliar
+<div style="margin:0.5rem 0 1rem; font-size:0.85rem; display:flex; gap:1rem; flex-wrap:wrap;">
+  <span style="background:#D1FAE5; padding:2px 8px; border-radius:4px;">✅ Exacto</span>
+  <span style="background:#FCE4D6; padding:2px 8px; border-radius:4px;">🔀 Combinado</span>
+  <span style="background:#DBEAFE; padding:2px 8px; border-radius:4px;">⚠ Sin conciliar (banco)</span>
+  <span style="background:#BFDBFE; padding:2px 8px; border-radius:4px;">⚠ Sin conciliar (aux)</span>
 </div>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+> **Algoritmo:** Paso 1 — coincidencia exacta ±$0.05 · Paso 2 — combinaciones N-a-1 ±$2.00
+> Ambos pasos exigen que banco y auxiliar estén **a ±3 días de distancia**.
+""")
+
 # ── Botón generar ─────────────────────────────────────────────────────────────
 st.subheader("2️⃣  Generar conciliación")
-
 col_btn, col_dl = st.columns([1, 2])
 with col_btn:
     can_gen = bool(banco_files) and aux_file is not None
@@ -544,103 +451,103 @@ if generar:
     with st.spinner("Leyendo archivos..."):
         try:
             from openpyxl import load_workbook
-
-            # Banco — combinar todos los archivos cargados
-            movs_banco = []
-            archivos_leidos = []
+            movs_banco = []; archivos_leidos = []
             for bf in banco_files:
-                wb_banco = load_workbook(
-                    filename=io.BytesIO(bf.read()),
-                    read_only=True, data_only=True,
-                )
-                movs_bf = _read_banco(wb_banco)
-                wb_banco.close()
+                wb_b = load_workbook(filename=io.BytesIO(bf.read()), read_only=True, data_only=True)
+                movs_bf = _read_banco(wb_b); wb_b.close()
                 movs_banco.extend(movs_bf)
                 archivos_leidos.append(f"{bf.name} ({len(movs_bf)} movimientos)")
-
-            # Ordenar por fecha
             movs_banco.sort(key=lambda m: m["fecha"])
 
-            # Auxiliar
-            wb_aux = load_workbook(
-                filename=io.BytesIO(aux_file.read()),
-                read_only=True, data_only=True,
-            )
-            aux_cargo_raw, aux_abono_raw = _read_auxiliar(wb_aux)
-            wb_aux.close()
-
+            wb_aux = load_workbook(filename=io.BytesIO(aux_file.read()), read_only=True, data_only=True)
+            aux_cargo_raw, aux_abono_raw = _read_auxiliar(wb_aux); wb_aux.close()
         except Exception as e:
             st.error(f"❌ Error al leer archivos: {e}")
-            with st.expander("Ver detalle"):
-                st.code(traceback.format_exc())
+            with st.expander("Ver detalle"): st.code(traceback.format_exc())
             st.stop()
 
-    with st.spinner("Conciliando..."):
+    with st.spinner("Conciliando (paso 1: exacto · paso 2: combinaciones)..."):
         try:
-            depositos = [m for m in movs_banco if m["dep"] > 0]
-            retiros   = [m for m in movs_banco if m["ret"] > 0]
+            if movs_banco:
+                f_min = min(m["fecha"] for m in movs_banco)
+                f_max = max(m["fecha"] for m in movs_banco)
+                f_min = date(f_min.year, f_min.month, 1)
+                f_max = date(f_max.year, f_max.month, monthrange(f_max.year, f_max.month)[1])
+                aux_cargo_rng = [a for a in aux_cargo_raw if f_min <= a["fecha"] <= f_max]
+                aux_abono_rng = [a for a in aux_abono_raw if f_min <= a["fecha"] <= f_max]
+            else:
+                aux_cargo_rng = []; aux_abono_rng = []
 
-            depositos, aux_cargo_list = _match(depositos, aux_cargo_raw, "dep")
-            retiros,   aux_abono_list = _match(retiros,   aux_abono_raw, "ret")
+            deps_banco = [m for m in movs_banco if m["dep"] > 0]
+            rets_banco = [m for m in movs_banco if m["ret"] > 0]
+            meses_ord  = sorted(set(m["fecha"].month for m in movs_banco))
+
+            res_dep, sin_dep_banco, sin_dep_aux = conciliar(deps_banco, aux_cargo_rng, "dep")
+            res_ret, sin_ret_banco, sin_ret_aux = conciliar(rets_banco, aux_abono_rng, "ret")
 
         except Exception as e:
             st.error(f"❌ Error en conciliación: {e}")
-            with st.expander("Ver detalle"):
-                st.code(traceback.format_exc())
+            with st.expander("Ver detalle"): st.code(traceback.format_exc())
             st.stop()
 
     with st.spinner("Generando Excel..."):
         try:
-            excel_bytes = _generar_excel(depositos, retiros, aux_cargo_list, aux_abono_list)
+            excel_bytes = _generar_excel(
+                res_dep, sin_dep_banco, sin_dep_aux,
+                res_ret, sin_ret_banco, sin_ret_aux,
+                meses_ord)
             st.session_state.cba_resultado_bytes = excel_bytes
 
-            # Resumen para mostrar en UI
-            conc_d  = sum(1 for m in depositos if m.get("match_aux"))
-            no_d    = sum(1 for m in depositos if not m.get("match_aux"))
-            conc_r  = sum(1 for m in retiros   if m.get("match_aux"))
-            no_r    = sum(1 for m in retiros   if not m.get("match_aux"))
+            exactos_dep = sum(1 for r in res_dep if r["tipo"].startswith("✅"))
+            combo_dep   = len(res_dep) - exactos_dep
+            exactos_ret = sum(1 for r in res_ret if r["tipo"].startswith("✅"))
+            combo_ret   = len(res_ret) - exactos_ret
+
             st.session_state.cba_resumen = {
-                "conc_d": conc_d, "no_d": no_d,
-                "conc_r": conc_r, "no_r": no_r,
-                "total_d": len(depositos), "total_r": len(retiros),
+                "conc_dep": len(res_dep),   "total_dep": len(deps_banco),
+                "exactos_dep": exactos_dep, "combo_dep": combo_dep,
+                "sin_dep_b": len(sin_dep_banco), "sin_dep_a": len(sin_dep_aux),
+                "conc_ret": len(res_ret),   "total_ret": len(rets_banco),
+                "exactos_ret": exactos_ret, "combo_ret": combo_ret,
+                "sin_ret_b": len(sin_ret_banco), "sin_ret_a": len(sin_ret_aux),
                 "n_banco": len(movs_banco),
-                "n_aux_cargo": len(aux_cargo_raw),
-                "n_aux_abono": len(aux_abono_raw),
                 "archivos_banco": archivos_leidos,
             }
         except Exception as e:
             st.error(f"❌ Error generando Excel: {e}")
-            with st.expander("Ver detalle"):
-                st.code(traceback.format_exc())
+            with st.expander("Ver detalle"): st.code(traceback.format_exc())
             st.stop()
 
 # ── Resultado ─────────────────────────────────────────────────────────────────
 if st.session_state.cba_resultado_bytes and st.session_state.cba_resumen:
     res = st.session_state.cba_resumen
-
     st.success("✅ Conciliación completada")
 
-    # Archivos del banco procesados
     if res.get("archivos_banco"):
         n = len(res["archivos_banco"])
-        with st.expander(f"📂 {n} archivo{'s' if n > 1 else ''} del banco combinado{'s' if n > 1 else ''}", expanded=n > 1):
-            for a in res["archivos_banco"]:
-                st.markdown(f"- {a}")
+        with st.expander(f"📂 {n} archivo{'s' if n > 1 else ''} del banco", expanded=n > 1):
+            for a in res["archivos_banco"]: st.markdown(f"- {a}")
 
-    # Métricas
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.markdown(f'<div class="cba-stat"><div class="val">{res["n_banco"]}</div><div class="lbl">Movimientos banco</div></div>', unsafe_allow_html=True)
-    with m2:
-        st.markdown(f'<div class="cba-stat"><div class="val" style="color:#166534">{res["conc_d"]}/{res["total_d"]}</div><div class="lbl">Depósitos conciliados</div></div>', unsafe_allow_html=True)
-    with m3:
-        st.markdown(f'<div class="cba-stat"><div class="val" style="color:#1E40AF">{res["conc_r"]}/{res["total_r"]}</div><div class="lbl">Retiros conciliados</div></div>', unsafe_allow_html=True)
-    with m4:
-        no_total = res["no_d"] + res["no_r"]
-        color_no = "#991B1B" if no_total > 0 else "#166534"
-        st.markdown(f'<div class="cba-stat"><div class="val" style="color:{color_no}">{no_total}</div><div class="lbl">Sin conciliar</div></div>', unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    pct_dep = res["conc_dep"] / res["total_dep"] * 100 if res["total_dep"] else 0
+    pct_ret = res["conc_ret"] / res["total_ret"] * 100 if res["total_ret"] else 0
+    sin_tot = res["sin_dep_b"] + res["sin_ret_b"]
 
-    # Descarga
+    with c1:
+        st.metric("Movimientos banco", res["n_banco"])
+    with c2:
+        st.metric("Depósitos conciliados",
+                  f"{res['conc_dep']}/{res['total_dep']}",
+                  delta=f"{pct_dep:.1f}% · {res['exactos_dep']} exactos + {res['combo_dep']} combo")
+    with c3:
+        st.metric("Cargos conciliados",
+                  f"{res['conc_ret']}/{res['total_ret']}",
+                  delta=f"{pct_ret:.1f}% · {res['exactos_ret']} exactos + {res['combo_ret']} combo")
+    with c4:
+        st.metric("Sin conciliar (banco)", sin_tot,
+                  delta=f"Dep: {res['sin_dep_b']} · Cargos: {res['sin_ret_b']}",
+                  delta_color="inverse")
+
     st.download_button(
         label="⬇️  Descargar Excel de conciliación",
         data=st.session_state.cba_resultado_bytes,
@@ -649,19 +556,20 @@ if st.session_state.cba_resultado_bytes and st.session_state.cba_resumen:
         type="primary",
         use_container_width=True,
     )
+    st.caption("3 hojas: 💰 Depósitos conciliados · 💳 Cargos conciliados · ⚠ Sin conciliar (lado a lado por mes)")
 
 else:
     st.markdown("""
-<div class="cba-card" style="text-align:center; padding: 3rem 2rem;">
+<div style="text-align:center; padding: 3rem 2rem; background:#F8FAFC; border-radius:12px; margin-top:1rem;">
   <div style="font-size:3rem; margin-bottom:1rem;">🔀</div>
   <h3 style="color:#1E3A8A; margin:0 0 .5rem;">Conciliación Banco vs Auxiliar</h3>
-  <p style="color:#64748B; max-width:400px; margin:0 auto;">
+  <p style="color:#64748B; max-width:480px; margin:0 auto;">
     Carga el Excel del banco y el auxiliar contable, luego presiona
     <strong>Generar conciliación</strong>. El resultado se descarga como Excel
-    con hojas de Depósitos, Retiros y Resumen.
+    con hojas de Depósitos conciliados, Cargos conciliados y Sin conciliar.
   </p>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("---")
-st.caption("Módulo Conciliación Banco vs Auxiliar · v1.1  ·  Tolerancia ±$0.05 · Concepto Aux = Desc. Póliza")
+st.caption("Módulo Conciliación Banco vs Auxiliar · v2.1  ·  Exacto ±$0.05 · Combo ±$2.00 · Fecha ±3 días")

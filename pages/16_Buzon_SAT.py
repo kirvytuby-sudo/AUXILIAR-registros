@@ -93,8 +93,13 @@ if not _check_auth():
 def _sb_client():
     try:
         from supabase import create_client
-        url  = _get_secret("SUPABASE_URL")
-        key  = _get_secret("SUPABASE_KEY")
+        # Intenta formato nested [supabase] (igual que página 12)
+        try:
+            url = st.secrets["supabase"]["url"]
+            key = st.secrets["supabase"]["key"]
+        except Exception:
+            url = _get_secret("SUPABASE_URL")
+            key = _get_secret("SUPABASE_KEY")
         if url and key:
             return create_client(url, key)
     except Exception:

@@ -29,6 +29,7 @@ pg = st.navigation(
             st.Page("pages/6_Reconciliacion.py",              title="Reconciliación",              icon="📑"),
             st.Page("pages/12_Constancia_y_Opinion_SAT.py",   title="Constancia y Opinión SAT",    icon="🏛️"),
             st.Page("pages/15_Opinion_IMSS.py",               title="Opinión IMSS",                icon="🏥"),
+            st.Page("pages/16_Buzon_SAT.py",                 title="Buzón SAT",                   icon="🗂"),
         ],
     },
     position="sidebar",

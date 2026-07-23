@@ -9,6 +9,7 @@ import difflib
 import io
 import itertools
 import os
+import re
 import traceback
 from calendar import monthrange
 from collections import defaultdict
@@ -27,6 +28,23 @@ _theme.aplicar_header("🔀 Conciliación Banco vs Auxiliar", "Compara movimient
 
 MESES = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
          7:"JULIO",8:"AGOSTO",9:"SEPTIEMBRE",10:"OCTUBRE",11:"NOVIEMBRE",12:"DICIEMBRE"}
+
+# ── Detección de comisiones bancarias ─────────────────────────────────────────
+PAT_COM = [
+    r'\bCOMISION\b', r'\bCOMISIÓN\b',
+    r'\bIVA COM\b',
+    r'COM TRANSACCIONE',
+    r'COM SERV BBVA',
+    r'EMISION LIBRAMIE',
+    r'COBRO INTERESES',
+    r'\bMANTENIMIENTO\b', r'\bCUOTA ANUAL\b',
+    r'\bCARGO POR SERVICIO\b', r'\bSERVICIO DIGITAL\b',
+    r'SERV BANCA INTERNET',
+]
+PAT_MORA = [r'MORA SPEI', r'COMPENSACION POR RETRASO', r'COMP SPEI']
+
+def is_comision(d): return any(re.search(p, str(d).upper()) for p in PAT_COM)
+def is_mora(d):     return any(re.search(p, str(d).upper()) for p in PAT_MORA)
 
 # ── Utilidades ────────────────────────────────────────────────────────────────
 
@@ -270,7 +288,8 @@ def analizar_near_misses(sin_banco, sin_aux, monto_key, dias_act, tol_text_act, 
 # ── Generación de Excel ───────────────────────────────────────────────────────
 
 def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
-                   res_ret, sin_ret_banco, sin_ret_aux, meses_ord):
+                   res_ret, sin_ret_banco, sin_ret_aux, meses_ord,
+                   com_entries=None, mora_entries=None):
     from openpyxl import Workbook
     from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
@@ -443,6 +462,107 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
         dc(ws, row, R[2], "", GRAND_F); dc(ws, row, R[3], "", GRAND_F)
         return row + 2
 
+    # ── Fills para hoja de comisiones ─────────────────────────────────────────
+    COM_H_F  = PatternFill("solid", fgColor="1E3A8A")
+    COM_M_F  = PatternFill("solid", fgColor="1E40AF")
+    COM_R_F  = PatternFill("solid", fgColor="FEE2E2")
+    MORA_H_F = PatternFill("solid", fgColor="7C3AED")
+    MORA_M_F = PatternFill("solid", fgColor="6D28D9")
+    MORA_R_F = PatternFill("solid", fgColor="EDE9FE")
+    COM_COLS = ["FECHA", "MONTO", "DESCRIPCIÓN BANCO", "TIPO"]
+
+    def write_comisiones_sheet(ws, coms, moras):
+        ws.sheet_properties.tabColor = "7C3AED"
+        for ci, w in enumerate([13, 15, 60, 12], 1):
+            ws.column_dimensions[get_column_letter(ci)].width = w
+        ws.freeze_panes = "A2"
+        row = 1
+
+        # ── Sección 1: COMISIONES ──────────────────────────────────────────
+        ws.row_dimensions[row].height = 26
+        cell = ws.cell(row=row, column=1, value="🏦 COMISIONES BANCARIAS")
+        cell.fill = COM_H_F; cell.font = Font(bold=True, color="FFFFFF", size=12)
+        cell.alignment = Alignment(vertical="center"); cell.border = brd
+        for ci in range(2, 5):
+            c = ws.cell(row=row, column=ci, value="")
+            c.fill = COM_H_F; c.border = brd
+        row += 1
+
+        por_mes_com = defaultdict(list)
+        for m in (coms or []):
+            por_mes_com[m["fecha"].month].append(m)
+        grand_com = 0
+        for mes in meses_ord:
+            its = sorted(por_mes_com.get(mes, []), key=lambda x: x["fecha"])
+            if not its: continue
+            ws.row_dimensions[row].height = 20
+            for ci in range(1, 5):
+                c = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == 1 else "")
+                c.fill = COM_M_F; c.font = Font(bold=True, color="FFFFFF", size=10)
+                c.alignment = Alignment(vertical="center"); c.border = brd
+            row += 1
+            for ci, h in enumerate(COM_COLS, 1): hdr(ws, row, ci, h, COM_M_F)
+            row += 1; sub = 0
+            for m in its:
+                ws.row_dimensions[row].height = 16
+                dc(ws, row, 1, m["fecha"], COM_R_F, fmt="DD/MM/YYYY", align="center")
+                dc(ws, row, 2, m["ret"],   COM_R_F, fmt='#,##0.00',   align="right")
+                dc(ws, row, 3, m["desc"],  COM_R_F)
+                dc(ws, row, 4, "CARGO",    COM_R_F, align="center")
+                sub += m["ret"]; row += 1
+            for ci in range(1, 5): dc(ws, row, ci, "", TOT_F)
+            dc(ws, row, 1, f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+            dc(ws, row, 2, sub, TOT_F, fmt='#,##0.00', align="right", bold=True)
+            grand_com += sub; row += 1
+
+        for ci in range(1, 5): dc(ws, row, ci, "", GRAND_F)
+        dc(ws, row, 1, "TOTAL COMISIONES", GRAND_F, bold=True, align="right")
+        dc(ws, row, 2, grand_com, GRAND_F, fmt='#,##0.00', align="right", bold=True)
+        row += 2
+
+        # ── Sección 2: MORA / COMP SPEI ───────────────────────────────────
+        if not moras: return
+        ws.row_dimensions[row].height = 26
+        cell = ws.cell(row=row, column=1, value="⚡ MORA / COMPENSACIÓN SPEI")
+        cell.fill = MORA_H_F; cell.font = Font(bold=True, color="FFFFFF", size=12)
+        cell.alignment = Alignment(vertical="center"); cell.border = brd
+        for ci in range(2, 5):
+            c = ws.cell(row=row, column=ci, value="")
+            c.fill = MORA_H_F; c.border = brd
+        row += 1
+
+        por_mes_mora = defaultdict(list)
+        for m in moras:
+            por_mes_mora[m["fecha"].month].append(m)
+        grand_mora = 0
+        for mes in meses_ord:
+            its = sorted(por_mes_mora.get(mes, []), key=lambda x: x["fecha"])
+            if not its: continue
+            ws.row_dimensions[row].height = 20
+            for ci in range(1, 5):
+                c = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == 1 else "")
+                c.fill = MORA_M_F; c.font = Font(bold=True, color="FFFFFF", size=10)
+                c.alignment = Alignment(vertical="center"); c.border = brd
+            row += 1
+            for ci, h in enumerate(COM_COLS, 1): hdr(ws, row, ci, h, MORA_M_F)
+            row += 1; sub = 0
+            for m in its:
+                ws.row_dimensions[row].height = 16
+                dc(ws, row, 1, m["fecha"], MORA_R_F, fmt="DD/MM/YYYY", align="center")
+                dc(ws, row, 2, m["dep"],   MORA_R_F, fmt='#,##0.00',   align="right")
+                dc(ws, row, 3, m["desc"],  MORA_R_F)
+                dc(ws, row, 4, "ABONO",    MORA_R_F, align="center")
+                sub += m["dep"]; row += 1
+            for ci in range(1, 5): dc(ws, row, ci, "", TOT_F)
+            dc(ws, row, 1, f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+            dc(ws, row, 2, sub, TOT_F, fmt='#,##0.00', align="right", bold=True)
+            grand_mora += sub; row += 1
+
+        for ci in range(1, 5): dc(ws, row, ci, "", GRAND_F)
+        dc(ws, row, 1, "TOTAL MORA", GRAND_F, bold=True, align="right")
+        dc(ws, row, 2, grand_mora, GRAND_F, fmt='#,##0.00', align="right", bold=True)
+
+    # ── Generar hojas ──────────────────────────────────────────────────────────
     wb = Workbook()
     ws1 = wb.active; ws1.title = "\U0001f4b0 Depósitos"; ws1.sheet_properties.tabColor = "1E3A8A"
     write_conc_por_mes(ws1, res_dep, "dep", DEP_M)
@@ -468,6 +588,10 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
         sin_ret_aux,   lambda x: x["monto"], lambda x: x["concepto"], lambda x: x.get("poliza", ""),
         RET_A, RET_M, PatternFill("solid", fgColor="831843"),
         "AUXILIAR — ABONOS SIN CONCILIAR")
+
+    if com_entries or mora_entries:
+        ws4 = wb.create_sheet("🏦 Comisiones Bancarias")
+        write_comisiones_sheet(ws4, com_entries or [], mora_entries or [])
 
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf.getvalue()
@@ -592,9 +716,13 @@ if generar:
             else:
                 aux_cargo_rng = []; aux_abono_rng = []
 
-            deps_banco = [m for m in movs_banco if m["dep"] > 0]
-            rets_banco = [m for m in movs_banco if m["ret"] > 0]
-            meses_ord  = sorted(set(m["fecha"].month for m in movs_banco))
+            _deps_all    = [m for m in movs_banco if m["dep"] > 0]
+            _rets_all    = [m for m in movs_banco if m["ret"] > 0]
+            com_entries  = [m for m in _rets_all if is_comision(m["desc"])]
+            mora_entries = [m for m in _deps_all if is_mora(m["desc"])]
+            deps_banco   = [m for m in _deps_all if not is_mora(m["desc"])]
+            rets_banco   = [m for m in _rets_all if not is_comision(m["desc"])]
+            meses_ord    = sorted(set(m["fecha"].month for m in movs_banco))
 
             params = dict(tol1=p_tol1, tol_n=p_tol_n, dias=p_dias,
                           tol_text=p_tol_text, sim_min=p_sim_min, max_combo=p_max_combo,
@@ -626,7 +754,8 @@ if generar:
             excel_bytes = _generar_excel(
                 res_dep, sin_dep_banco, sin_dep_aux,
                 res_ret, sin_ret_banco, sin_ret_aux,
-                meses_ord)
+                meses_ord,
+                com_entries=com_entries, mora_entries=mora_entries)
             st.session_state.cba_resultado_bytes = excel_bytes
 
             exactos_dep = sum(1 for r in res_dep if r["tipo"].startswith("✅"))
@@ -646,6 +775,7 @@ if generar:
                 "n_banco": len(movs_banco),
                 "archivos_banco": archivos_leidos,
                 "near_dep": near_dep, "near_ret": near_ret,
+                "n_com": len(com_entries), "n_mora": len(mora_entries),
             }
         except Exception as e:
             st.error(f"❌ Error generando Excel: {e}")
@@ -690,7 +820,11 @@ if st.session_state.cba_resultado_bytes and st.session_state.cba_resumen:
         type="primary",
         use_container_width=True,
     )
-    st.caption("3 hojas: 💰 Depósitos · 💳 Cargos · ⚠ Sin conciliar (lado a lado por mes)")
+    _n_com = res.get("n_com", 0); _n_mora = res.get("n_mora", 0)
+    _cap = "4 hojas: 💰 Depósitos · 💳 Cargos · ⚠ Sin conciliar · 🏦 Comisiones Bancarias"
+    if _n_com or _n_mora:
+        _cap += f" ({_n_com} comisiones, {_n_mora} mora/SPEI separados)"
+    st.caption(_cap)
 
     # ── Near-miss analysis ────────────────────────────────────────────────────
     near_all = res.get("near_dep", []) + res.get("near_ret", [])

@@ -639,8 +639,12 @@ def _parsear_inbursa(texto):
 
 
 def _parsear_amex(texto):
-    """Parser American Express."""
-    # Acepta meses completos (mayo) y abreviados (may) — Amex usa "4 deMay"
+    """Parser American Express.
+    Acepta formatos de fecha con y sin partícula 'de':
+      '30 ene 2024 DESC -$33.10'   (AMEX moderno)
+      '30 de ene 2024 DESC $1,029.60'  (AMEX clásico)
+    Signo negativo en monto → abono (dep); positivo → cargo (ret).
+    """
     MESES = {
         "enero":1,"ene":1,"febrero":2,"feb":2,"marzo":3,"mar":3,
         "abril":4,"abr":4,"mayo":5,"may":5,"junio":6,"jun":6,
@@ -650,8 +654,10 @@ def _parsear_amex(texto):
     }
     year_m = re.search(r"\b(20\d{2})\b", texto)
     anio = int(year_m.group(1)) if year_m else date.today().year
-    pat_fecha = re.compile(r"^(\d{1,2})\s+de\s*([A-Za-záéíóúÁÉÍÓÚ]+)\s+(.*?)$", re.IGNORECASE)
-    pat_monto = re.compile(r"([\d,]+\.\d{2})")
+    # (?:de\s+)? hace opcional la partícula "de"
+    pat_fecha = re.compile(r"^(\d{1,2})\s+(?:de\s+)?([A-Za-záéíóúÁÉÍÓÚ]+)\s+(.*?)$", re.IGNORECASE)
+    # Captura montos con posible signo negativo: -$1,234.56 o $1,234.56 o 1,234.56
+    pat_monto = re.compile(r"-?\$?[\d,]+\.\d{2}")
     pat_corte = re.compile(
         r"Total de las|Estado de Cuenta P[aá]g|Este no es un|Resumen de|Abreviaci[oó]n|N[uú]mero de Cuenta", re.I)
     movimientos = []; lineas = texto.splitlines(); i = 0
@@ -669,16 +675,113 @@ def _parsear_amex(texto):
             if nl: bloque_lines.append(nl); cont += 1
             j += 1
         bloque = " ".join(bloque_lines)
-        montos = [float(x.replace(",","")) for x in pat_monto.findall(bloque)]
-        if not montos: i += 1; continue
-        monto = montos[0]
-        is_cr = bool(re.search(r"\bCR\b", bloque)) or "PAGO RECIBIDO" in bloque.upper()
+        montos_raw = pat_monto.findall(bloque)
+        if not montos_raw: i += 1; continue
+        monto_str = montos_raw[0]
+        es_negativo = monto_str.startswith("-")
+        monto = float(monto_str.replace(",","").replace("$","").replace("-",""))
+        is_cr = es_negativo or bool(re.search(r"\bCR\b", bloque)) or "PAGO RECIBIDO" in bloque.upper()
         dep = monto if is_cr else 0.0; ret = 0.0 if is_cr else monto
-        desc = pat_monto.sub("", desc_ini).strip()
-        desc = re.sub(r"\bCR\b", "", desc).strip()
+        # Limpiar descripción: quitar año (puede estar en group(3)), montos, "CR"
+        desc = re.sub(r"\b20\d{2}\b", "", desc_ini)
+        desc = pat_monto.sub("", desc)
+        desc = re.sub(r"\bCR\b", "", desc)
         desc = re.sub(r"\s+", " ", desc).strip() or "—"
         movimientos.append((fecha, desc, dep, ret))
         i += 1
+    return movimientos
+
+
+def _parsear_bansi(texto, ruta=None, pdfplumber_mod=None):
+    """Parser BANSI S.A. — estados de cuenta.
+    Formato tabla: FECHA | REFERENCIA | CONCEPTO | DEPÓSITOS Y ABONOS |
+                   RETIROS Y CARGOS | TASA BRUTA ANUAL | RENDIMIENTO | SALDO
+    Fecha: DD/MM/YYYY. Detección: 'BANSI' o RFC 'BAN950525MD6' en texto.
+    """
+    # ── Extracción por tabla (pdfplumber) ─────────────────────────────────────
+    if ruta and pdfplumber_mod:
+        try:
+            movimientos = []
+            with pdfplumber_mod.open(ruta) as pdf:
+                for page in pdf.pages:
+                    tbls = page.extract_tables() or []
+                    for tbl in tbls:
+                        if not tbl or len(tbl) < 2: continue
+                        # Buscar fila de encabezado que contenga FECHA
+                        hdr_idx = None
+                        for ri, row in enumerate(tbl):
+                            vals = [str(c or "").upper().strip() for c in row]
+                            if any("FECHA" in v for v in vals):
+                                hdr_idx = ri; break
+                        if hdr_idx is None: continue
+                        hdr = [str(c or "").upper().strip() for c in tbl[hdr_idx]]
+                        col_f = next((i for i,h in enumerate(hdr) if "FECHA" in h), None)
+                        col_c = next((i for i,h in enumerate(hdr) if "CONCEPTO" in h), None)
+                        if col_c is None:
+                            col_c = next((i for i,h in enumerate(hdr) if "REFERENCIA" in h), None)
+                        col_d = next((i for i,h in enumerate(hdr)
+                                      if ("DEP" in h or "ABONO" in h) and "RETIRO" not in h), None)
+                        col_r = next((i for i,h in enumerate(hdr)
+                                      if ("RETIRO" in h or "CARGO" in h) and "ABONO" not in h), None)
+                        col_s = next((i for i,h in enumerate(hdr) if "SALDO" in h), None)
+                        if col_f is None: continue
+                        n = len(hdr)
+                        if col_s is None and n >= 1: col_s = n - 1
+                        for fila in tbl[hdr_idx + 1:]:
+                            if not fila: continue
+                            try:
+                                fecha_raw = str(fila[col_f] or "").strip() if col_f < len(fila) else ""
+                                if not re.match(r"\d{2}/\d{2}/\d{4}", fecha_raw): continue
+                                fecha = datetime.strptime(fecha_raw, "%d/%m/%Y").date()
+                                desc = str(fila[col_c] or "").strip() if col_c is not None and col_c < len(fila) else "—"
+                                dep_raw = str(fila[col_d] or "").strip() if col_d is not None and col_d < len(fila) else ""
+                                ret_raw = str(fila[col_r] or "").strip() if col_r is not None and col_r < len(fila) else ""
+                                sal_raw = str(fila[col_s] or "").strip() if col_s is not None and col_s < len(fila) else ""
+                                dep = float(dep_raw.replace(",","")) if re.search(r"\d", dep_raw) else 0.0
+                                ret = float(ret_raw.replace(",","")) if re.search(r"\d", ret_raw) else 0.0
+                                sal = float(sal_raw.replace(",","")) if re.search(r"\d", sal_raw) else None
+                                if dep == 0.0 and ret == 0.0: continue
+                                if not desc or desc in ("None","—"): desc = "—"
+                                tup = (fecha, desc, dep, ret, sal) if sal is not None else (fecha, desc, dep, ret)
+                                movimientos.append(tup)
+                            except Exception: continue
+            if movimientos: return movimientos
+        except Exception: pass
+
+    # ── Fallback: texto ────────────────────────────────────────────────────────
+    pat_fecha = re.compile(r"^(\d{2}/\d{2}/\d{4})\s+(.+)")
+    pat_monto = re.compile(r"([\d,]+\.\d{2})")
+    dep_keys = ("ABONO","SPEI","DEPOSITO","DEPÓSITO","INTERESES","RENDIMIENTO","PAGO RECIBIDO")
+    ret_keys = ("RETIRO","CARGO","COMISION","COMISIÓN","TARIFA","IVA","RETENCION","RETENCIÓN","ISR","CHEQUE","CAMARA")
+    skip_hdr = ("TASA BRUTA","REFERENCIA","CONCEPTO","DEPÓSITOS","RETIROS")
+    movimientos = []; lineas = texto.splitlines(); i = 0
+    while i < len(lineas):
+        m = pat_fecha.match(lineas[i].strip())
+        if not m: i += 1; continue
+        try: fecha = datetime.strptime(m.group(1), "%d/%m/%Y").date()
+        except Exception: i += 1; continue
+        resto = m.group(2).strip()
+        j = i + 1
+        while j < len(lineas):
+            nl = lineas[j].strip()
+            if pat_fecha.match(nl): break
+            if nl and not any(kw in nl.upper() for kw in skip_hdr):
+                resto += " " + nl
+            j += 1
+        montos = [float(x.replace(",","")) for x in pat_monto.findall(resto)]
+        if not montos: i = j; continue
+        # Último número probable = saldo; penúltimo = monto del movimiento
+        sal = montos[-1] if len(montos) >= 2 else None
+        monto = montos[-2] if len(montos) >= 2 else montos[0]
+        cu = resto.upper()
+        if any(k in cu for k in dep_keys): dep, ret = monto, 0.0
+        elif any(k in cu for k in ret_keys): dep, ret = 0.0, monto
+        else: dep, ret = monto, 0.0
+        desc = pat_monto.sub("", resto)
+        desc = re.sub(r"\s+", " ", desc).strip() or "—"
+        tup = (fecha, desc, dep, ret, sal) if sal is not None else (fecha, desc, dep, ret)
+        movimientos.append(tup)
+        i = j
     return movimientos
 
 
@@ -1285,8 +1388,14 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
     if bk.startswith("Afirme"):
         movs = _parsear_afirme(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs
+    if bk.startswith("BANSI"):
+        movs = _parsear_bansi(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
+        if movs: return movs
 
     # ── Auto-detección ──────────────────────────────────────────────────────
+    if any(k in texto_total.upper() for k in ("BANSI", "BAN950525MD6")):
+        movs = _parsear_bansi(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
+        if movs: return movs
     BANORTE_PAT = re.compile(r"\d{2}-(?:ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)-\d{2}")
     if BANORTE_PAT.search(texto_total):
         movs = _parsear_banorte(texto_total)
@@ -1444,5 +1553,5 @@ BANCOS = [
     "BBVA D\u00e9bito", "BBVA Pyme", "BBVA Cash Management", "BBVA TDC", "BBVA Libret\u00f3n",
     "Banamex D\u00e9bito", "Banamex Empresarial",
     "Santander", "HSBC", "Scotiabank",
-    "Banregio", "Inbursa", "American Express", "Afirme",
+    "Banregio", "Inbursa", "American Express", "Afirme", "BANSI",
 ]

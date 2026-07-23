@@ -12,3 +12,4 @@ satcfdi>=26.7.2
 supabase>=2.3.0
 cryptography>=42.0.0
 weasyprint>=62.0
+playwright>=1.44.0

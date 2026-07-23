@@ -101,15 +101,66 @@ def _sb_client():
         pass
     return None
 
-def _cargar_empresas():
+def _sb_fernet():
+    """Fernet con la misma clave que usa Constancia y Opinión SAT (tabla 'empresas')."""
+    try:
+        from cryptography.fernet import Fernet
+        return Fernet(st.secrets["supabase"]["enc_key"].encode())
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=30)
+def _cargar_empresas_sat_docs(rfcs_ya_en_buzon: frozenset = frozenset()):
+    """Lee la tabla 'empresas' (Constancia y Opinión SAT) y devuelve empresas
+    en formato normalizado (cer_enc/key_enc/pwd_enc en base64 simple) con _sat_docs=True.
+    Excluye RFCs que ya están en buzon_sat_empresas para evitar duplicados."""
     sb = _sb_client()
+    f  = _sb_fernet()
+    if not sb or not f:
+        return []
+    try:
+        rows = sb.table("empresas").select("*").execute().data or []
+    except Exception:
+        return []
+    result = []
+    for row in rows:
+        rfc = row.get("rfc", "")
+        if not rfc or rfc in rfcs_ya_en_buzon:
+            continue
+        try:
+            cer_bytes = f.decrypt(row["cer_enc"].encode())
+            key_bytes = f.decrypt(row["key_enc"].encode())
+            pwd_bytes = f.decrypt(row["pwd_enc"].encode())
+            result.append({
+                "rfc":       rfc,
+                "nombre":    row.get("nombre", rfc),
+                "cer_enc":   base64.b64encode(cer_bytes).decode(),
+                "key_enc":   base64.b64encode(key_bytes).decode(),
+                "pwd_enc":   base64.b64encode(pwd_bytes).decode(),
+                "_sat_docs": True,
+            })
+        except Exception:
+            pass
+    return result
+
+
+def _cargar_empresas():
+    # 1. Buzón nativo
+    sb = _sb_client()
+    buzon = []
     if sb:
         try:
             res = sb.table("buzon_sat_empresas").select("*").execute()
-            return res.data or []
+            buzon = res.data or []
         except Exception:
             pass
-    return st.session_state.get("buzon_empresas_local", [])
+    if not buzon:
+        buzon = st.session_state.get("buzon_empresas_local", [])
+    # 2. SAT Docs (Constancia y Opinión SAT) — solo RFCs nuevos
+    rfcs_buzon = frozenset(e.get("rfc", "") for e in buzon)
+    sat_docs = _cargar_empresas_sat_docs(rfcs_buzon)
+    return buzon + sat_docs
 
 def _guardar_empresa(rfc, nombre, cer_enc, key_enc, pwd_enc):
     emp = {"rfc": rfc, "nombre": nombre,
@@ -520,12 +571,16 @@ with tab_empresas:
         for emp in empresas_tab:
             col_r, col_n, col_x = st.columns([2, 4, 1])
             col_r.write(f"**{emp.get('rfc','')}**")
-            col_n.write(emp.get("nombre",""))
+            sat_badge = "  `[↗SAT]`" if emp.get("_sat_docs") else ""
+            col_n.markdown(emp.get("nombre","") + sat_badge)
             with col_x:
-                if st.button("🗑", key=f"del_{emp.get('rfc','')}",
-                             help="Eliminar empresa"):
-                    _eliminar_empresa(emp.get("rfc",""))
-                    st.rerun()
+                if emp.get("_sat_docs"):
+                    st.caption("↗SAT", help="Administra esta e.firma desde el módulo Constancia y Opinión SAT")
+                else:
+                    if st.button("🗑", key=f"del_{emp.get('rfc','')}",
+                                 help="Eliminar empresa"):
+                        _eliminar_empresa(emp.get("rfc",""))
+                        st.rerun()
 
     st.divider()
     st.subheader("➕ Agregar / actualizar empresa")

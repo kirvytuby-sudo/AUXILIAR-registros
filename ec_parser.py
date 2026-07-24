@@ -639,11 +639,18 @@ def _parsear_inbursa(texto):
 
 
 def _parsear_amex(texto):
-    """Parser American Express.
-    Acepta formatos de fecha con y sin partícula 'de':
-      '30 ene 2024 DESC -$33.10'   (AMEX moderno)
-      '30 de ene 2024 DESC $1,029.60'  (AMEX clásico)
-    Signo negativo en monto → abono (dep); positivo → cargo (ret).
+    """Parser American Express — soporta dos formatos:
+
+    Formato A — "Estado de Cuenta" (Corporate Card oficial):
+        Detectado por: "Corporate Card" en el texto.
+        Fechas: "3 deMar" o "2 deAbr" (sin espacio entre "de" y el mes).
+        Importes: sin signo $, p.ej. "211.50", "1,988.07".
+        Créditos: línea "CR" inmediatamente después, o "PAGO RECIBIDO" en descripción.
+
+    Formato B — "Detalle de Transacción" (resumen online):
+        Detectado por: "Detalle de Transacción" en el texto.
+        Fechas: "30 ene 2024", "-$33.10" (con año en la misma línea).
+        Importes: con $, p.ej. "$1,029.60" o "-$33.10" (negativo = abono).
     """
     MESES = {
         "enero":1,"ene":1,"febrero":2,"feb":2,"marzo":3,"mar":3,
@@ -654,41 +661,92 @@ def _parsear_amex(texto):
     }
     year_m = re.search(r"\b(20\d{2})\b", texto)
     anio = int(year_m.group(1)) if year_m else date.today().year
-    # (?:de\s+)? hace opcional la partícula "de"
-    pat_fecha = re.compile(r"^(\d{1,2})\s+(?:de\s+)?([A-Za-záéíóúÁÉÍÓÚ]+)\s+(.*?)$", re.IGNORECASE)
-    # Captura montos con posible signo negativo: -$1,234.56 o $1,234.56 o 1,234.56
+
+    # ── Formato A: Corporate Card ──────────────────────────────────────────────
+    # Normalizar "3 deMar" → "3 Mar" (sin espacio entre "de" y el mes)
+    # Solo aplica al inicio de línea seguido de un dígito-espacio-"de"-letra.
+    es_formato_a = bool(re.search(r"Corporate Card", texto, re.I))
+    if es_formato_a:
+        texto = re.sub(r'(?im)^(\d{1,2})\s+de([A-Za-záéíóú])', r'\1 \2', texto)
+
+    # ── Expresiones regulares comunes ──────────────────────────────────────────
+    # (?:de\s+)? hace opcional la partícula "de" con espacio (Formato A normalizado y clásico)
+    pat_fecha = re.compile(
+        r"^(\d{1,2})\s+(?:de\s+)?([A-Za-záéíóúÁÉÍÓÚ]+)\s+(.*?)$", re.IGNORECASE)
+    # Captura montos: -$1,234.56 | $1,234.56 | 1,234.56
     pat_monto = re.compile(r"-?\$?[\d,]+\.\d{2}")
     pat_corte = re.compile(
-        r"Total de las|Estado de Cuenta P[aá]g|Este no es un|Resumen de|Abreviaci[oó]n|N[uú]mero de Cuenta", re.I)
-    movimientos = []; lineas = texto.splitlines(); i = 0
+        r"Total de las|Estado de Cuenta P[aá]g|Este no es un|Resumen de|"
+        r"Abreviaci[oó]n|N[uú]mero de Cuenta|Saldo total al corte|"
+        r"Nuevos Cargos|Pagos y Cr[eé]ditos|Saldo a la fecha", re.I)
+
+    movimientos = []
+    lineas = texto.splitlines()
+    i = 0
     while i < len(lineas):
-        m = pat_fecha.match(lineas[i].strip())
-        if not m: i += 1; continue
-        dia = int(m.group(1)); mes_str = m.group(2).lower().strip(); desc_ini = m.group(3).strip()
-        if mes_str not in MESES: i += 1; continue
-        try: fecha = date(anio, MESES[mes_str], dia)
-        except Exception: i += 1; continue
+        linea = lineas[i].strip()
+        m = pat_fecha.match(linea)
+        if not m:
+            i += 1; continue
+
+        dia      = int(m.group(1))
+        mes_str  = m.group(2).lower().strip()
+        desc_ini = m.group(3).strip()
+
+        if mes_str not in MESES:
+            i += 1; continue
+
+        # Saltar líneas sin monto en la misma línea (cabeceras, texto legal, rangos de fecha)
+        # Ej: "03 ene 2024 al 02 feb 2024", "1 de junio de 2024, el monto de la Cuota…"
+        if not pat_monto.search(desc_ini):
+            i += 1; continue
+
+        try:
+            fecha = date(anio, MESES[mes_str], dia)
+        except Exception:
+            i += 1; continue
+
+        # Recolectar líneas siguientes para obtener descripción completa y "CR"
         j = i + 1; cont = 0; bloque_lines = [desc_ini]
-        while j < len(lineas) and cont < 4:
+        while j < len(lineas) and cont < 5:
             nl = lineas[j].strip()
-            if pat_fecha.match(nl) or pat_corte.search(nl): break
-            if nl: bloque_lines.append(nl); cont += 1
+            if pat_fecha.match(nl) or pat_corte.search(nl):
+                break
+            if nl:
+                bloque_lines.append(nl)
+                cont += 1
             j += 1
+
         bloque = " ".join(bloque_lines)
         montos_raw = pat_monto.findall(bloque)
-        if not montos_raw: i += 1; continue
-        monto_str = montos_raw[0]
+        if not montos_raw:
+            i += 1; continue
+
+        monto_str  = montos_raw[0]
         es_negativo = monto_str.startswith("-")
         monto = float(monto_str.replace(",","").replace("$","").replace("-",""))
-        is_cr = es_negativo or bool(re.search(r"\bCR\b", bloque)) or "PAGO RECIBIDO" in bloque.upper()
-        dep = monto if is_cr else 0.0; ret = 0.0 if is_cr else monto
-        # Limpiar descripción: quitar año (puede estar en group(3)), montos, "CR"
+
+        # Crédito si: monto negativo (-$) | "CR" en bloque | "PAGO RECIBIDO" | "GRACIAS POR SU PAGO"
+        is_cr = (
+            es_negativo
+            or bool(re.search(r"\bCR\b", bloque))
+            or bool(re.search(r"PAGO RECIBIDO|GRACIAS POR SU PAGO", bloque, re.I))
+        )
+        dep = monto if is_cr else 0.0
+        ret = 0.0   if is_cr else monto
+
+        # Limpiar descripción: quitar año, montos, "CR", RFC/REF, "Negocios como:", etc.
         desc = re.sub(r"\b20\d{2}\b", "", desc_ini)
         desc = pat_monto.sub("", desc)
         desc = re.sub(r"\bCR\b", "", desc)
+        desc = re.sub(r"RFC\w+\s*/REF\S+", "", desc)
+        desc = re.sub(r"Negocios como:.*", "", desc, flags=re.I)
+        desc = re.sub(r"Fecha de Compra:.*", "", desc, flags=re.I)
         desc = re.sub(r"\s+", " ", desc).strip() or "—"
+
         movimientos.append((fecha, desc, dep, ret))
         i += 1
+
     return movimientos
 
 
@@ -1393,6 +1451,10 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
         if movs: return movs
 
     # ── Auto-detección ──────────────────────────────────────────────────────
+    # American Express: "Corporate Card" (Formato A) o "Detalle de Transacción" (Formato B)
+    if any(k in texto_total for k in ("Corporate Card", "American Express", "Detalle de Transacción")):
+        movs = _parsear_amex(texto_total)
+        if movs: return movs
     if any(k in texto_total.upper() for k in ("BANSI", "BAN950525MD6")):
         movs = _parsear_bansi(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs

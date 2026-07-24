@@ -1,6 +1,7 @@
 """
 ec_parser.py — Parsers de estados de cuenta bancarios (sin GUI).
 Portado desde gui_conciliacion.py para uso en Streamlit.
+v2025-07-24 — fix AMEX Corporate Card (Formato A + B)
 """
 import re
 from datetime import date, datetime

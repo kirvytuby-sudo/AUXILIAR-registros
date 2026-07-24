@@ -10,6 +10,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets as _secrets_mod
 import os
 import subprocess
 import sys
@@ -94,6 +95,10 @@ try:
 except Exception:
     pass
 
+@st.cache_resource
+def _get_pendientes_buzon():
+    return {"lista": []}
+
 if _sat_users:
     if not st.session_state.get("sat_auth_user"):
         col_l, col_c, col_r = st.columns([1, 1.2, 1])
@@ -117,6 +122,8 @@ if _sat_users:
 
     # Sidebar — usuario autenticado
     _auth_display = st.session_state.get("sat_auth_name", "")
+    _auth_user_b  = st.session_state.get("sat_auth_user", "")
+    _es_admin_b   = (_auth_user_b == "kirvy")
     with st.sidebar:
         st.markdown(f"👤 **{_auth_display}**")
         st.caption("Buzón SAT")
@@ -124,6 +131,54 @@ if _sat_users:
             st.session_state.pop("sat_auth_user", None)
             st.session_state.pop("sat_auth_name", None)
             st.rerun()
+        if _es_admin_b:
+            st.markdown("---")
+            st.markdown("**⚙️ Administración**")
+            with st.expander("👥 Usuarios con acceso"):
+                for _un, _ud in (_sat_users or {}).items():
+                    _ud2 = _ud.get("name", _un.upper()) if isinstance(_ud, dict) else _un.upper()
+                    st.markdown(f"• **{_ud2}** — `{_un}`")
+            with st.expander("➕ Agregar usuario"):
+                _bna = st.text_input("Nombre", key="adm_b_nombre")
+                _bua = st.text_input("Usuario", key="adm_b_user")
+                _bpa = st.text_input("Contraseña", type="password", key="adm_b_pwd")
+                if st.button("Generar Secrets", key="adm_b_gen"):
+                    if _bna and _bua and _bpa:
+                        _bsa = _secrets_mod.token_hex(16)
+                        _bha = f"{_bsa}:{_pw_hash(_bpa, _bsa)}"
+                        st.session_state["adm_b_toml"] = (
+                            f"[sat_users.{_bua.lower()}]\n"
+                            f'name = "{_bna}"\n'
+                            f'password_hash = "{_bha}"'
+                        )
+                    else:
+                        st.error("Completa todos los campos.")
+                if st.session_state.get("adm_b_toml"):
+                    st.code(st.session_state["adm_b_toml"], language="toml")
+                    if st.button("✔ Listo", key="adm_b_done"):
+                        del st.session_state["adm_b_toml"]
+                        st.rerun()
+            _pend_b = _get_pendientes_buzon()["lista"]
+            if _pend_b:
+                st.warning(f"📬 {len(_pend_b)} solicitud(es) pendiente(s)")
+                for _bi, _breq in enumerate(_pend_b):
+                    with st.expander(f"👤 {_breq['nombre']} — @{_breq['usuario']}"):
+                        st.code(
+                            f"[sat_users.{_breq['usuario']}]\n"
+                            f"name = \"{_breq['nombre']}\"\n"
+                            f"password_hash = \"{_breq['password_hash']}\"",
+                            language="toml")
+                        _bca, _bcb = st.columns(2)
+                        with _bca:
+                            if st.button("✅ Aprobar", key=f"apr_b_{_bi}",
+                                         type="primary", use_container_width=True):
+                                _get_pendientes_buzon()["lista"].remove(_breq)
+                                st.rerun()
+                        with _bcb:
+                            if st.button("❌ Rechazar", key=f"rec_b_{_bi}",
+                                         use_container_width=True):
+                                _get_pendientes_buzon()["lista"].remove(_breq)
+                                st.rerun()
 
 # ── Supabase helpers (empresas) ───────────────────────────────────────────────
 @st.cache_resource(ttl=60)

@@ -29,6 +29,23 @@ import _theme
 _theme.aplicar_header("🗂 Buzón Tributario SAT",
                       "Notificaciones y Comunicados oficiales del SAT con e.firma")
 
+st.markdown("""
+<style>
+.emp-card {
+    background: #fff;
+    border: 1px solid #BFDBFE;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 4px;
+}
+.emp-card .rfc  { font-size: 1.0rem; font-weight: 700; color: #1E40AF; }
+.emp-card .name { font-size: 0.95rem; color: #374151; margin-top: 2px; }
+.emp-card .vig  { font-size: 0.82rem; color: #6B7280; margin-top: 2px; }
+.emp-card .sat  { font-size: 0.78rem; color: #7C3AED; font-weight: 600; }
+.consultar-btn  { margin-top: 12px; }
+</style>
+""", unsafe_allow_html=True)
+
 # ── Constantes ────────────────────────────────────────────────────────────────
 TIMEOUT = 180
 
@@ -140,6 +157,7 @@ def _cargar_empresas_sat_docs(rfcs_ya_en_buzon: frozenset = frozenset()):
             result.append({
                 "rfc":       rfc,
                 "nombre":    row.get("nombre", rfc),
+                "vigencia":  row.get("vigencia", ""),
                 "cer_enc":   base64.b64encode(cer_bytes).decode(),
                 "key_enc":   base64.b64encode(key_bytes).decode(),
                 "pwd_enc":   base64.b64encode(pwd_bytes).decode(),
@@ -413,113 +431,140 @@ tab_consulta, tab_empresas = st.tabs(["📬 Consultar buzón", "🏢 Empresas"])
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1: CONSULTAR
 # ══════════════════════════════════════════════════════════════════════════════
+def _consultar(emp):
+    """Consulta el buzón SAT para una empresa y guarda resultado en session_state."""
+    rfc = emp.get("rfc", "RFC")
+    cer_b = _dec(emp["cer_enc"])
+    key_b = _dec(emp["key_enc"])
+    pwd_s = _dec(emp["pwd_enc"]).decode("utf-8", errors="replace")
+    td = tempfile.mkdtemp()
+    cer_f = os.path.join(td, f"{rfc}.cer")
+    key_f = os.path.join(td, f"{rfc}.key")
+    with open(cer_f, "wb") as fh: fh.write(cer_b)
+    with open(key_f, "wb") as fh: fh.write(key_b)
+    notifs, log = _run_playwright_list(cer_f, key_f, pwd_s)
+    st.session_state["buzon_notifs"][rfc] = notifs or []
+    st.session_state["buzon_log"][rfc]    = log
+    try:
+        import shutil; shutil.rmtree(td)
+    except Exception:
+        pass
+
+
+def _card_html(emp):
+    rfc    = emp.get("rfc", "")
+    nombre = emp.get("nombre", "")
+    vig    = emp.get("vigencia", "")
+    sat    = emp.get("_sat_docs", False)
+    vig_line = f'<div class="vig">vigente hasta {vig}</div>' if vig else ""
+    sat_line = '<div class="sat">↗ Constancia y Opinión SAT</div>' if sat else ""
+    return f"""<div class="emp-card">
+  <div class="rfc">🏢 {rfc}</div>
+  <div class="name">{nombre}</div>
+  {vig_line}{sat_line}
+</div>"""
+
+
 with tab_consulta:
     empresas = _cargar_empresas()
 
     if not empresas:
         st.info("No hay empresas guardadas. Ve a la pestaña **🏢 Empresas** para agregar una.")
     else:
-        # Resumen de notificaciones pendientes
-        total_pend = 0
-        for rfc_k, notifs_k in st.session_state["buzon_notifs"].items():
-            total_pend += sum(1 for n in notifs_k
-                              if "pendiente" in n.get("estado","").lower()
-                              or "no leída"  in n.get("estado","").lower()
-                              or "no leida"  in n.get("estado","").lower())
-        if total_pend > 0:
-            st.warning(f"⚠️  **{total_pend} notificación(es) pendiente(s)** en total")
+        # ── Resumen pendientes ──────────────────────────────────────────────
+        total_pend = sum(
+            1 for rfck, nlist in st.session_state["buzon_notifs"].items()
+            for n in nlist
+            if "pendiente" in n.get("estado","").lower()
+            or "no leída"  in n.get("estado","").lower()
+            or "no leida"  in n.get("estado","").lower()
+        )
+        if total_pend:
+            st.warning(f"⚠️ **{total_pend} notificación(es) pendiente(s)** en total")
 
-        col_sel, col_btn = st.columns([3, 1])
-        with col_sel:
-            opciones = [f"{e.get('rfc','')}  —  {e.get('nombre','')}"
-                        for e in empresas]
-            sel_idx  = st.selectbox("Empresa", range(len(opciones)),
-                                    format_func=lambda i: opciones[i])
-        with col_btn:
-            st.write("")
-            st.write("")
-            consultar_una = st.button("🔍 Consultar")
+        # ── Lista de empresas con checkboxes ────────────────────────────────
+        st.caption("Marca las empresas que deseas consultar y presiona el botón.")
+        checks = {}
+        for emp in empresas:
+            rfc_e = emp.get("rfc", "")
+            c1, c2 = st.columns([1, 11])
+            with c1:
+                checks[rfc_e] = st.checkbox(
+                    " ", value=True, key=f"chk_{rfc_e}",
+                    label_visibility="collapsed")
+            with c2:
+                st.markdown(_card_html(emp), unsafe_allow_html=True)
 
-        col_todas, _ = st.columns([2, 3])
-        with col_todas:
-            consultar_todas = st.button("🔄 Consultar TODAS las empresas")
+        seleccionadas = [e for e in empresas if checks.get(e.get("rfc",""))]
+        n_sel = len(seleccionadas)
 
-        emp_sel = empresas[sel_idx]
-        rfc_sel = emp_sel.get("rfc", "")
+        st.markdown('<div class="consultar-btn"></div>', unsafe_allow_html=True)
+        consultar_btn = st.button(
+            f"🔍  CONSULTAR — {n_sel} empresa{'s' if n_sel != 1 else ''}",
+            type="primary", disabled=(n_sel == 0))
 
-        # ── Ejecutar consulta ───────────────────────────────────────────────
-        def _consultar(emp):
-            rfc = emp.get("rfc", "RFC")
-            cer_b = _dec(emp["cer_enc"])
-            key_b = _dec(emp["key_enc"])
-            pwd_s = _dec(emp["pwd_enc"]).decode("utf-8", errors="replace")
-            td = tempfile.mkdtemp()
-            cer_f = os.path.join(td, f"{rfc}.cer")
-            key_f = os.path.join(td, f"{rfc}.key")
-            with open(cer_f, "wb") as f: f.write(cer_b)
-            with open(key_f, "wb") as f: f.write(key_b)
-            notifs, log = _run_playwright_list(cer_f, key_f, pwd_s)
-            st.session_state["buzon_notifs"][rfc]  = notifs or []
-            st.session_state["buzon_log"][rfc]     = log
-            try:
-                import shutil; shutil.rmtree(td)
-            except Exception:
-                pass
-
-        if consultar_una:
-            with st.spinner(f"Consultando buzón de {rfc_sel}…"):
-                _consultar(emp_sel)
-            st.rerun()
-
-        if consultar_todas:
-            for emp in empresas:
+        if consultar_btn:
+            for emp in seleccionadas:
                 with st.spinner(f"Consultando {emp.get('rfc','')}…"):
                     _consultar(emp)
             st.rerun()
 
-        # ── Mostrar notificaciones ──────────────────────────────────────────
-        notifs_rfc = st.session_state["buzon_notifs"].get(rfc_sel, None)
+        # ── Resultados por empresa ──────────────────────────────────────────
+        cualquier_resultado = any(
+            rfc_e in st.session_state["buzon_notifs"]
+            for rfc_e in (e.get("rfc","") for e in empresas)
+        )
+        if cualquier_resultado:
+            st.divider()
+            st.subheader("📬 Resultados")
 
-        if notifs_rfc is None:
-            st.info("Haz clic en **🔍 Consultar** para ver las notificaciones.")
-        elif not notifs_rfc:
-            st.success("✅ Sin notificaciones ni comunicados pendientes.")
-        else:
+        for emp in empresas:
+            rfc_e = emp.get("rfc", "")
+            if rfc_e not in st.session_state["buzon_notifs"]:
+                continue
+
+            notifs_rfc = st.session_state["buzon_notifs"][rfc_e]
             pend = [n for n in notifs_rfc
                     if "pendiente" in n.get("estado","").lower()
                     or "no leída"  in n.get("estado","").lower()
                     or "no leida"  in n.get("estado","").lower()]
-            otras = [n for n in notifs_rfc if n not in pend]
 
-            if pend:
-                st.error(f"🔴  **{len(pend)} pendiente(s)** — requieren atención")
-                for n in pend:
-                    with st.expander(f"🔴 [{n.get('tipo','')}]  {n.get('asunto','')}  —  {n.get('fecha','')}"):
-                        st.write(f"**Estado:** {n.get('estado','')}")
-                        _col1, _col2 = st.columns(2)
-                        with _col1:
-                            if st.button("⬇ Descargar PDF",
-                                         key=f"dl_{n.get('id','')}"):
-                                st.session_state["_buzon_dl_rfc"]   = rfc_sel
+            st.markdown(_card_html(emp), unsafe_allow_html=True)
+
+            if not notifs_rfc:
+                st.success("✅ Sin notificaciones ni comunicados pendientes.")
+            else:
+                if pend:
+                    st.error(f"🔴 **{len(pend)} pendiente(s)**")
+                    for n in pend:
+                        with st.expander(f"🔴 [{n.get('tipo','')}] {n.get('asunto','')} — {n.get('fecha','')}"):
+                            st.write(f"**Estado:** {n.get('estado','')}")
+                            if st.button("⬇ Descargar PDF", key=f"dl_{rfc_e}_{n.get('id','')}"):
+                                st.session_state["_buzon_dl_rfc"]   = rfc_e
+                                st.session_state["_buzon_dl_notif"] = n
+                                st.rerun()
+                otras = [n for n in notifs_rfc if n not in pend]
+                if otras:
+                    st.info(f"📨 {len(otras)} comunicado(s)/notificación(es) leídos")
+                    for n in otras:
+                        with st.expander(f"[{n.get('tipo','')}] {n.get('asunto','')} — {n.get('fecha','')}"):
+                            st.write(f"**Estado:** {n.get('estado','')}")
+                            if st.button("⬇ Descargar PDF", key=f"dl_{rfc_e}_{n.get('id','')}"):
+                                st.session_state["_buzon_dl_rfc"]   = rfc_e
                                 st.session_state["_buzon_dl_notif"] = n
                                 st.rerun()
 
-            if otras:
-                st.info(f"📨  {len(otras)} comunicado(s) / notificación(es) leídos")
-                for n in otras:
-                    with st.expander(f"[{n.get('tipo','')}]  {n.get('asunto','')}  —  {n.get('fecha','')}"):
-                        st.write(f"**Estado:** {n.get('estado','')}")
-                        if st.button("⬇ Descargar PDF",
-                                     key=f"dl_{n.get('id','')}"):
-                            st.session_state["_buzon_dl_rfc"]   = rfc_sel
-                            st.session_state["_buzon_dl_notif"] = n
-                            st.rerun()
+            log_rfc = st.session_state["buzon_log"].get(rfc_e, "")
+            if log_rfc:
+                with st.expander("📋 Log"):
+                    st.code(log_rfc)
 
         # ── Procesar descarga PDF solicitada ────────────────────────────────
         if st.session_state.get("_buzon_dl_notif"):
             notif_dl = st.session_state.pop("_buzon_dl_notif")
-            rfc_dl   = st.session_state.pop("_buzon_dl_rfc", rfc_sel)
-            emp_dl   = next((e for e in empresas if e.get("rfc") == rfc_dl), None)
+            rfc_dl   = st.session_state.pop("_buzon_dl_rfc", "")
+            all_emps = _cargar_empresas()
+            emp_dl   = next((e for e in all_emps if e.get("rfc") == rfc_dl), None)
             if emp_dl:
                 with st.spinner(f"Descargando PDF — {notif_dl.get('asunto','')}…"):
                     cer_b = _dec(emp_dl["cer_enc"])
@@ -529,26 +574,23 @@ with tab_consulta:
                     cer_f = os.path.join(td, f"{rfc_dl}.cer")
                     key_f = os.path.join(td, f"{rfc_dl}.key")
                     out_f = os.path.join(td, "notif.pdf")
-                    with open(cer_f,"wb") as f: f.write(cer_b)
-                    with open(key_f,"wb") as f: f.write(key_b)
-                    tipo  = notif_dl.get("tipo", "Notificación")
-                    base  = ("https://wwwmat.sat.gob.mx/iniciar-expediente/mis-notificaciones/"
-                             if tipo == "Notificación"
-                             else "https://wwwmat.sat.gob.mx/iniciar-expediente/mis-comunicados/")
+                    with open(cer_f,"wb") as fh: fh.write(cer_b)
+                    with open(key_f,"wb") as fh: fh.write(key_b)
+                    tipo = notif_dl.get("tipo", "Notificación")
+                    base = ("https://wwwmat.sat.gob.mx/iniciar-expediente/mis-notificaciones/"
+                            if tipo == "Notificación"
+                            else "https://wwwmat.sat.gob.mx/iniciar-expediente/mis-comunicados/")
                     ok, log_pdf = _run_playwright_pdf(
                         cer_f, key_f, pwd_s,
                         notif_dl.get("href",""), base, out_f)
                     if ok and os.path.isfile(out_f):
-                        with open(out_f,"rb") as f:
-                            pdf_bytes = f.read()
-                        safe = "".join(c for c in notif_dl.get("asunto","notif")
-                                       if c.isalnum() or c in " _-")[:40]
+                        with open(out_f,"rb") as fh:
+                            pdf_bytes = fh.read()
+                        safe  = "".join(c for c in notif_dl.get("asunto","notif")
+                                        if c.isalnum() or c in " _-")[:40]
                         fname = f"BUZON_{rfc_dl}_{safe}.pdf".replace(" ","_")
-                        st.download_button(
-                            label="📥 Descargar PDF",
-                            data=pdf_bytes,
-                            file_name=fname,
-                            mime="application/pdf")
+                        st.download_button("📥 Descargar PDF", pdf_bytes,
+                                           file_name=fname, mime="application/pdf")
                     else:
                         st.error("No se pudo obtener el PDF.")
                         st.code(log_pdf)
@@ -556,12 +598,6 @@ with tab_consulta:
                         import shutil; shutil.rmtree(td)
                     except Exception:
                         pass
-
-        # ── Log ─────────────────────────────────────────────────────────────
-        log_rfc = st.session_state["buzon_log"].get(rfc_sel, "")
-        if log_rfc:
-            with st.expander("📋 Log de última consulta"):
-                st.code(log_rfc)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2: EMPRESAS
@@ -574,14 +610,14 @@ with tab_empresas:
         st.info("No hay empresas registradas aún.")
     else:
         for emp in empresas_tab:
-            col_r, col_n, col_x = st.columns([2, 4, 1])
-            col_r.write(f"**{emp.get('rfc','')}**")
-            sat_badge = "  `[↗SAT]`" if emp.get("_sat_docs") else ""
-            col_n.markdown(emp.get("nombre","") + sat_badge)
-            with col_x:
+            c1, c2 = st.columns([11, 1])
+            with c1:
+                st.markdown(_card_html(emp), unsafe_allow_html=True)
+            with c2:
                 if emp.get("_sat_docs"):
-                    st.caption("↗SAT", help="Administra esta e.firma desde el módulo Constancia y Opinión SAT")
+                    st.write("")
                 else:
+                    st.write("")
                     if st.button("🗑", key=f"del_{emp.get('rfc','')}",
                                  help="Eliminar empresa"):
                         _eliminar_empresa(emp.get("rfc",""))

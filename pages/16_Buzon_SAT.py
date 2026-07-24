@@ -73,37 +73,57 @@ def _get_secret(key, default=None):
     except Exception:
         return default
 
+# ── Auth (mismo sistema que Constancia y Opinión SAT — sat_users en Secrets) ──
+def _pw_hash(password: str, salt: str) -> str:
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
+                              salt.encode("utf-8"), 260_000)
+    return dk.hex()
+
 def _pw_verify(password: str, stored: str) -> bool:
     try:
-        salt, hx = stored.split(":", 1)
-        dk = hashlib.pbkdf2_hmac("sha256", password.encode(),
-                                  salt.encode(), 260_000)
-        return hmac.compare_digest(dk.hex(), hx)
+        salt, expected = stored.split(":", 1)
+        return hmac.compare_digest(_pw_hash(password, salt), expected)
     except Exception:
         return False
 
-def _check_auth():
-    users = _get_secret("buzon_users", {})
-    if not users:
-        return True  # sin configuración → abierto
-    if st.session_state.get("buzon_auth"):
-        return True
-    with st.form("login_buzon"):
-        st.subheader("🔐 Acceso — Buzón SAT")
-        user = st.text_input("Usuario")
-        pw   = st.text_input("Contraseña", type="password")
-        ok   = st.form_submit_button("Entrar")
-    if ok:
-        stored = (users or {}).get(user, {}).get("hash", "")
-        if stored and _pw_verify(pw, stored):
-            st.session_state["buzon_auth"] = True
-            st.rerun()
-        else:
-            st.error("Credenciales incorrectas.")
-    return False
+_sat_users = None
+try:
+    _raw = st.secrets.get("sat_users")
+    if _raw:
+        _sat_users = dict(_raw)
+except Exception:
+    pass
 
-if not _check_auth():
-    st.stop()
+if _sat_users:
+    if not st.session_state.get("sat_auth_user"):
+        col_l, col_c, col_r = st.columns([1, 1.2, 1])
+        with col_c:
+            st.markdown("#### 🔐 Acceso al módulo SAT")
+            _usr_input = st.text_input("Usuario", key="buzon_login_user",
+                                       placeholder="tu usuario")
+            _pwd_input = st.text_input("Contraseña", type="password",
+                                       key="buzon_login_pwd",
+                                       placeholder="••••••••")
+            if st.button("Entrar →", type="primary", use_container_width=True,
+                         key="buzon_login_btn"):
+                _datos = _sat_users.get(_usr_input.strip().lower())
+                if _datos and _pw_verify(_pwd_input, _datos.get("password_hash", "")):
+                    st.session_state["sat_auth_user"] = _usr_input.strip().lower()
+                    st.session_state["sat_auth_name"] = _datos.get("name", _usr_input.upper())
+                    st.rerun()
+                else:
+                    st.error("❌ Usuario o contraseña incorrectos.")
+        st.stop()
+
+    # Sidebar — usuario autenticado
+    _auth_display = st.session_state.get("sat_auth_name", "")
+    with st.sidebar:
+        st.markdown(f"👤 **{_auth_display}**")
+        st.caption("Buzón SAT")
+        if st.button("🚪 Cerrar sesión", key="buzon_logout"):
+            st.session_state.pop("sat_auth_user", None)
+            st.session_state.pop("sat_auth_name", None)
+            st.rerun()
 
 # ── Supabase helpers (empresas) ───────────────────────────────────────────────
 @st.cache_resource(ttl=60)

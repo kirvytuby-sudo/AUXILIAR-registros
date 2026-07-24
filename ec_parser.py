@@ -1535,7 +1535,7 @@ def calcular_saldos(movimientos, saldo_ini=0.0):
     return filas, total_dep, total_ret
 
 
-def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
+def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None, banco=""):
     """Genera el Excel de reporte y lo retorna como bytes."""
     import io
     import xlsxwriter
@@ -1566,7 +1566,11 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
     fmt_err = wb.add_format({"bold":True,"num_format":"#,##0.00","border":2,"bg_color":"#FDE8E4","font_color":"#E14B3D","align":"right"})
 
     n_filas = len(filas)
-    ws.merge_range(0,0,0,4,f"Estado de Cuenta — {nombre_base}  ({n_filas} movimientos)", fmt_tit)
+    _banco_lbl = banco if banco and banco not in ("", "Auto-detectar") else ""
+    _titulo = (f"Estado de Cuenta — {_banco_lbl}  |  {nombre_base}  ({n_filas} movimientos)"
+               if _banco_lbl
+               else f"Estado de Cuenta — {nombre_base}  ({n_filas} movimientos)")
+    ws.merge_range(0,0,0,4, _titulo, fmt_tit)
     ws.set_row(0, 24)
     ws.set_column(0,0,14); ws.set_column(1,1,55); ws.set_column(2,4,17)
     for c, h in enumerate(["Fecha","Descripci\u00f3n","Dep\u00f3sito","Retiro","Saldo"]):
@@ -1591,7 +1595,8 @@ def generar_excel_bytes(filas, nombre_base, saldo_ini=0.0, saldo_esp=None):
     ws_c.set_column(0,0,36); ws_c.set_column(1,1,20)
     ws_c.merge_range(0,0,0,1,"Conciliaci\u00f3n Bancaria", fmt_tit)
     ws_c.set_row(0, 24)
-    ws_c.merge_range(1,0,1,1, nombre_base, fmt_sub)
+    _sub_lbl = f"{_banco_lbl} — {nombre_base}" if _banco_lbl else nombre_base
+    ws_c.merge_range(1,0,1,1, _sub_lbl, fmt_sub)
     conc_data = [
         ("Saldo inicial", saldo_ini, fmt_cv),
         ("(+) Total dep\u00f3sitos", total_dep, fmt_cv),

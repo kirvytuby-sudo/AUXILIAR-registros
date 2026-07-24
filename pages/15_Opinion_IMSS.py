@@ -146,26 +146,30 @@ def _pw_verify(password, stored):
 def _get_pendientes():
     return {"lista": []}
 
-_imss_users = None
+# ── Seguridad unificada con módulos SAT (sat_users en Secrets) ───────────────
+# Comparte el mismo login que 12_Constancia_y_Opinion_SAT.py y 16_Buzon_SAT.py.
+# Un solo usuario/contraseña da acceso a los tres módulos.
+_sat_users = None
 try:
-    _raw = st.secrets.get("imss_users")
-    if _raw: _imss_users = dict(_raw)
+    _raw = st.secrets.get("sat_users")
+    if _raw: _sat_users = dict(_raw)
 except Exception:
     pass
 
-if _imss_users:
-    if not st.session_state.get("imss_auth_user"):
+if _sat_users:
+    if not st.session_state.get("sat_auth_user"):
         col_l, col_c, col_r = st.columns([1, 1.2, 1])
         with col_c:
-            st.markdown("#### 🔐 Acceso al módulo IMSS")
+            st.markdown("#### 🔐 Acceso al módulo SAT")
             _usr = st.text_input("Usuario", key="imss_login_user", placeholder="tu usuario")
-            _pwd = st.text_input("Contraseña", type="password", key="imss_login_pwd")
+            _pwd = st.text_input("Contraseña", type="password", key="imss_login_pwd",
+                                 placeholder="••••••••")
             if st.button("Entrar →", type="primary", use_container_width=True,
                          key="imss_login_btn"):
-                _datos = _imss_users.get(_usr.strip().lower())
+                _datos = _sat_users.get(_usr.strip().lower())
                 if _datos and _pw_verify(_pwd, _datos.get("password_hash", "")):
-                    st.session_state["imss_auth_user"] = _usr.strip().lower()
-                    st.session_state["imss_auth_name"] = _datos.get("name", _usr.upper())
+                    st.session_state["sat_auth_user"] = _usr.strip().lower()
+                    st.session_state["sat_auth_name"] = _datos.get("name", _usr.upper())
                     st.rerun()
                 else:
                     st.error("❌ Usuario o contraseña incorrectos.")
@@ -192,21 +196,21 @@ if _imss_users:
                             st.success("✅ Solicitud enviada.")
         st.stop()
 
-    _auth_name = st.session_state.get("imss_auth_name", "")
-    _auth_user = st.session_state.get("imss_auth_user", "")
+    _auth_name = st.session_state.get("sat_auth_name", "")
+    _auth_user = st.session_state.get("sat_auth_user", "")
     _es_admin  = (_auth_user == "kirvy")
     with st.sidebar:
         st.markdown(f"👤 **{_auth_name}**")
         st.caption("Módulo IMSS")
         if st.button("🚪 Cerrar sesión", key="imss_logout"):
-            st.session_state.pop("imss_auth_user", None)
-            st.session_state.pop("imss_auth_name", None)
+            st.session_state.pop("sat_auth_user", None)
+            st.session_state.pop("sat_auth_name", None)
             st.rerun()
         if _es_admin:
             st.markdown("---")
             st.markdown("**⚙️ Administración**")
             with st.expander("👥 Usuarios con acceso"):
-                for _un, _ud in (_imss_users or {}).items():
+                for _un, _ud in (_sat_users or {}).items():
                     _ud2 = _ud.get("name", _un.upper()) if isinstance(_ud, dict) else _un.upper()
                     st.markdown(f"• **{_ud2}** — `{_un}`")
             with st.expander("➕ Agregar usuario"):
@@ -218,7 +222,7 @@ if _imss_users:
                         _sa = _secrets_mod.token_hex(16)
                         _ha = f"{_sa}:{_pw_hash(_pa, _sa)}"
                         st.session_state["adm_i_toml"] = (
-                            f"[imss_users.{_ua.lower()}]\n"
+                            f"[sat_users.{_ua.lower()}]\n"
                             f'name = "{_na}"\n'
                             f'password_hash = "{_ha}"'
                         )
@@ -235,7 +239,7 @@ if _imss_users:
                 for _i, _req in enumerate(_pend):
                     with st.expander(f"👤 {_req['nombre']} — @{_req['usuario']}"):
                         st.code(
-                            f"[imss_users.{_req['usuario']}]\n"
+                            f"[sat_users.{_req['usuario']}]\n"
                             f"name = \"{_req['nombre']}\"\n"
                             f"password_hash = \"{_req['password_hash']}\"",
                             language="toml")

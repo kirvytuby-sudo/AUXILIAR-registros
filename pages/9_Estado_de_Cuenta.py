@@ -345,6 +345,7 @@ with col_res:
                     nombre_base,
                     saldo_ini=saldo_ini,
                     saldo_esp=saldo_esp if usar_saldo_esp else None,
+                    banco=banco_sel,
                 )
             except Exception as e:
                 st.error(f"Error generando Excel: {e}")

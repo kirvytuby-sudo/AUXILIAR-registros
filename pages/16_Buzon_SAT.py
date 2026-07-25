@@ -51,26 +51,20 @@ st.markdown("""
 TIMEOUT = 180
 
 # ── Playwright setup ──────────────────────────────────────────────────────────
-# v2 — instala chromium-headless-shell (requerido en Playwright ≥ 1.44)
+# Pinned a playwright==1.43.0 en requirements.txt (usa chromium, no chromium-headless-shell)
 @st.cache_resource(show_spinner=False)
 def _preparar_playwright():
     try:
         from playwright.sync_api import sync_playwright  # noqa
     except ImportError:
-        subprocess.run([sys.executable, "-m", "pip", "install", "playwright"],
+        subprocess.run([sys.executable, "-m", "pip", "install", "playwright==1.43.0"],
                        capture_output=True)
-    ok = False
-    # Playwright ≥ 1.44 usa chromium-headless-shell como binario headless separado
-    for browser in ["chromium-headless-shell", "chromium"]:
-        try:
-            r = subprocess.run(
-                ["playwright", "install", browser, "--with-deps"],
-                capture_output=True, timeout=180)
-            if r.returncode == 0:
-                ok = True
-        except Exception:
-            pass
-    return ok
+    try:
+        r = subprocess.run(["playwright", "install", "chromium", "--with-deps"],
+                           capture_output=True, timeout=180)
+        return r.returncode == 0
+    except Exception:
+        return False
 
 _playwright_ok = _preparar_playwright()
 
@@ -425,23 +419,8 @@ USER_AGENT  = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                "AppleWebKit/537.36 (KHTML, like Gecko) "
                "Chrome/124.0.0.0 Safari/537.36")
 
-def _launch_browser(pw):
-    \"\"\"Lanza Chromium; si el binario falta instala chromium-headless-shell y reintenta.\"\"\"
-    import subprocess
-    try:
-        return pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
-    except Exception as e:
-        if "Executable doesn't exist" in str(e) or "chromium" in str(e).lower():
-            print("WARN:binario no encontrado, instalando playwright browsers...")
-            for b in ["chromium-headless-shell", "chromium"]:
-                subprocess.run(["playwright", "install", b, "--with-deps"],
-                               timeout=180, capture_output=True)
-            # Segundo intento
-            return pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
-        raise
-
 with sync_playwright() as pw:
-    br  = _launch_browser(pw)
+    br  = pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
     ctx = br.new_context(accept_downloads=True, user_agent=USER_AGENT)
     pg  = ctx.new_page()
     try:
@@ -500,20 +479,8 @@ def efirma_login(page):
 
 LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--single-process"]
 
-def _launch_browser(pw):
-    import subprocess
-    try:
-        return pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
-    except Exception as e:
-        if "Executable doesn't exist" in str(e) or "chromium" in str(e).lower():
-            for b in ["chromium-headless-shell", "chromium"]:
-                subprocess.run(["playwright", "install", b, "--with-deps"],
-                               timeout=180, capture_output=True)
-            return pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
-        raise
-
 with sync_playwright() as pw:
-    br  = _launch_browser(pw)
+    br  = pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
     ctx = br.new_context(accept_downloads=True)
     pg  = ctx.new_page()
     try:

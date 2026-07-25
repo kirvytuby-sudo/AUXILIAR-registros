@@ -345,7 +345,43 @@ def efirma_login(page):
     print("INFO:navegando a login SAT...")
     page.goto(SAT_LOGIN, timeout=60000)
     _wait_idle(page, 20000)
-    time.sleep(3)
+
+    # ── Esperar a que Angular renderice algún elemento del form ───────────────
+    print("INFO:esperando que Angular renderice el formulario...")
+    _angular_ready = False
+    for ang_sel in [
+        "mat-tab-group",
+        "mat-tab-label",
+        ".mat-tab-label",
+        "input[type='file']",
+        "input[type='password']",
+        "button[type='submit']",
+        "app-root",
+        "form",
+        ".login",
+        "#login",
+    ]:
+        try:
+            page.wait_for_selector(ang_sel, timeout=15000, state="attached")
+            print(f"INFO:Angular listo — selector encontrado: {ang_sel}")
+            _angular_ready = True
+            break
+        except Exception:
+            pass
+    if not _angular_ready:
+        print("WARN:Angular no renderizó elementos conocidos en 15s")
+    time.sleep(2)
+
+    # ── Debug: título y primeros 500 chars del body ───────────────────────────
+    try:
+        title = page.title()
+        body_txt = page.locator("body").inner_text()[:500].replace("\n", " ")
+        print(f"INFO:titulo={title}")
+        print(f"INFO:body={body_txt}")
+    except Exception as e:
+        print(f"WARN:no se pudo leer body: {e}")
+    try: page.screenshot(path="/tmp/sat_after_load.png")
+    except Exception: pass
     print("INFO:URL tras goto=" + page.url)
 
     # ── 1. Clic en pestaña e.firma ────────────────────────────────────────────
@@ -355,15 +391,18 @@ def efirma_login(page):
         "text=e.firma",
         "a:has-text('e.firma')",
         "button:has-text('e.firma')",
-        "mat-tab:has-text('e.firma')",
+        "mat-tab-label:has-text('e.firma')",
+        ".mat-tab-label:has-text('e.firma')",
         "[aria-label*='e.firma']",
         "text=Firma Electrónica",
         "[data-tab='efirma']",
         "li:has-text('e.firma')",
-        ".mat-tab-label:has-text('e.firma')",
+        # selector por índice como fallback (segunda pestaña)
+        "mat-tab-label >> nth=1",
+        ".mat-tab-label >> nth=1",
     ]:
         try:
-            page.click(sel, timeout=4000)
+            page.click(sel, timeout=5000)
             time.sleep(2)
             _clicked_tab = True
             print(f"INFO:tab e.firma clickeada ({sel})")

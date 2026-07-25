@@ -531,11 +531,11 @@ with sync_playwright() as pw:
         timezone_id="America/Mexico_City",
     )
     # Ocultar propiedad navigator.webdriver (anti-bot)
-    ctx.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
-        Object.defineProperty(navigator, 'languages', {get: () => ['es-MX','es','en-US']});
-    """)
+    ctx.add_init_script(
+        "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+        "Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3,4,5]});"
+        "Object.defineProperty(navigator,'languages',{get:()=>['es-MX','es','en-US']});"
+    )
     pg  = ctx.new_page()
     try:
         efirma_login(pg)

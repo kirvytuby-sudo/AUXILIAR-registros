@@ -535,15 +535,23 @@ def efirma_login(page):
         except Exception: pass
         print("WARN:no se encontró botón submit")
 
-    _wait_idle(page, 40000)
-    time.sleep(4)
-    print("INFO:URL tras submit=" + page.url)
+    # Esperar a que la navegación salga de la página de login (redirect lento del SAT)
+    print("INFO:esperando redirect post-login...")
+    try:
+        page.wait_for_url(
+            lambda url: "iniciar-sesion" not in url and "login" not in url.lower(),
+            timeout=45000
+        )
+        print("INFO:redirect detectado")
+    except Exception:
+        print("WARN:timeout esperando redirect, verificando URL actual...")
+    _wait_idle(page, 15000)
+    print("INFO:URL final=" + page.url)
 
     # ── 6. Verificar login exitoso ────────────────────────────────────────────
     if "iniciar-sesion" in page.url or "login" in page.url.lower():
         try: page.screenshot(path="/tmp/sat_login_fail.png")
         except Exception: pass
-        # Intentar leer mensaje de error de la página
         try:
             err_txt = page.locator(".error, .alert, mat-error, [role='alert']").first.inner_text()
             print(f"INFO:mensaje en página: {err_txt[:200]}")

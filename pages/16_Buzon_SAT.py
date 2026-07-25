@@ -623,7 +623,7 @@ with tab_consulta:
         # ── Resumen pendientes ──────────────────────────────────────────────
         total_pend = sum(
             1 for rfck, nlist in st.session_state["buzon_notifs"].items()
-            for n in nlist
+            for n in (nlist or [])   # nlist puede ser None si hubo error
             if "pendiente" in n.get("estado","").lower()
             or "no leída"  in n.get("estado","").lower()
             or "no leida"  in n.get("estado","").lower()

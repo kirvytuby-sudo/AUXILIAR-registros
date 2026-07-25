@@ -61,11 +61,12 @@ def _preparar_playwright():
     except ImportError:
         subprocess.run([sys.executable, "-m", "pip", "install", "playwright"],
                        capture_output=True)
-    # Instalar chromium-headless-shell Y chromium con sus dependencias de sistema
+    # Las deps de sistema van en packages.txt (Streamlit Cloud las instala con sudo).
+    # Aquí solo descargamos el binario del navegador (no requiere sudo).
     for browser in ["chromium-headless-shell", "chromium"]:
         try:
-            subprocess.run(["playwright", "install", browser, "--with-deps"],
-                           timeout=300)   # sin capture_output para ver errores en logs
+            subprocess.run(["playwright", "install", browser],
+                           timeout=300)   # sin --with-deps: packages.txt provee las libs
         except Exception:
             pass
     # Verificar que el binario headless existe
@@ -320,7 +321,7 @@ def _ensure_chromium():
     print("WARN:chromium-headless-shell no encontrado, instalando...")
     for b in ["chromium-headless-shell", "chromium"]:
         try:
-            subprocess.run(["playwright", "install", b, "--with-deps"], timeout=300)
+            subprocess.run(["playwright", "install", b], timeout=300)  # sin --with-deps
         except Exception as e:
             print(f"WARN:install {b}: {e}")
 
@@ -482,7 +483,7 @@ def _ensure_chromium():
     shells = glob.glob(f"{home}/.cache/ms-playwright/chromium_headless_shell*/*/chrome-headless-shell")
     if shells: return
     for b in ["chromium-headless-shell", "chromium"]:
-        try: subprocess.run(["playwright", "install", b, "--with-deps"], timeout=300)
+        try: subprocess.run(["playwright", "install", b], timeout=300)  # sin --with-deps
         except Exception: pass
 
 _ensure_chromium()

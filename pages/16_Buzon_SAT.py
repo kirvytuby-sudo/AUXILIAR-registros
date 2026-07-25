@@ -342,49 +342,118 @@ def _wait_idle(page, timeout=20000):
     except Exception: time.sleep(5)
 
 def efirma_login(page):
+    print("INFO:navegando a login SAT...")
     page.goto(SAT_LOGIN, timeout=60000)
     _wait_idle(page, 20000)
-    time.sleep(2)
-    # Clic en opción e.firma (varios selectores posibles)
+    time.sleep(3)
+    print("INFO:URL tras goto=" + page.url)
+
+    # ── 1. Clic en pestaña e.firma ────────────────────────────────────────────
+    print("INFO:buscando pestaña e.firma...")
+    _clicked_tab = False
     for sel in [
         "text=e.firma",
         "a:has-text('e.firma')",
         "button:has-text('e.firma')",
+        "mat-tab:has-text('e.firma')",
+        "[aria-label*='e.firma']",
         "text=Firma Electrónica",
         "[data-tab='efirma']",
         "li:has-text('e.firma')",
+        ".mat-tab-label:has-text('e.firma')",
     ]:
-        try: page.click(sel, timeout=4000); time.sleep(1.5); break
-        except Exception: pass
+        try:
+            page.click(sel, timeout=4000)
+            time.sleep(2)
+            _clicked_tab = True
+            print(f"INFO:tab e.firma clickeada ({sel})")
+            break
+        except Exception:
+            pass
+    if not _clicked_tab:
+        print("WARN:no se encontró pestaña e.firma, continuando...")
     _wait_idle(page, 10000)
-    # Subir archivos
+    time.sleep(2)
+
+    # ── 2. Subir archivos .cer y .key ─────────────────────────────────────────
+    print("INFO:subiendo archivos e.firma...")
     try:
         ins = page.query_selector_all("input[type='file']")
-        if ins:     ins[0].set_input_files(CER); time.sleep(1)
-        if len(ins)>=2: ins[1].set_input_files(KEY); time.sleep(1)
-    except Exception as e: print(f"WARN:files: {e}")
-    # Contraseña
-    for pwd_sel in ["input[type='password']", "#contrasenia", "#pwd"]:
-        try: page.fill(pwd_sel, PWD); break
-        except Exception: pass
-    time.sleep(0.5)
-    # Enviar
+        print(f"INFO:encontrados {len(ins)} input[type=file]")
+        if ins:
+            ins[0].set_input_files(CER)
+            time.sleep(1.5)
+            print("INFO:.cer subido")
+        if len(ins) >= 2:
+            ins[1].set_input_files(KEY)
+            time.sleep(1.5)
+            print("INFO:.key subido")
+    except Exception as e:
+        print(f"WARN:error subiendo archivos: {e}")
+
+    # ── 3. Contraseña ─────────────────────────────────────────────────────────
+    print("INFO:llenando contraseña...")
+    _pwd_filled = False
+    for pwd_sel in [
+        "input[type='password']",
+        "#contrasenia",
+        "#pwd",
+        "input[placeholder*='ontraseña']",
+        "input[placeholder*='contraseña']",
+        "input[name='password']",
+    ]:
+        try:
+            page.fill(pwd_sel, PWD, timeout=4000)
+            _pwd_filled = True
+            print(f"INFO:contraseña llenada ({pwd_sel})")
+            break
+        except Exception:
+            pass
+    if not _pwd_filled:
+        print("WARN:no se pudo llenar contraseña")
+    time.sleep(1)
+
+    # ── 4. Captura antes de enviar (para debug) ───────────────────────────────
+    try: page.screenshot(path="/tmp/sat_before_submit.png")
+    except Exception: pass
+
+    # ── 5. Enviar form ────────────────────────────────────────────────────────
+    print("INFO:enviando formulario...")
+    _submitted = False
     for btn in [
         "button[type='submit']",
         "button:has-text('Enviar')",
         "button:has-text('Ingresar')",
         "button:has-text('Acceder')",
         "input[type='submit']",
+        "button:has-text('Autenticar')",
     ]:
-        try: page.click(btn, timeout=8000); break
-        except Exception: pass
-    _wait_idle(page, 30000)
-    time.sleep(3)
+        try:
+            page.click(btn, timeout=8000)
+            _submitted = True
+            print(f"INFO:botón submit clickeado ({btn})")
+            break
+        except Exception:
+            pass
+    if not _submitted:
+        print("WARN:no se encontró botón submit")
+
+    _wait_idle(page, 40000)
+    time.sleep(4)
+    print("INFO:URL tras submit=" + page.url)
+
+    # ── 6. Verificar login exitoso ────────────────────────────────────────────
     if "iniciar-sesion" in page.url or "login" in page.url.lower():
-        # Captura pantalla para debug
         try: page.screenshot(path="/tmp/sat_login_fail.png")
         except Exception: pass
-        print("ERR:login fallido — URL=" + page.url); sys.exit(2)
+        # Intentar leer mensaje de error de la página
+        try:
+            err_txt = page.locator(".error, .alert, mat-error, [role='alert']").first.inner_text()
+            print(f"INFO:mensaje en página: {err_txt[:200]}")
+        except Exception:
+            pass
+        print("ERR:login fallido — URL=" + page.url)
+        sys.exit(2)
     print("INFO:login OK — URL=" + page.url)
 
 def parse_table(page, tipo):
@@ -440,15 +509,33 @@ def parse_table(page, tipo):
         })
     return items
 
-LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage",
-               "--disable-gpu", "--single-process"]
+LAUNCH_ARGS = [
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--disable-blink-features=AutomationControlled",  # evita detección como bot
+    "--disable-infobars",
+    "--window-size=1366,768",
+]
 USER_AGENT  = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                "AppleWebKit/537.36 (KHTML, like Gecko) "
                "Chrome/124.0.0.0 Safari/537.36")
 
 with sync_playwright() as pw:
     br  = pw.chromium.launch(headless=True, args=LAUNCH_ARGS)
-    ctx = br.new_context(accept_downloads=True, user_agent=USER_AGENT)
+    ctx = br.new_context(
+        accept_downloads=True,
+        user_agent=USER_AGENT,
+        viewport={"width": 1366, "height": 768},
+        locale="es-MX",
+        timezone_id="America/Mexico_City",
+    )
+    # Ocultar propiedad navigator.webdriver (anti-bot)
+    ctx.add_init_script("""
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        Object.defineProperty(navigator, 'plugins', {get: () => [1,2,3,4,5]});
+        Object.defineProperty(navigator, 'languages', {get: () => ['es-MX','es','en-US']});
+    """)
     pg  = ctx.new_page()
     try:
         efirma_login(pg)

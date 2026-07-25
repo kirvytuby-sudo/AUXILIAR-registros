@@ -51,20 +51,27 @@ st.markdown("""
 TIMEOUT = 180
 
 # ── Playwright setup ──────────────────────────────────────────────────────────
-# Pinned a playwright==1.43.0 en requirements.txt (usa chromium, no chromium-headless-shell)
-@st.cache_resource(show_spinner=False)
+# Playwright ≥1.44 usa chromium-headless-shell en modo headless.
+# @st.cache_resource con ttl diario para re-verificar si el binario cambió de revisión.
+@st.cache_resource(show_spinner=False, ttl=3600 * 24)
 def _preparar_playwright():
+    import glob, os
     try:
         from playwright.sync_api import sync_playwright  # noqa
     except ImportError:
-        subprocess.run([sys.executable, "-m", "pip", "install", "playwright==1.43.0"],
+        subprocess.run([sys.executable, "-m", "pip", "install", "playwright"],
                        capture_output=True)
-    try:
-        r = subprocess.run(["playwright", "install", "chromium", "--with-deps"],
-                           capture_output=True, timeout=180)
-        return r.returncode == 0
-    except Exception:
-        return False
+    # Instalar chromium-headless-shell Y chromium con sus dependencias de sistema
+    for browser in ["chromium-headless-shell", "chromium"]:
+        try:
+            subprocess.run(["playwright", "install", browser, "--with-deps"],
+                           timeout=300)   # sin capture_output para ver errores en logs
+        except Exception:
+            pass
+    # Verificar que el binario headless existe
+    home = os.path.expanduser("~")
+    shells = glob.glob(f"{home}/.cache/ms-playwright/chromium_headless_shell*/*/chrome-headless-shell")
+    return bool(shells)
 
 _playwright_ok = _preparar_playwright()
 
@@ -296,11 +303,30 @@ def _dec(b64: str) -> bytes:
 
 # ── Script Playwright inline ──────────────────────────────────────────────────
 _PLAYWRIGHT_LIST_SCRIPT = """
-import sys, os, time, json
+import sys, os, time, json, glob, subprocess
+
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:
     print("ERR:playwright no disponible"); sys.exit(1)
+
+# ── Asegurar que chromium-headless-shell esté instalado ──────────────────────
+def _ensure_chromium():
+    home = os.path.expanduser("~")
+    shells = glob.glob(f"{home}/.cache/ms-playwright/chromium_headless_shell*/*/chrome-headless-shell")
+    if shells:
+        print(f"INFO:chromium-headless-shell OK ({shells[0]})")
+        return
+    print("WARN:chromium-headless-shell no encontrado, instalando...")
+    for b in ["chromium-headless-shell", "chromium"]:
+        try:
+            subprocess.run(["playwright", "install", b, "--with-deps"], timeout=300)
+        except Exception as e:
+            print(f"WARN:install {b}: {e}")
+
+_ensure_chromium()
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 CER = sys.argv[1]
 KEY = sys.argv[2]
@@ -444,11 +470,23 @@ with sync_playwright() as pw:
 """
 
 _PLAYWRIGHT_PDF_SCRIPT = """
-import sys, os, time
+import sys, os, time, glob, subprocess
+
 try:
     from playwright.sync_api import sync_playwright
 except ImportError:
     print("ERR:playwright no disponible"); sys.exit(1)
+
+def _ensure_chromium():
+    home = os.path.expanduser("~")
+    shells = glob.glob(f"{home}/.cache/ms-playwright/chromium_headless_shell*/*/chrome-headless-shell")
+    if shells: return
+    for b in ["chromium-headless-shell", "chromium"]:
+        try: subprocess.run(["playwright", "install", b, "--with-deps"], timeout=300)
+        except Exception: pass
+
+_ensure_chromium()
+
 
 CER      = sys.argv[1]
 KEY      = sys.argv[2]

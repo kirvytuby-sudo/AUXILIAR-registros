@@ -413,32 +413,29 @@ def efirma_login(page):
     except Exception as e:
         print(f"WARN:error inspeccionando frames: {e}")
 
-    # ── 1. Clic en pestaña e.firma ────────────────────────────────────────────
-    print("INFO:buscando pestaña e.firma...")
+    # ── 1. Clic en botón e.firma (SIAT usa BUTTON#buttonFiel) ────────────────
+    print("INFO:buscando botón e.firma...")
     _clicked_tab = False
     for sel in [
-        "text=e.firma",
-        "a:has-text('e.firma')",
-        "button:has-text('e.firma')",
-        "mat-tab-label:has-text('e.firma')",
-        ".mat-tab-label:has-text('e.firma')",
-        "[aria-label*='e.firma']",
-        "text=Firma Electrónica",
-        "[data-tab='efirma']",
-        "li:has-text('e.firma')",
-        "mat-tab-label >> nth=1",
-        ".mat-tab-label >> nth=1",
+        "#buttonFiel",                         # SIAT: id específico
+        "button#buttonFiel",
+        "button[id='buttonFiel']",
+        "button:has-text('e.firma')",          # botón con texto e.firma
+        "[id*='Fiel']",
+        "[id*='fiel']",
+        "[id*='efirma']",
+        "[id*='eFirma']",
     ]:
         try:
             _ctx.click(sel, timeout=5000)
-            time.sleep(2)
+            time.sleep(3)
             _clicked_tab = True
-            print(f"INFO:tab e.firma clickeada ({sel})")
+            print(f"INFO:botón e.firma clickeado ({sel})")
             break
         except Exception:
             pass
     if not _clicked_tab:
-        print("WARN:no se encontró pestaña e.firma, continuando...")
+        print("WARN:no se encontró botón e.firma, continuando...")
     # Esperar a que el contenido de la pestaña e.firma se renderice
     print("INFO:esperando inputs de e.firma...")
     try:
@@ -504,26 +501,21 @@ def efirma_login(page):
     print("INFO:enviando formulario...")
     _submitted = False
     for btn in [
-        "button[type='submit']",
+        "#submit",                             # SIAT: INPUT id=submit
+        "input[id='submit']",
         "input[type='submit']",
-        "input[type='button']",
+        ".btn-primary",                        # SIAT: clase del botón activo
+        "button[type='submit']",
         "button:has-text('Enviar')",
         "button:has-text('Ingresar')",
         "button:has-text('Acceder')",
         "button:has-text('Continuar')",
         "button:has-text('Autenticar')",
-        "a:has-text('Enviar')",
         "a:has-text('Ingresar')",
         "a:has-text('Continuar')",
-        "a:has-text('Acceder')",
-        "[role='button']:has-text('Enviar')",
-        "[role='button']:has-text('Ingresar')",
         "[role='button']:has-text('Continuar')",
-        ".btn-primary",
-        ".boton",
         "#btnEnviar",
         "#btnIngresar",
-        "#btnContinuar",
     ]:
         try:
             _ctx.click(btn, timeout=5000)

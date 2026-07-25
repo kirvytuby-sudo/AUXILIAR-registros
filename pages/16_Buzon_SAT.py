@@ -375,7 +375,7 @@ def efirma_login(page):
     # ── Debug: título y primeros 500 chars del body ───────────────────────────
     try:
         title = page.title()
-        body_txt = page.locator("body").inner_text()[:500].replace("\n", " ")
+        body_txt = page.locator("body").inner_text()[:500].replace("\\n", " ")
         print(f"INFO:titulo={title}")
         print(f"INFO:body={body_txt}")
     except Exception as e:

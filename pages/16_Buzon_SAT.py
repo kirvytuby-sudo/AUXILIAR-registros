@@ -372,17 +372,46 @@ def efirma_login(page):
         print("WARN:Angular no renderizó elementos conocidos en 15s")
     time.sleep(2)
 
-    # ── Debug: título y primeros 500 chars del body ───────────────────────────
+    # ── Debug: estructura del DOM ─────────────────────────────────────────────
     try:
         title = page.title()
-        body_txt = page.locator("body").inner_text()[:500].replace("\\n", " ")
+        body_txt = page.locator("body").inner_text()[:800].replace("\\n", " ")
         print(f"INFO:titulo={title}")
         print(f"INFO:body={body_txt}")
     except Exception as e:
         print(f"WARN:no se pudo leer body: {e}")
+    try:
+        # Contar elementos clave
+        n_inputs  = page.evaluate("document.querySelectorAll('input').length")
+        n_btns    = page.evaluate("document.querySelectorAll('button').length")
+        n_iframes = page.evaluate("document.querySelectorAll('iframe').length")
+        iframe_srcs = page.evaluate("[...document.querySelectorAll('iframe')].map(f=>f.src).join('|')")
+        print(f"INFO:inputs={n_inputs} buttons={n_btns} iframes={n_iframes}")
+        print(f"INFO:iframe_srcs={iframe_srcs}")
+    except Exception as e:
+        print(f"WARN:evaluate error: {e}")
     try: page.screenshot(path="/tmp/sat_after_load.png")
     except Exception: pass
     print("INFO:URL tras goto=" + page.url)
+
+    # ── Detectar iframe — el SAT puede meter el form en un iframe ────────────
+    # Si hay iframes, usamos el primero que contenga inputs como contexto
+    _ctx = page   # contexto predeterminado = página principal
+    try:
+        frames = page.frames
+        print(f"INFO:frames totales={len(frames)}")
+        for fr in frames[1:]:   # frames[0] es la página misma
+            try:
+                n = fr.evaluate("document.querySelectorAll('input').length")
+                print(f"INFO:frame url={fr.url} inputs={n}")
+                if n > 0:
+                    _ctx = fr
+                    print(f"INFO:usando frame como contexto: {fr.url}")
+                    break
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"WARN:error inspeccionando frames: {e}")
 
     # ── 1. Clic en pestaña e.firma ────────────────────────────────────────────
     print("INFO:buscando pestaña e.firma...")
@@ -397,12 +426,11 @@ def efirma_login(page):
         "text=Firma Electrónica",
         "[data-tab='efirma']",
         "li:has-text('e.firma')",
-        # selector por índice como fallback (segunda pestaña)
         "mat-tab-label >> nth=1",
         ".mat-tab-label >> nth=1",
     ]:
         try:
-            page.click(sel, timeout=5000)
+            _ctx.click(sel, timeout=5000)
             time.sleep(2)
             _clicked_tab = True
             print(f"INFO:tab e.firma clickeada ({sel})")
@@ -417,7 +445,7 @@ def efirma_login(page):
     # ── 2. Subir archivos .cer y .key ─────────────────────────────────────────
     print("INFO:subiendo archivos e.firma...")
     try:
-        ins = page.query_selector_all("input[type='file']")
+        ins = _ctx.query_selector_all("input[type='file']")
         print(f"INFO:encontrados {len(ins)} input[type=file]")
         if ins:
             ins[0].set_input_files(CER)
@@ -442,7 +470,7 @@ def efirma_login(page):
         "input[name='password']",
     ]:
         try:
-            page.fill(pwd_sel, PWD, timeout=4000)
+            _ctx.fill(pwd_sel, PWD, timeout=4000)
             _pwd_filled = True
             print(f"INFO:contraseña llenada ({pwd_sel})")
             break
@@ -468,7 +496,7 @@ def efirma_login(page):
         "button:has-text('Autenticar')",
     ]:
         try:
-            page.click(btn, timeout=8000)
+            _ctx.click(btn, timeout=8000)
             _submitted = True
             print(f"INFO:botón submit clickeado ({btn})")
             break

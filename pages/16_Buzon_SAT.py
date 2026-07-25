@@ -439,8 +439,24 @@ def efirma_login(page):
             pass
     if not _clicked_tab:
         print("WARN:no se encontró pestaña e.firma, continuando...")
-    _wait_idle(page, 10000)
-    time.sleep(2)
+    # Esperar a que el contenido de la pestaña e.firma se renderice
+    print("INFO:esperando inputs de e.firma...")
+    try:
+        _ctx.wait_for_selector("input[type='file']", timeout=12000, state="attached")
+        print("INFO:input[type=file] apareció")
+    except Exception:
+        print("WARN:input[type=file] no apareció en 12s — inspeccionando DOM...")
+        try:
+            n_all   = _ctx.evaluate("document.querySelectorAll('input').length")
+            types   = _ctx.evaluate("[...document.querySelectorAll('input')].map(i=>i.type+'|'+i.name+'|'+i.id).join(', ')")
+            n_btns  = _ctx.evaluate("document.querySelectorAll('button,a,input[type=button],input[type=submit]').length")
+            btn_txt = _ctx.evaluate("[...document.querySelectorAll('button,a,input[type=button],input[type=submit]')].map(b=>b.tagName+':'+b.textContent.trim().slice(0,30)+'|id='+b.id+'|type='+(b.type||'')).join(' ## ')")
+            print(f"INFO:inputs en frame: n={n_all} tipos={types}")
+            print(f"INFO:botones/links en frame: n={n_btns}")
+            print(f"INFO:botones detalle: {btn_txt[:1000]}")
+        except Exception as ex:
+            print(f"WARN:evaluate error: {ex}")
+    time.sleep(1)
 
     # ── 2. Subir archivos .cer y .key ─────────────────────────────────────────
     print("INFO:subiendo archivos e.firma...")
@@ -489,20 +505,42 @@ def efirma_login(page):
     _submitted = False
     for btn in [
         "button[type='submit']",
+        "input[type='submit']",
+        "input[type='button']",
         "button:has-text('Enviar')",
         "button:has-text('Ingresar')",
         "button:has-text('Acceder')",
-        "input[type='submit']",
+        "button:has-text('Continuar')",
         "button:has-text('Autenticar')",
+        "a:has-text('Enviar')",
+        "a:has-text('Ingresar')",
+        "a:has-text('Continuar')",
+        "a:has-text('Acceder')",
+        "[role='button']:has-text('Enviar')",
+        "[role='button']:has-text('Ingresar')",
+        "[role='button']:has-text('Continuar')",
+        ".btn-primary",
+        ".boton",
+        "#btnEnviar",
+        "#btnIngresar",
+        "#btnContinuar",
     ]:
         try:
-            _ctx.click(btn, timeout=8000)
+            _ctx.click(btn, timeout=5000)
             _submitted = True
             print(f"INFO:botón submit clickeado ({btn})")
             break
         except Exception:
             pass
     if not _submitted:
+        # Último recurso: listar todos los clickables para diagnóstico
+        try:
+            clickables = _ctx.evaluate(
+                "[...document.querySelectorAll('button,input[type=submit],input[type=button],a[href]')]"
+                ".map(e=>e.tagName+':'+e.textContent.trim().slice(0,40)+'|id='+e.id+'|class='+e.className.slice(0,40)).join(' ## ')"
+            )
+            print(f"INFO:clickables disponibles: {clickables[:800]}")
+        except Exception: pass
         print("WARN:no se encontró botón submit")
 
     _wait_idle(page, 40000)

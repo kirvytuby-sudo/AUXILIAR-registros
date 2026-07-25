@@ -309,60 +309,133 @@ SAT_LOGIN  = "https://wwwmat.sat.gob.mx/personas/iniciar-sesion"
 SAT_NOTIFS = "https://wwwmat.sat.gob.mx/iniciar-expediente/mis-notificaciones/"
 SAT_COMUNS = "https://wwwmat.sat.gob.mx/iniciar-expediente/mis-comunicados/"
 
+def _wait_idle(page, timeout=20000):
+    try: page.wait_for_load_state("networkidle", timeout=timeout)
+    except Exception: time.sleep(5)
+
 def efirma_login(page):
-    page.goto(SAT_LOGIN, timeout=60000); time.sleep(2)
-    for sel in ["text=e.firma","a:has-text('e.firma')","button:has-text('e.firma')"]:
-        try: page.click(sel, timeout=5000); time.sleep(1); break
+    page.goto(SAT_LOGIN, timeout=60000)
+    _wait_idle(page, 20000)
+    time.sleep(2)
+    # Clic en opción e.firma (varios selectores posibles)
+    for sel in [
+        "text=e.firma",
+        "a:has-text('e.firma')",
+        "button:has-text('e.firma')",
+        "text=Firma Electrónica",
+        "[data-tab='efirma']",
+        "li:has-text('e.firma')",
+    ]:
+        try: page.click(sel, timeout=4000); time.sleep(1.5); break
         except Exception: pass
+    _wait_idle(page, 10000)
+    # Subir archivos
     try:
         ins = page.query_selector_all("input[type='file']")
-        if ins: ins[0].set_input_files(CER); time.sleep(1)
+        if ins:     ins[0].set_input_files(CER); time.sleep(1)
         if len(ins)>=2: ins[1].set_input_files(KEY); time.sleep(1)
     except Exception as e: print(f"WARN:files: {e}")
-    try: page.fill("input[type='password']", PWD)
-    except Exception: pass
-    for btn in ["button[type='submit']","button:has-text('Enviar')",
-                "button:has-text('Ingresar')","input[type='submit']"]:
-        try: page.click(btn, timeout=8000); time.sleep(4); break
+    # Contraseña
+    for pwd_sel in ["input[type='password']", "#contrasenia", "#pwd"]:
+        try: page.fill(pwd_sel, PWD); break
         except Exception: pass
+    time.sleep(0.5)
+    # Enviar
+    for btn in [
+        "button[type='submit']",
+        "button:has-text('Enviar')",
+        "button:has-text('Ingresar')",
+        "button:has-text('Acceder')",
+        "input[type='submit']",
+    ]:
+        try: page.click(btn, timeout=8000); break
+        except Exception: pass
+    _wait_idle(page, 30000)
+    time.sleep(3)
     if "iniciar-sesion" in page.url or "login" in page.url.lower():
-        print("ERR:login fallido — verifica credenciales"); sys.exit(2)
-    print("INFO:login OK")
+        # Captura pantalla para debug
+        try: page.screenshot(path="/tmp/sat_login_fail.png")
+        except Exception: pass
+        print("ERR:login fallido — URL=" + page.url); sys.exit(2)
+    print("INFO:login OK — URL=" + page.url)
 
 def parse_table(page, tipo):
+    \"\"\"Extrae filas de tabla HTML estándar O Angular Material.\"\"\"
+    # Espera a que aparezca contenido de tabla (hasta 15 s)
+    for sel in [
+        "table tbody tr",
+        "mat-row",
+        "[role='row']:not([role='columnheader'])",
+        ".cdk-row",
+    ]:
+        try:
+            page.wait_for_selector(sel, timeout=15000)
+            break
+        except Exception:
+            pass
+
     items = []
+    # Prioridad: HTML estándar → mat-row → role=row
     rows = page.query_selector_all("table tbody tr")
+    if not rows:
+        rows = page.query_selector_all("mat-row")
+    if not rows:
+        rows = page.query_selector_all("[role='row']:not([role='columnheader'])")
+    if not rows:
+        rows = page.query_selector_all(".cdk-row")
+
+    print(f"INFO:filas encontradas ({tipo}): {len(rows)}")
+
     for row in rows:
+        # Celdas: td → mat-cell → role=cell
         cells = row.query_selector_all("td")
-        if len(cells) < 2: continue
+        if not cells:
+            cells = row.query_selector_all("mat-cell")
+        if not cells:
+            cells = row.query_selector_all("[role='cell']")
+        if not cells:
+            cells = row.query_selector_all(".cdk-cell")
+        if len(cells) < 1:
+            continue
         texts = [c.inner_text().strip() for c in cells]
         link  = row.query_selector("a")
         href  = link.get_attribute("href") if link else ""
         nid   = href.split("/")[-1].split("?")[0] if href else ""
-        items.append({"id": nid or str(abs(hash(texts[0]))),
-                      "tipo": tipo,
-                      "asunto": texts[1] if len(texts)>1 else texts[0],
-                      "fecha":  texts[2] if len(texts)>2 else "",
-                      "estado": texts[3] if len(texts)>3 else texts[-1],
-                      "href":   href})
+        seed  = "".join(texts[:2])
+        items.append({
+            "id":     nid or str(abs(hash(seed))),
+            "tipo":   tipo,
+            "asunto": texts[1] if len(texts) > 1 else texts[0],
+            "fecha":  texts[2] if len(texts) > 2 else "",
+            "estado": texts[3] if len(texts) > 3 else (texts[-1] if texts else ""),
+            "href":   href,
+        })
     return items
 
 with sync_playwright() as pw:
-    br  = pw.chromium.launch(headless=True)
-    ctx = br.new_context(accept_downloads=True)
+    br  = pw.chromium.launch(headless=True, args=["--no-sandbox","--disable-dev-shm-usage"])
+    ctx = br.new_context(accept_downloads=True,
+                         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                    "Chrome/124.0.0.0 Safari/537.36")
     pg  = ctx.new_page()
     try:
         efirma_login(pg)
-        pg.goto(SAT_NOTIFS, timeout=60000); time.sleep(3)
+        pg.goto(SAT_NOTIFS, timeout=60000)
+        _wait_idle(pg, 20000)
         print("INFO:consultando notificaciones")
         notifs = parse_table(pg, "Notificación")
-        pg.goto(SAT_COMUNS, timeout=60000); time.sleep(3)
+        pg.goto(SAT_COMUNS, timeout=60000)
+        _wait_idle(pg, 20000)
         print("INFO:consultando comunicados")
         comuns = parse_table(pg, "Comunicado")
         all_items = notifs + comuns
         print(f"OK_LIST:{json.dumps(all_items, ensure_ascii=False)}")
     except SystemExit: raise
-    except Exception as ex: print(f"ERR:{ex}")
+    except Exception as ex:
+        import traceback
+        print(f"ERR:{ex}")
+        print(traceback.format_exc())
     finally: br.close()
 """
 
@@ -518,7 +591,8 @@ def _consultar(emp):
     with open(cer_f, "wb") as fh: fh.write(cer_b)
     with open(key_f, "wb") as fh: fh.write(key_b)
     notifs, log = _run_playwright_list(cer_f, key_f, pwd_s)
-    st.session_state["buzon_notifs"][rfc] = notifs or []
+    # Preservar None (error de scraping) vs [] (buzón genuinamente vacío)
+    st.session_state["buzon_notifs"][rfc] = notifs   # None = error, [] = vacío, list = OK
     st.session_state["buzon_log"][rfc]    = log
     try:
         import shutil; shutil.rmtree(td)
@@ -599,16 +673,26 @@ with tab_consulta:
                 continue
 
             notifs_rfc = st.session_state["buzon_notifs"][rfc_e]
-            pend = [n for n in notifs_rfc
-                    if "pendiente" in n.get("estado","").lower()
-                    or "no leída"  in n.get("estado","").lower()
-                    or "no leida"  in n.get("estado","").lower()]
+            log_rfc    = st.session_state["buzon_log"].get(rfc_e, "")
 
             st.markdown(_card_html(emp), unsafe_allow_html=True)
 
-            if not notifs_rfc:
+            if notifs_rfc is None:
+                # Error al consultar — mostrar log prominente para diagnóstico
+                st.error("❌ No se pudo consultar el buzón. Revisa el log para el detalle.")
+                if log_rfc:
+                    with st.expander("📋 Log de error", expanded=True):
+                        st.code(log_rfc)
+            elif len(notifs_rfc) == 0:
                 st.success("✅ Sin notificaciones ni comunicados pendientes.")
+                if log_rfc:
+                    with st.expander("📋 Log"):
+                        st.code(log_rfc)
             else:
+                pend = [n for n in notifs_rfc
+                        if "pendiente" in n.get("estado","").lower()
+                        or "no leída"  in n.get("estado","").lower()
+                        or "no leida"  in n.get("estado","").lower()]
                 if pend:
                     st.error(f"🔴 **{len(pend)} pendiente(s)**")
                     for n in pend:
@@ -628,11 +712,9 @@ with tab_consulta:
                                 st.session_state["_buzon_dl_rfc"]   = rfc_e
                                 st.session_state["_buzon_dl_notif"] = n
                                 st.rerun()
-
-            log_rfc = st.session_state["buzon_log"].get(rfc_e, "")
-            if log_rfc:
-                with st.expander("📋 Log"):
-                    st.code(log_rfc)
+                if log_rfc:
+                    with st.expander("📋 Log"):
+                        st.code(log_rfc)
 
         # ── Procesar descarga PDF solicitada ────────────────────────────────
         if st.session_state.get("_buzon_dl_notif"):

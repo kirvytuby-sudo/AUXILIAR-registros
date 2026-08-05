@@ -103,6 +103,7 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
     movimientos = []
 
     with pdfplumber_mod.open(ruta) as pdf:
+        anio = date.today().year  # default; se actualiza con el año real del PDF (solo pág. 1 lo trae)
         for page in pdf.pages:
             words = page.extract_words(keep_blank_chars=False, x_tolerance=2, y_tolerance=3)
             if not words:
@@ -133,11 +134,12 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
             x_saldo = x_saldo_hdr if x_saldo_hdr else x_abono_hdr + 50
             rows = rows_tmp
 
-            anio = date.today().year
             texto_pag = page.extract_text() or ""
             m_anio = re.search(r"/(\d{4})", texto_pag)
             if m_anio:
-                anio = int(m_anio.group(1))
+                _y = int(m_anio.group(1))
+                if 2000 <= _y <= 2100:
+                    anio = _y
 
             pat_solo_num = re.compile(r"^[\d\s]+$")
             pat_hex      = re.compile(r"^[0-9A-Fa-f]{8,}$")

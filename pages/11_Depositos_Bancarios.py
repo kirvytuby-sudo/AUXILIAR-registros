@@ -23,8 +23,8 @@ st.caption("Genera la póliza contable desde los estados de cuenta de BBVA, Bano
 # ─── Constantes contables ──────────────────────────────────────────────────────
 CARGOS = {
     "BANORTE": ("102-01-0001-0001", "Banorte"),
-    "BBVA":    ("102-01-0001-0002", "BBVA"),
-    "INBURSA": ("102-01-0001-0005", "INBURSA"),
+    "BBVA":    ("102-01-0001-0003", "BBVA"),
+    "INBURSA": ("102-01-0001-0002", "INBURSA"),
 }
 
 # Orden de columnas de abonos (cols 12-19 en la póliza)
@@ -270,12 +270,28 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         if num_format: c.number_format = num_format
         if border:     c.border = border
         return c
+    # Cuentas de cargos: se usan las hardcodeadas como default
+    cargos_efectivos = dict(CARGOS)
+
     if plantilla is not None:
         wb = openpyxl.load_workbook(plantilla)
         ws = wb["POLIZA"] if "POLIZA" in wb.sheetnames else wb.active
         for row_idx in range(1, ws.max_row + 1):
             for col_idx in range(1, ws.max_column + 1):
                 ws.cell(row=row_idx, column=col_idx).value = None
+        # ── Leer cuentas de cargos desde hoja CUENTAS ─────────────────
+        _hoja_cuentas = next((s for s in wb.sheetnames if s.strip().upper() == "CUENTAS"), None)
+        if _hoja_cuentas:
+            _wc = wb[_hoja_cuentas]
+            for _row in _wc.iter_rows(min_row=3, values_only=True):
+                _cta, _banco = (_row[0] or ""), (_row[1] or "")
+                _cta = str(_cta).strip(); _banco = str(_banco).strip().upper()
+                if not _cta or not _banco:
+                    continue
+                for _key in ("BANORTE", "BBVA", "INBURSA"):
+                    if _key in _banco:
+                        cargos_efectivos[_key] = (_cta, cargos_efectivos[_key][1])
+                        break
     else:
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -287,7 +303,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
 
     fnt_cta = fnt(bold=False, color="FFFFFF", size=9, italic=True)
     for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
-        set_cell(ws, 2, pol_idx + 1, value=CARGOS[banco][0],
+        set_cell(ws, 2, pol_idx + 1, value=cargos_efectivos[banco][0],
                  font=fnt_cta, fill=F_GRAY2, align=A_CTR, border=BORDER)
     for a in ABONOS:
         set_cell(ws, 2, a["col"] + 1, value=a["cuenta"],

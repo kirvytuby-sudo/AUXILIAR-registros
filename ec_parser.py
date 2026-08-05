@@ -1091,6 +1091,20 @@ def _parsear_banorte(texto, ruta=None, pdfplumber_mod=None):
         for s in montos_raw:
             try: montos.append(float(s.replace(",","")))
             except ValueError: pass
+        # FIX: CARGO DOMICILIACION y similares ponen el monto en linea1 y el saldo
+        # en la primera línea de continuación — si solo hay 1 número en linea1,
+        # buscar un número mayor en las líneas de continuación como candidato a saldo.
+        if len(montos) == 1:
+            for _cl in continuas:
+                _nc = pat_monto.findall(" " + _cl)
+                if _nc:
+                    try:
+                        _cand = float(_nc[-1].replace(",", ""))
+                        if _cand > montos[0]:
+                            montos = [montos[0], _cand]
+                            break
+                    except Exception:
+                        pass
         if not montos: return
         saldo = montos[-1]
         if len(montos) >= 2: monto = montos[-2]

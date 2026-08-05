@@ -46,11 +46,13 @@ PAT_COM = [
     r'APLI TASA DE DES[C]? DEBITO',
     r'IVA TASA DE DESC DEBITO',
     r'TERMINALES PUNTO DE VENTA',
-    # BBVA — comisiones ventas (AMEX, TDC nacional/internacional)
+    # BBVA — comisiones ventas (AMEX, TDC nacional/internacional/puntos)
     r'COM\.?\s*VTA[S]?\.?\s*NAL',
+    r'COM\.?\s*VTA[S]?\.?\s*INTL',
     r'COM\.?\s*VTA[S]?\.?\s*TDC',
+    r'COM\s*VTA[S]?\s*PUNTOS\s*TDC',
     r'COM\s*VTAS\s*TDC\s*INTER',
-    r'PUNTOS\s*TDC\s*BE',
+    r'PUNTOS\s*TDC\s*(BE|BBVA)',
     # BBVA — contratación TPV adicional
     r'CONTRATACI[OÓ]?N?-?TPV\s*ADICIONAL',
     r'IVA\s+CONTR-?TPV\s*ADICIONAL',

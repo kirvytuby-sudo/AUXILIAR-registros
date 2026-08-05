@@ -40,6 +40,15 @@ PAT_COM = [
     r'\bMANTENIMIENTO\b', r'\bCUOTA ANUAL\b',
     r'\bCARGO POR SERVICIO\b', r'\bSERVICIO DIGITAL\b',
     r'SERV BANCA INTERNET',
+    # BBVA — tasas de descuento terminales punto de venta
+    r'APLI TASA DE DES[C]? CREDITO',
+    r'IVA TASA DE DESC CREDITO',
+    r'APLI TASA DE DES[C]? DEBITO',
+    r'IVA TASA DE DESC DEBITO',
+    r'TERMINALES PUNTO DE VENTA',
+    # Banorte — comisiones SPEI banca internet
+    r'TRANSFERENCIA\s*-\s*ENVIO.*SPEI.*BANCA POR INTERNET',
+    r'I\.V\.A\.\s+ORDEN DE PAGO SPEI',
 ]
 PAT_MORA = [r'MORA SPEI', r'COMPENSACION POR RETRASO', r'COMP SPEI']
 

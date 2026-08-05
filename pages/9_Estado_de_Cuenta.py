@@ -1,5 +1,6 @@
 """
 pages/9_Estado_de_Cuenta.py — Módulo Estado de Cuenta
+v2026-08-04: force redeploy — ec_parser fix CARGO DOMICILIACION
 """
 import streamlit as st
 import tempfile

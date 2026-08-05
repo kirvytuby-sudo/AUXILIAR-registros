@@ -34,7 +34,6 @@ def _get_openpyxl():
     except ImportError:
         return None
 
-@st.cache_resource
 def _importar_parser():
     """Importa ec_parser. Busca en el directorio del repositorio."""
     import sys, os, importlib
@@ -45,8 +44,10 @@ def _importar_parser():
     for d in dirs:
         if d not in sys.path:
             sys.path.insert(0, d)
+    # Eliminar del caché de módulos para forzar recarga desde disco
+    sys.modules.pop("ec_parser", None)
+    importlib.invalidate_caches()
     import ec_parser
-    importlib.reload(ec_parser)  # fuerza recarga para evitar caché de sys.modules
     return ec_parser
 
 

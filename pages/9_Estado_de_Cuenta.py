@@ -171,10 +171,27 @@ with col_cfg:
                 try:
                     _pdfp = _get_pdfplumber()
                     if _pdfp:
-                        with _pdfp.open(_truta) as _ppdf:
-                            _txt_hdr = "\n".join((pg.extract_text() or "") for pg in _ppdf.pages[:2])
                         _ec_tmp = _importar_parser()
-                        _det = _ec_tmp.extraer_saldo_ini(_txt_hdr, banco_sel)
+                        _det = None
+                        with _pdfp.open(_truta) as _ppdf:
+                            # Estrategia 1: extract_text() de TODAS las paginas
+                            _txt_all = "\n".join((pg.extract_text() or "") for pg in _ppdf.pages)
+                            if _txt_all.strip():
+                                _det = _ec_tmp.extraer_saldo_ini(_txt_all, banco_sel)
+                            # Estrategia 2: extract_words() para PDFs posicionales (BBVA CM / sin texto)
+                            if _det is None:
+                                _lines_w = []
+                                for pg in _ppdf.pages[:4]:
+                                    _ws = pg.extract_words(x_tolerance=3, y_tolerance=3) or []
+                                    if _ws:
+                                        _rows_w = {}
+                                        for w in _ws:
+                                            _ky = round(w["top"], 0)
+                                            _rows_w.setdefault(_ky, []).append(w["text"])
+                                        for _ky in sorted(_rows_w.keys()):
+                                            _lines_w.append(" ".join(_rows_w[_ky]))
+                                if _lines_w:
+                                    _det = _ec_tmp.extraer_saldo_ini("\n".join(_lines_w), banco_sel)
                         st.session_state["_ec_fid"] = _fid
                         st.session_state["_ec_saldo_det"] = _det
                         if _det is not None:
@@ -296,6 +313,14 @@ with col_res:
                     except Exception:
                         pass
                     movs_raw = ec.leer_pdf(tmp_path, pdfplumber_mod, banco_sel)
+                    # Estrategia 3: back-calc saldo_ini desde primer movimiento (5-tuplas, ej. BBVA CM)
+                    if movs_raw and len(movs_raw[0]) == 5 and abs(saldo_ini) < 0.01:
+                        _f0 = movs_raw[0]
+                        _back = round(_f0[4] - _f0[2] + _f0[3], 2)
+                        if _back > 0:
+                            saldo_ini = _back
+                            st.session_state["_ec_saldo_val"] = _back
+                            st.session_state["_ec_saldo_det"] = _back
                 else:
                     movs_raw = ec.leer_excel(tmp_path, openpyxl_mod)
             except Exception as e:

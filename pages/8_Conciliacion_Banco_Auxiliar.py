@@ -159,6 +159,8 @@ def _read_auxiliar(wb):
     if col_dp is None: col_dp = _col(mapping, "desc")
     col_cargo = _col(mapping, "cargo")
     col_abono = _col(mapping, "abono")
+    # Columna Cta. Desc. para identificar banco (ej: "Banorte Cta 5663", "Cta BBVA 0696")
+    col_cta_desc = mapping.get("cta. desc.") or mapping.get("cta desc") or mapping.get("cta. desc") or _col(mapping, "cta. desc", "cta desc")
 
     def _s(row, col):
         if col is None or col >= len(row): return ""
@@ -170,11 +172,15 @@ def _read_auxiliar(wb):
         if not row or all(v is None for v in row): continue
         fecha = _to_date(row[col_f] if col_f is not None and col_f < len(row) else None)
         if fecha is None: continue
-        pol     = _s(row, col_pol)
+        pol      = _s(row, col_pol)
         concepto = _s(row, col_dp)
+        # Inferir banco_tag desde Cta. Desc. (más confiable que el concepto)
+        cta_desc = _s(row, col_cta_desc)
+        btag = _infer_banco_tag(cta_desc, concepto)
         cargo = _to_float(row[col_cargo] if col_cargo is not None and col_cargo < len(row) else 0)
         abono = _to_float(row[col_abono] if col_abono is not None and col_abono < len(row) else 0)
-        base = {"fecha": fecha, "poliza": pol, "concepto": concepto, "matched": False}
+        base = {"fecha": fecha, "poliza": pol, "concepto": concepto,
+                "banco_tag": btag, "cta_desc": cta_desc, "matched": False}
         if cargo > 0: aux_cargo.append({**base, "monto": cargo})
         if abono > 0: aux_abono.append({**base, "monto": abono})
     return aux_cargo, aux_abono
@@ -949,11 +955,6 @@ if generar:
 
             res_dep, sin_dep_banco, sin_dep_aux = conciliar(deps_banco, aux_cargo_rng, "dep", **params)
             res_ret, sin_ret_banco, sin_ret_aux = conciliar(rets_banco, aux_abono_rng, "ret", **params)
-            # Inferir banco_tag en entradas auxiliares sin conciliar
-            for _e in sin_dep_aux:
-                _e["banco_tag"] = _infer_banco_tag(_e.get("concepto", ""), _e.get("poliza", ""))
-            for _e in sin_ret_aux:
-                _e["banco_tag"] = _infer_banco_tag(_e.get("concepto", ""), _e.get("poliza", ""))
 
             # Near-miss analysis para sugerencias
             near_dep, sugs_dep = analizar_near_misses(sin_dep_banco, sin_dep_aux, "dep",

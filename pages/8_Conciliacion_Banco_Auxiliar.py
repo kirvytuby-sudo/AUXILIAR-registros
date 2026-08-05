@@ -437,6 +437,142 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
         dc(ws, row, 1, "TOTAL", GRAND_F, bold=True, align="right")
         dc(ws, row, 3, grand_total, GRAND_F, fmt='#,##0.00', align="right", bold=True)
 
+    def write_sin_con_por_banco(ws, row,
+            sin_banco, monto_b, label_b, fill_b, mfill_b, sfill_b, label_sec_b,
+            sin_aux,   monto_a, label_a, pol_a,  fill_a, mfill_a, sfill_a, label_sec_a):
+        """Sin conciliar: banco agrupado por banco_tag, auxiliar plano por mes."""
+        L = (1, 2, 3); R = (5, 6, 7, 8); SEP = 4
+        # Encabezado de sección (8 cols)
+        ws.row_dimensions[row].height = 26
+        for ci in range(1, 9):
+            v = label_sec_b if ci == 1 else (label_sec_a if ci == 5 else "")
+            cell = ws.cell(row=row, column=ci, value=v)
+            cell.fill = sfill_b if ci < 5 else sfill_a
+            cell.font = Font(bold=True, color="FFFFFF", size=11)
+            cell.alignment = Alignment(vertical="center"); cell.border = brd
+        row += 1
+        # Agrupar banco por banco_tag
+        por_banco = defaultdict(list)
+        for it in sin_banco: por_banco[it.get("banco_tag", "OTRO")].append(it)
+        bancos = sorted(por_banco.keys(),
+                        key=lambda x: BANCO_ORDER.index(x) if x in BANCO_ORDER else 99)
+        por_mes_aux = defaultdict(list)
+        for it in sin_aux: por_mes_aux[it["fecha"].month].append(it)
+        aux_meses_vistos = set()
+        grand_b = 0; grand_a = 0
+
+        for btag in bancos:
+            b_fill = BANCO_HDR_FILLS.get(btag, PatternFill("solid", fgColor="374151"))
+            ws.row_dimensions[row].height = 24
+            for ci in range(1, 9):
+                cell = ws.cell(row=row, column=ci,
+                               value=f"\U0001f3e6 {btag}" if ci == 1 else "")
+                cell.fill = b_fill if ci < 5 else BLANK
+                cell.font = Font(bold=True, color="FFFFFF" if ci < 5 else "000000", size=11)
+                cell.alignment = Alignment(vertical="center"); cell.border = brd
+            row += 1
+            por_mes_b = defaultdict(list)
+            for it in por_banco[btag]: por_mes_b[it["fecha"].month].append(it)
+            banco_sub = 0
+            for mes in meses_ord:
+                its_b = sorted(por_mes_b.get(mes, []), key=lambda x: x["fecha"])
+                its_a = (sorted(por_mes_aux.get(mes, []), key=lambda x: x["fecha"])
+                         if mes not in aux_meses_vistos else [])
+                if not its_b and not its_a: continue
+                if its_a: aux_meses_vistos.add(mes)
+                ws.row_dimensions[row].height = 20
+                for ci in L:
+                    c = ws.cell(row=row, column=ci,
+                                value=f"  {MESES[mes]}" if ci == L[0] else "")
+                    c.fill = mfill_b; c.font = Font(bold=True, color="FFFFFF", size=10)
+                    c.alignment = Alignment(vertical="center"); c.border = brd
+                ws.cell(row=row, column=SEP).border = brd
+                for ci in R:
+                    c = ws.cell(row=row, column=ci,
+                                value=f"  {MESES[mes]}" if ci == R[0] else "")
+                    c.fill = mfill_a; c.font = Font(bold=True, color="FFFFFF", size=10)
+                    c.alignment = Alignment(vertical="center"); c.border = brd
+                row += 1
+                hdr(ws, row, L[0], "FECHA",             mfill_b)
+                hdr(ws, row, L[1], "MONTO",             mfill_b)
+                hdr(ws, row, L[2], "DESCRIPCION BANCO", mfill_b)
+                ws.cell(row=row, column=SEP).border = brd
+                hdr(ws, row, R[0], "FECHA",        mfill_a)
+                hdr(ws, row, R[1], "MONTO",        mfill_a)
+                hdr(ws, row, R[2], "CONCEPTO AUX", mfill_a)
+                hdr(ws, row, R[3], "POLIZA",       mfill_a)
+                row += 1; sub_b = 0; sub_a = 0
+                for i in range(max(len(its_b), len(its_a))):
+                    ws.cell(row=row, column=SEP).border = brd
+                    if i < len(its_b):
+                        it = its_b[i]; m = monto_b(it); sub_b += m
+                        dc(ws, row, L[0], it["fecha"], fill_b, fmt="DD/MM/YYYY", align="center")
+                        dc(ws, row, L[1], m,           fill_b, fmt='#,##0.00',   align="right")
+                        dc(ws, row, L[2], label_b(it), fill_b)
+                    else:
+                        for ci in L: dc(ws, row, ci, "", BLANK)
+                    if i < len(its_a):
+                        it = its_a[i]; m = monto_a(it); sub_a += m
+                        dc(ws, row, R[0], it["fecha"], fill_a, fmt="DD/MM/YYYY", align="center")
+                        dc(ws, row, R[1], m,           fill_a, fmt='#,##0.00',   align="right")
+                        dc(ws, row, R[2], label_a(it), fill_a)
+                        dc(ws, row, R[3], pol_a(it),   fill_a, align="center")
+                    else:
+                        for ci in R: dc(ws, row, ci, "", BLANK)
+                    row += 1
+                ws.cell(row=row, column=SEP).border = brd
+                dc(ws, row, L[0], f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+                dc(ws, row, L[1], sub_b, TOT_F, fmt='#,##0.00', align="right", bold=True)
+                dc(ws, row, L[2], "", TOT_F)
+                dc(ws, row, R[0], f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+                dc(ws, row, R[1], sub_a, TOT_F, fmt='#,##0.00', align="right", bold=True)
+                dc(ws, row, R[2], "", TOT_F); dc(ws, row, R[3], "", TOT_F)
+                banco_sub += sub_b; grand_a += sub_a; row += 1
+            grand_b += banco_sub
+        # Meses de aux no mostrados aún
+        for mes in meses_ord:
+            if mes in aux_meses_vistos: continue
+            its_a = sorted(por_mes_aux.get(mes, []), key=lambda x: x["fecha"])
+            if not its_a: continue
+            ws.row_dimensions[row].height = 20
+            for ci in L: dc(ws, row, ci, "", BLANK)
+            ws.cell(row=row, column=SEP).border = brd
+            for ci in R:
+                c = ws.cell(row=row, column=ci,
+                            value=f"  {MESES[mes]}" if ci == R[0] else "")
+                c.fill = mfill_a; c.font = Font(bold=True, color="FFFFFF", size=10)
+                c.alignment = Alignment(vertical="center"); c.border = brd
+            row += 1
+            for ci in L: dc(ws, row, ci, "", BLANK)
+            ws.cell(row=row, column=SEP).border = brd
+            hdr(ws, row, R[0], "FECHA",        mfill_a)
+            hdr(ws, row, R[1], "MONTO",        mfill_a)
+            hdr(ws, row, R[2], "CONCEPTO AUX", mfill_a)
+            hdr(ws, row, R[3], "POLIZA",       mfill_a)
+            row += 1; sub_a = 0
+            for it in its_a:
+                for ci in L: dc(ws, row, ci, "", BLANK)
+                ws.cell(row=row, column=SEP).border = brd
+                dc(ws, row, R[0], it["fecha"], fill_a, fmt="DD/MM/YYYY", align="center")
+                dc(ws, row, R[1], monto_a(it), fill_a, fmt='#,##0.00',   align="right")
+                dc(ws, row, R[2], label_a(it), fill_a)
+                dc(ws, row, R[3], pol_a(it),   fill_a, align="center")
+                sub_a += monto_a(it); row += 1
+            for ci in L: dc(ws, row, ci, "", BLANK)
+            ws.cell(row=row, column=SEP).border = brd
+            dc(ws, row, R[0], f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+            dc(ws, row, R[1], sub_a, TOT_F, fmt='#,##0.00', align="right", bold=True)
+            dc(ws, row, R[2], "", TOT_F); dc(ws, row, R[3], "", TOT_F)
+            grand_a += sub_a; row += 1
+        ws.cell(row=row, column=SEP).border = brd
+        dc(ws, row, L[0], "TOTAL", GRAND_F, bold=True, align="right")
+        dc(ws, row, L[1], grand_b, GRAND_F, fmt='#,##0.00', align="right", bold=True)
+        dc(ws, row, L[2], "", GRAND_F)
+        dc(ws, row, R[0], "TOTAL", GRAND_F, bold=True, align="right")
+        dc(ws, row, R[1], grand_a, GRAND_F, fmt='#,##0.00', align="right", bold=True)
+        dc(ws, row, R[2], "", GRAND_F); dc(ws, row, R[3], "", GRAND_F)
+        return row + 2
+
     def write_pair_by_month(ws, start_row,
                              items_l, monto_l, label_l, fill_l, mfill_l, sfill_l, sec_l,
                              items_r, monto_r, label_r, pol_r,  fill_r, mfill_r, sfill_r, sec_r):
@@ -531,7 +667,7 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
         ws.freeze_panes = "A2"
         row = 1
 
-        # ── Sección 1: COMISIONES ──────────────────────────────────────────
+        # ── Sección 1: COMISIONES — agrupadas por banco ────────────────────
         ws.row_dimensions[row].height = 26
         cell = ws.cell(row=row, column=1, value="🏦 COMISIONES BANCARIAS")
         cell.fill = COM_H_F; cell.font = Font(bold=True, color="FFFFFF", size=12)
@@ -541,32 +677,60 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
             c.fill = COM_H_F; c.border = brd
         row += 1
 
-        por_mes_com = defaultdict(list)
+        por_banco_com = defaultdict(list)
         for m in (coms or []):
-            por_mes_com[m["fecha"].month].append(m)
+            por_banco_com[m.get("banco_tag", "OTRO")].append(m)
+        bancos_com = sorted(por_banco_com.keys(),
+                            key=lambda x: BANCO_ORDER.index(x) if x in BANCO_ORDER else 99)
         grand_com = 0
-        for mes in meses_ord:
-            its = sorted(por_mes_com.get(mes, []), key=lambda x: x["fecha"])
-            if not its: continue
-            ws.row_dimensions[row].height = 20
+        for btag in bancos_com:
+            b_fill = BANCO_HDR_FILLS.get(btag, PatternFill("solid", fgColor="374151"))
+            # Encabezado de banco
+            ws.row_dimensions[row].height = 24
             for ci in range(1, 5):
-                c = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == 1 else "")
-                c.fill = COM_M_F; c.font = Font(bold=True, color="FFFFFF", size=10)
-                c.alignment = Alignment(vertical="center"); c.border = brd
+                cell = ws.cell(row=row, column=ci, value=f"\U0001f3e6 {btag}" if ci == 1 else "")
+                cell.fill = b_fill
+                cell.font = Font(bold=True, color="FFFFFF", size=11)
+                cell.alignment = Alignment(vertical="center"); cell.border = brd
             row += 1
-            for ci, h in enumerate(COM_COLS, 1): hdr(ws, row, ci, h, COM_M_F)
-            row += 1; sub = 0
-            for m in its:
-                ws.row_dimensions[row].height = 16
-                dc(ws, row, 1, m["fecha"], COM_R_F, fmt="DD/MM/YYYY", align="center")
-                dc(ws, row, 2, m["ret"],   COM_R_F, fmt='#,##0.00',   align="right")
-                dc(ws, row, 3, m["desc"],  COM_R_F)
-                dc(ws, row, 4, "CARGO",    COM_R_F, align="center")
-                sub += m["ret"]; row += 1
-            for ci in range(1, 5): dc(ws, row, ci, "", TOT_F)
-            dc(ws, row, 1, f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
-            dc(ws, row, 2, sub, TOT_F, fmt='#,##0.00', align="right", bold=True)
-            grand_com += sub; row += 1
+            # Meses dentro del banco
+            por_mes_com = defaultdict(list)
+            for m in por_banco_com[btag]:
+                por_mes_com[m["fecha"].month].append(m)
+            banco_sub = 0
+            for mes in meses_ord:
+                its = sorted(por_mes_com.get(mes, []), key=lambda x: x["fecha"])
+                if not its: continue
+                ws.row_dimensions[row].height = 20
+                for ci in range(1, 5):
+                    c = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == 1 else "")
+                    c.fill = COM_M_F; c.font = Font(bold=True, color="FFFFFF", size=10)
+                    c.alignment = Alignment(vertical="center"); c.border = brd
+                row += 1
+                for ci, h in enumerate(COM_COLS, 1): hdr(ws, row, ci, h, COM_M_F)
+                row += 1; sub = 0
+                for m in its:
+                    ws.row_dimensions[row].height = 16
+                    dc(ws, row, 1, m["fecha"], COM_R_F, fmt="DD/MM/YYYY", align="center")
+                    dc(ws, row, 2, m["ret"],   COM_R_F, fmt='#,##0.00',   align="right")
+                    dc(ws, row, 3, m["desc"],  COM_R_F)
+                    dc(ws, row, 4, "CARGO",    COM_R_F, align="center")
+                    sub += m["ret"]; row += 1
+                for ci in range(1, 5): dc(ws, row, ci, "", TOT_F)
+                dc(ws, row, 1, f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+                dc(ws, row, 2, sub, TOT_F, fmt='#,##0.00', align="right", bold=True)
+                banco_sub += sub; row += 1
+            # Total del banco
+            for ci in range(1, 5):
+                c = ws.cell(row=row, column=ci, value=""); c.fill = b_fill; c.border = brd
+            ws.cell(row=row, column=1).value = f"Total {btag}"
+            ws.cell(row=row, column=1).font = Font(bold=True, color="FFFFFF", size=10)
+            ws.cell(row=row, column=1).alignment = Alignment(horizontal="right", vertical="center")
+            ws.cell(row=row, column=2).value = banco_sub
+            ws.cell(row=row, column=2).font = Font(bold=True, color="FFFFFF", size=10)
+            ws.cell(row=row, column=2).number_format = '#,##0.00'
+            ws.cell(row=row, column=2).alignment = Alignment(horizontal="right", vertical="center")
+            grand_com += banco_sub; row += 1
 
         for ci in range(1, 5): dc(ws, row, ci, "", GRAND_F)
         dc(ws, row, 1, "TOTAL COMISIONES", GRAND_F, bold=True, align="right")
@@ -627,14 +791,14 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
     for ci, w in {1: 13, 2: 15, 3: 52, 4: 2, 5: 13, 6: 15, 7: 50, 8: 10}.items():
         ws3.column_dimensions[get_column_letter(ci)].width = w
     row = 1
-    row = write_pair_by_month(
+    row = write_sin_con_por_banco(
         ws3, row,
         sin_dep_banco, lambda x: x["dep"],   lambda x: x["desc"],    DEP_R, DEP_M, DEP_S,
         "BANCO — DEPÓSITOS SIN CONCILIAR",
         sin_dep_aux,   lambda x: x["monto"], lambda x: x["concepto"], lambda x: x.get("poliza", ""),
         DEP_A, DEP_M, PatternFill("solid", fgColor="1E40AF"),
         "AUXILIAR — CARGOS SIN CONCILIAR")
-    row = write_pair_by_month(
+    row = write_sin_con_por_banco(
         ws3, row,
         sin_ret_banco, lambda x: x["ret"],   lambda x: x["desc"],    RET_R, RET_M, RET_S,
         "BANCO — CARGOS SIN CONCILIAR",

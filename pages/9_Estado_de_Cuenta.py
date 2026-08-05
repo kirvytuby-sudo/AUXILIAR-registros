@@ -157,6 +157,9 @@ with col_cfg:
     )
 
     # ── Auto-detección del saldo inicial desde el PDF ─────────────────
+    if "_ec_saldo_val" not in st.session_state:
+        st.session_state["_ec_saldo_val"] = 0.0
+
     _saldo_autodet = None
     if archivo is not None and archivo.name.lower().endswith(".pdf"):
         _fid = getattr(archivo, "file_id", None) or archivo.name
@@ -175,7 +178,7 @@ with col_cfg:
                         st.session_state["_ec_fid"] = _fid
                         st.session_state["_ec_saldo_det"] = _det
                         if _det is not None:
-                            st.session_state["_ec_saldo_inp"] = _det
+                            st.session_state["_ec_saldo_val"] = _det
                 finally:
                     try: os.unlink(_truta)
                     except Exception: pass
@@ -185,19 +188,17 @@ with col_cfg:
 
     _lbl_saldo = "Saldo inicial ($)"
     if _saldo_autodet is not None:
-        _lbl_saldo = f"Saldo inicial ($) — auto ✓ ${_saldo_autodet:,.2f}"
-
-    if "_ec_saldo_inp" not in st.session_state:
-        st.session_state["_ec_saldo_inp"] = 0.0
+        _lbl_saldo = f"Saldo inicial ($) — auto ✓"
 
     saldo_ini = st.number_input(
         _lbl_saldo,
-        key="_ec_saldo_inp",
+        value=float(st.session_state["_ec_saldo_val"]),
         min_value=0.0,
         step=0.01,
         format="%.2f",
         help="Saldo al inicio del período. Se detecta automáticamente del PDF.",
     )
+    st.session_state["_ec_saldo_val"] = saldo_ini  # preserva cambios manuales
 
     usar_saldo_esp = st.checkbox("Verificar saldo final esperado")
     saldo_esp = None

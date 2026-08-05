@@ -1535,6 +1535,28 @@ def leer_excel(ruta, openpyxl_mod):
     return movimientos
 
 
+def extraer_saldo_ini(texto, banco_key=""):
+    """Extrae el saldo inicial del período desde el texto del PDF.
+    Funciona para todos los bancos soportados. Retorna float o None.
+    """
+    # Banorte — más específico primero
+    m = re.search(r"Saldo\s+inicial\s+del\s+periodo[^0-9\n]*([\d,]+\.\d{2})", texto, re.I)
+    if m:
+        try: return float(m.group(1).replace(",", ""))
+        except ValueError: pass
+    # BBVA / Banamex / genérico
+    m = re.search(
+        r"(?:SALDO\s+FINAL\s+DEL\s+PERIODO\s+ANTERIOR|SALDO\s+ANTERIOR|"
+        r"Saldo\s+[Aa]nterior|Saldo\s+inicial|Balance\s+[Ii]nicial)"
+        r"[:\s\$]*([\d,]+\.\d{2})",
+        texto, re.I
+    )
+    if m:
+        try: return float(m.group(1).replace(",", ""))
+        except ValueError: pass
+    return None
+
+
 def calcular_saldos(movimientos, saldo_ini=0.0):
     """Calcula saldo acumulado para movimientos que no lo traen."""
     filas = []; saldo = saldo_ini; total_dep = total_ret = 0.0

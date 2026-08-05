@@ -156,12 +156,47 @@ with col_cfg:
         help="PDF o Excel del banco.",
     )
 
+    # ── Auto-detección del saldo inicial desde el PDF ─────────────────
+    _saldo_autodet = None
+    if archivo is not None and archivo.name.lower().endswith(".pdf"):
+        _fid = getattr(archivo, "file_id", None) or archivo.name
+        if st.session_state.get("_ec_fid") != _fid:
+            try:
+                _bytes = archivo.read(); archivo.seek(0)
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as _t:
+                    _t.write(_bytes); _truta = _t.name
+                try:
+                    _pdfp = _get_pdfplumber()
+                    if _pdfp:
+                        with _pdfp.open(_truta) as _ppdf:
+                            _txt_hdr = "\n".join((pg.extract_text() or "") for pg in _ppdf.pages[:2])
+                        _ec_tmp = _importar_parser()
+                        _det = _ec_tmp.extraer_saldo_ini(_txt_hdr, banco_sel)
+                        st.session_state["_ec_fid"] = _fid
+                        st.session_state["_ec_saldo_det"] = _det
+                        if _det is not None:
+                            st.session_state["_ec_saldo_inp"] = _det
+                finally:
+                    try: os.unlink(_truta)
+                    except Exception: pass
+            except Exception:
+                pass
+        _saldo_autodet = st.session_state.get("_ec_saldo_det")
+
+    _lbl_saldo = "Saldo inicial ($)"
+    if _saldo_autodet is not None:
+        _lbl_saldo = f"Saldo inicial ($) — auto ✓ ${_saldo_autodet:,.2f}"
+
+    if "_ec_saldo_inp" not in st.session_state:
+        st.session_state["_ec_saldo_inp"] = 0.0
+
     saldo_ini = st.number_input(
-        "Saldo inicial ($)",
-        value=0.0,
+        _lbl_saldo,
+        key="_ec_saldo_inp",
+        min_value=0.0,
         step=0.01,
         format="%.2f",
-        help="Saldo al inicio del período (si el archivo lo trae, no es necesario).",
+        help="Saldo al inicio del período. Se detecta automáticamente del PDF.",
     )
 
     usar_saldo_esp = st.checkbox("Verificar saldo final esperado")

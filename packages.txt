@@ -1,5 +1,4 @@
 tesseract-ocr
-tesseract-ocr-spa
 poppler-utils
 libnss3
 libatk1.0-0

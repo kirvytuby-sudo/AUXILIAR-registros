@@ -232,16 +232,6 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
     except Exception:
         return movimientos
 
-    # Detectar año en página 1
-    anio_ocr = date.today().year
-    if imgs:
-        _txt0 = _tsr.image_to_string(imgs[0], config='--psm 6')
-        _m_a = re.search(r"/(\d{4})", _txt0)
-        if _m_a:
-            _y = int(_m_a.group(1))
-            if 2000 <= _y <= 2100:
-                anio_ocr = _y
-
     def _agrupar_filas_ocr(data):
         """Agrupa palabras OCR en filas con tolerancia de 8px."""
         words_raw = []
@@ -255,7 +245,6 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
                                'top': data['top'][i] + data['height'][i] // 2})
         if not words_raw:
             return defaultdict(list)
-        # Clustering por top con tolerancia 8px
         words_raw.sort(key=lambda w: w['top'])
         rows = defaultdict(list)
         cur_y = words_raw[0]['top']
@@ -267,60 +256,78 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
             rows[row_key].append(w)
         return rows
 
+    # ── Pasada 1: OCR de todas las páginas; header y año se buscan globalmente ─
+    anio_ocr = date.today().year
+    x_cargo_hdr = x_abono_hdr = x_saldo_hdr = None
+    all_page_rows = []
+
     for img in imgs:
         data = _tsr.image_to_data(img, output_type=_TsrOut.DICT, config='--psm 6')
         rows_tmp = _agrupar_filas_ocr(data)
-        if not rows_tmp:
-            continue
+        all_page_rows.append(rows_tmp)
 
-        # Buscar fila header CARGOS / ABONOS
-        x_cargo_hdr = x_abono_hdr = x_saldo_hdr = None
+        # Actualizar año si se encuentra en esta página
         for y_h in sorted(rows_tmp.keys()):
-            row_w = rows_tmp[y_h]
-            row_texts = [w['text'].upper() for w in row_w]
-            if 'CARGOS' in row_texts and 'ABONOS' in row_texts:
-                for w in sorted(row_w, key=lambda w: w['x0']):
-                    t = w['text'].upper()
-                    if t == 'CARGOS' and x_cargo_hdr is None:
-                        x_cargo_hdr = w['x0']
-                    elif t == 'ABONOS' and x_abono_hdr is None:
-                        x_abono_hdr = w['x0']
-                    elif t in ('OPERACION','OPERACIÓN','LIQUIDACION','LIQUIDACIÓN') \
-                         and x_saldo_hdr is None:
-                        x_saldo_hdr = w['x0']
-                break
+            raw_line = ' '.join(w['text'] for w in rows_tmp[y_h])
+            m_yr = re.search(r'/(\d{4})', raw_line)
+            if m_yr:
+                yp = int(m_yr.group(1))
+                if 2000 <= yp <= 2100:
+                    anio_ocr = yp
+                    break
 
-        if x_cargo_hdr is None or x_abono_hdr is None:
-            continue
+        # Buscar header CARGOS/ABONOS si aún no encontrado
+        if x_cargo_hdr is None:
+            for y_h in sorted(rows_tmp.keys()):
+                row_w = rows_tmp[y_h]
+                row_texts = [w['text'].upper() for w in row_w]
+                if 'CARGOS' in row_texts and 'ABONOS' in row_texts:
+                    for w in sorted(row_w, key=lambda w: w['x0']):
+                        t = w['text'].upper()
+                        if t == 'CARGOS' and x_cargo_hdr is None:
+                            x_cargo_hdr = w['x0']
+                        elif t == 'ABONOS' and x_abono_hdr is None:
+                            x_abono_hdr = w['x0']
+                        elif t in ('OPERACION', 'OPERACIÓN', 'LIQUIDACION', 'LIQUIDACIÓN') \
+                                and x_saldo_hdr is None:
+                            x_saldo_hdr = w['x0']
+                    break
 
-        x_sep   = (x_cargo_hdr + x_abono_hdr) / 2
-        x_saldo = x_saldo_hdr if x_saldo_hdr else x_abono_hdr + 50
+    if x_cargo_hdr is None or x_abono_hdr is None:
+        return movimientos
 
-        # Actualizar año con texto de la página
-        _txt_pg = _tsr.image_to_string(img, config='--psm 6')
-        _m_pg = re.search(r"/(\d{4})", _txt_pg)
-        if _m_pg:
-            _yp = int(_m_pg.group(1))
-            if 2000 <= _yp <= 2100:
-                anio_ocr = _yp
+    x_sep   = (x_cargo_hdr + x_abono_hdr) / 2
+    x_saldo = x_saldo_hdr if x_saldo_hdr else x_abono_hdr + 50
 
-        _SKIP_CONT_OCR = ("BBVA MEXICO", "AV. PASEO", "ESTIMADO CLIENTE",
-                          "SU ESTADO DE CUENTA", "TOTAL DE MOVIMIENTOS",
-                          "TOTAL IMPORTE", "INSTITUCION DE BANCA",
-                          "TAMBI", "CON BBVA ADELANTE", "WWW.",
-                          "LA GAT REAL", "PUEDE CONSULTARLO",
-                          "EL CUAL PUEDE", "SU CONTRATO")
+    # ── Pasada 2: extraer movimientos de cada página con coordenadas globales ──
+    _SKIP_CONT_OCR = ("BBVA MEXICO", "AV. PASEO", "ESTIMADO CLIENTE",
+                      "SU ESTADO DE CUENTA", "TOTAL DE MOVIMIENTOS",
+                      "TOTAL IMPORTE", "INSTITUCION DE BANCA",
+                      "TAMBI", "CON BBVA ADELANTE", "WWW.",
+                      "LA GAT REAL", "PUEDE CONSULTARLO",
+                      "EL CUAL PUEDE", "SU CONTRATO")
 
-        def _util_cont_ocr(tok):
-            t = tok.strip()
-            if not t or len(t) < 3: return False
-            if re.match(r'^\d{10,}$', t): return False
-            if re.match(r'^[\d\s]+$', t): return False
-            if len(t) > 100: return False
-            if sum(1 for c in t if c.isalpha()) < 4: return False
-            if any(s in t.upper() for s in _SKIP_CONT_OCR): return False
-            return True
+    _OCR_DIG = {'S': '3', 's': '3', 'B': '8', 'b': '6', 'G': '6', 'g': '9',
+                'O': '0', 'o': '0', 'l': '1', 'I': '1', 'Z': '2', 'z': '2'}
 
+    def _util_cont_ocr(tok):
+        t = tok.strip()
+        if not t or len(t) < 3: return False
+        if re.match(r'^\d{10,}$', t): return False
+        if re.match(r'^[\d\s]+$', t): return False
+        if len(t) > 100: return False
+        if sum(1 for c in t if c.isalpha()) < 4: return False
+        if any(s in t.upper() for s in _SKIP_CONT_OCR): return False
+        return True
+
+    def _fix_fecha_tok(tok):
+        sl = tok.split('/')
+        if len(sl) != 2:
+            return tok
+        dia_s = ''.join(_OCR_DIG.get(c, c) for c in sl[0])
+        return dia_s + '/' + sl[1]
+
+    for rows_tmp in all_page_rows:
         cur_fecha = cur_desc = None
         cur_dep = cur_ret = 0.0
         cur_saldo = None
@@ -336,25 +343,12 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
             else:
                 movimientos.append((cur_fecha, desc_f, cur_dep, cur_ret))
 
-        # Tabla de sustituciones OCR frecuentes en dígitos de fecha
-        _OCR_DIG = {'S':'3','s':'3','B':'8','b':'6','G':'6','g':'9',
-                    'O':'0','o':'0','l':'1','I':'1','Z':'2','z':'2'}
-
-        def _fix_fecha_tok(tok):
-            """Corrige caracteres OCR en la parte numérica del día: 'S1/ENE'→'31/ENE'."""
-            sl = tok.split('/')
-            if len(sl) != 2:
-                return tok
-            dia_s = ''.join(_OCR_DIG.get(c, c) for c in sl[0])
-            return dia_s + '/' + sl[1]
-
         for y in sorted(rows_tmp.keys()):
             ws2 = sorted(rows_tmp[y], key=lambda w: w['x0'])
             tokens_raw = [w['text'] for w in ws2]
             xs         = [w['x0']  for w in ws2]
             if len(tokens_raw) < 2:
                 continue
-            # Normalizar primeros 2 tokens para detectar fechas con ruido OCR
             tokens = [_fix_fecha_tok(tokens_raw[0]),
                       _fix_fecha_tok(tokens_raw[1])] + list(tokens_raw[2:])
             m1 = pat_fecha.match(tokens[0])

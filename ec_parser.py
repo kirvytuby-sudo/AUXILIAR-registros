@@ -94,7 +94,10 @@ def _parsear_bbva(texto, tablas, variante="BBVA Débito"):
 
 
 def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
-    """Parser BBVA Cash Management posicional."""
+    """Parser BBVA Cash Management posicional.
+    Soporta PDFs digitales (pdfplumber extract_words) y PDFs imagen escaneados
+    (fallback OCR vía pdf2image + pytesseract image_to_data).
+    """
     MESES = {"ENE":1,"FEB":2,"MAR":3,"ABR":4,"MAY":5,"JUN":6,
              "JUL":7,"AGO":8,"SEP":9,"OCT":10,"NOV":11,"DIC":12}
     pat_fecha = re.compile(
@@ -212,6 +215,180 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
                     line = " ".join(tokens).strip()
                     if line: cur_conts.append(line)
             _flush()
+
+    if movimientos:
+        return movimientos
+
+    # ── OCR fallback: PDF escaneado (extract_words devuelve vacío) ────────────
+    try:
+        from pdf2image import convert_from_path as _cvt
+        import pytesseract as _tsr
+        from pytesseract import Output as _TsrOut
+    except ImportError:
+        return movimientos
+
+    try:
+        imgs = _cvt(ruta, dpi=200)
+    except Exception:
+        return movimientos
+
+    # Detectar año en página 1
+    anio_ocr = date.today().year
+    if imgs:
+        _txt0 = _tsr.image_to_string(imgs[0], config='--psm 6')
+        _m_a = re.search(r"/(\d{4})", _txt0)
+        if _m_a:
+            _y = int(_m_a.group(1))
+            if 2000 <= _y <= 2100:
+                anio_ocr = _y
+
+    def _agrupar_filas_ocr(data):
+        """Agrupa palabras OCR en filas con tolerancia de 8px."""
+        words_raw = []
+        for i, conf in enumerate(data['conf']):
+            if int(conf) < 20:
+                continue
+            txt = data['text'][i].strip()
+            if not txt:
+                continue
+            words_raw.append({'text': txt, 'x0': data['left'][i],
+                               'top': data['top'][i] + data['height'][i] // 2})
+        if not words_raw:
+            return defaultdict(list)
+        # Clustering por top con tolerancia 8px
+        words_raw.sort(key=lambda w: w['top'])
+        rows = defaultdict(list)
+        cur_y = words_raw[0]['top']
+        row_key = cur_y
+        for w in words_raw:
+            if abs(w['top'] - cur_y) > 8:
+                cur_y = w['top']
+                row_key = cur_y
+            rows[row_key].append(w)
+        return rows
+
+    for img in imgs:
+        data = _tsr.image_to_data(img, output_type=_TsrOut.DICT, config='--psm 6')
+        rows_tmp = _agrupar_filas_ocr(data)
+        if not rows_tmp:
+            continue
+
+        # Buscar fila header CARGOS / ABONOS
+        x_cargo_hdr = x_abono_hdr = x_saldo_hdr = None
+        for y_h in sorted(rows_tmp.keys()):
+            row_w = rows_tmp[y_h]
+            row_texts = [w['text'].upper() for w in row_w]
+            if 'CARGOS' in row_texts and 'ABONOS' in row_texts:
+                for w in sorted(row_w, key=lambda w: w['x0']):
+                    t = w['text'].upper()
+                    if t == 'CARGOS' and x_cargo_hdr is None:
+                        x_cargo_hdr = w['x0']
+                    elif t == 'ABONOS' and x_abono_hdr is None:
+                        x_abono_hdr = w['x0']
+                    elif t in ('OPERACION','OPERACIÓN','LIQUIDACION','LIQUIDACIÓN') \
+                         and x_saldo_hdr is None:
+                        x_saldo_hdr = w['x0']
+                break
+
+        if x_cargo_hdr is None or x_abono_hdr is None:
+            continue
+
+        x_sep   = (x_cargo_hdr + x_abono_hdr) / 2
+        x_saldo = x_saldo_hdr if x_saldo_hdr else x_abono_hdr + 50
+
+        # Actualizar año con texto de la página
+        _txt_pg = _tsr.image_to_string(img, config='--psm 6')
+        _m_pg = re.search(r"/(\d{4})", _txt_pg)
+        if _m_pg:
+            _yp = int(_m_pg.group(1))
+            if 2000 <= _yp <= 2100:
+                anio_ocr = _yp
+
+        _SKIP_CONT_OCR = ("BBVA MEXICO", "AV. PASEO", "ESTIMADO CLIENTE",
+                          "SU ESTADO DE CUENTA", "TOTAL DE MOVIMIENTOS",
+                          "TOTAL IMPORTE", "INSTITUCION DE BANCA",
+                          "TAMBI", "CON BBVA ADELANTE", "WWW.",
+                          "LA GAT REAL", "PUEDE CONSULTARLO",
+                          "EL CUAL PUEDE", "SU CONTRATO")
+
+        def _util_cont_ocr(tok):
+            t = tok.strip()
+            if not t or len(t) < 3: return False
+            if re.match(r'^\d{10,}$', t): return False
+            if re.match(r'^[\d\s]+$', t): return False
+            if len(t) > 100: return False
+            if sum(1 for c in t if c.isalpha()) < 4: return False
+            if any(s in t.upper() for s in _SKIP_CONT_OCR): return False
+            return True
+
+        cur_fecha = cur_desc = None
+        cur_dep = cur_ret = 0.0
+        cur_saldo = None
+        cur_conts = []
+
+        def _flush_ocr():
+            if cur_fecha is None or cur_desc is None:
+                return
+            utiles = [c for c in cur_conts if _util_cont_ocr(c)]
+            desc_f = cur_desc + (" | " + " | ".join(utiles[:3]) if utiles else "")
+            if cur_saldo is not None:
+                movimientos.append((cur_fecha, desc_f, cur_dep, cur_ret, cur_saldo))
+            else:
+                movimientos.append((cur_fecha, desc_f, cur_dep, cur_ret))
+
+        # Tabla de sustituciones OCR frecuentes en dígitos de fecha
+        _OCR_DIG = {'S':'3','s':'3','B':'8','b':'6','G':'6','g':'9',
+                    'O':'0','o':'0','l':'1','I':'1','Z':'2','z':'2'}
+
+        def _fix_fecha_tok(tok):
+            """Corrige caracteres OCR en la parte numérica del día: 'S1/ENE'→'31/ENE'."""
+            sl = tok.split('/')
+            if len(sl) != 2:
+                return tok
+            dia_s = ''.join(_OCR_DIG.get(c, c) for c in sl[0])
+            return dia_s + '/' + sl[1]
+
+        for y in sorted(rows_tmp.keys()):
+            ws2 = sorted(rows_tmp[y], key=lambda w: w['x0'])
+            tokens_raw = [w['text'] for w in ws2]
+            xs         = [w['x0']  for w in ws2]
+            if len(tokens_raw) < 2:
+                continue
+            # Normalizar primeros 2 tokens para detectar fechas con ruido OCR
+            tokens = [_fix_fecha_tok(tokens_raw[0]),
+                      _fix_fecha_tok(tokens_raw[1])] + list(tokens_raw[2:])
+            m1 = pat_fecha.match(tokens[0])
+            m2 = pat_fecha.match(tokens[1]) if len(tokens) > 1 else None
+            if m1 and m2:
+                _flush_ocr(); cur_conts = []
+                try:
+                    dia = int(m1.group(1))
+                    mes = MESES[m1.group(2).upper()]
+                    cur_fecha = date(anio_ocr, mes, dia)
+                except Exception:
+                    cur_fecha = None; continue
+                cur_dep = cur_ret = 0.0; cur_saldo = None
+                for tok, x in zip(tokens, xs):
+                    if not pat_monto.match(tok): continue
+                    val = float(tok.replace(',', ''))
+                    if x >= x_saldo - 20:
+                        cur_saldo = val
+                    elif x >= x_sep:
+                        cur_dep = val
+                    else:
+                        cur_ret = val
+                if cur_dep == 0.0 and cur_ret == 0.0:
+                    cur_fecha = None; continue
+                desc_tokens = []
+                for tok in tokens[3:]:
+                    if pat_monto.match(tok): break
+                    desc_tokens.append(tok)
+                cur_desc = " ".join(desc_tokens).strip() or (tokens[2] if len(tokens) > 2 else "")
+            elif cur_fecha is not None:
+                line = " ".join(tokens).strip()
+                if line: cur_conts.append(line)
+        _flush_ocr()
+
     return movimientos
 
 
@@ -1493,6 +1670,24 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
         movs = _parsear_bbva(texto_total, paginas_tablas, "BBVA Débito")
         if movs: return movs
     if not texto_total.strip():
+        # PDF escaneado: OCR rápido de pág 1 para detectar el formato antes de ir a TDC
+        _ocr_pag1 = ""
+        try:
+            from pdf2image import convert_from_path as _cvt2
+            import pytesseract as _tsr2
+            _imgs2 = _cvt2(ruta, dpi=150, first_page=1, last_page=1)
+            if _imgs2:
+                _ocr_pag1 = _tsr2.image_to_string(_imgs2[0], config='--psm 6')
+        except Exception:
+            pass
+        _op1u = _ocr_pag1.upper()
+        if any(k in _op1u for k in ("MAESTRA PYME", "OPER LIQ COD", "CASH MANAGEMENT")):
+            movs = _parsear_bbva_cashmanagement(ruta, pdfplumber_mod)
+            if movs: return movs
+        if any(k in _op1u for k in ("LIBRETON", "LIBRETÓN", "CUENTA DIGITAL")):
+            movs = _parsear_bbva_libreton(ruta, pdfplumber_mod)
+            if movs: return movs
+        # Fallback: TDC OCR
         movs = _parsear_bbva_tdc("", paginas_tablas, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs
     patron_fecha = re.compile(r"\b(\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4})\b")

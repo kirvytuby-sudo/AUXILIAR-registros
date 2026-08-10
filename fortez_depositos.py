@@ -406,12 +406,3 @@ def generar_poliza_fortez(
             print(f"    {f}  ${m:>10,.2f}  {d[:60]}")
 
     return len(rows), len(sin_cls)
-
-# ── Ejecutar ──────────────────────────────────────────────────────────────────
-generar_poliza_fortez(
-    ruta_plantilla       = '/sessions/friendly-magical-davinci/mnt/uploads/DEPOSITOS BANCARIOS MENA.xlsx',
-    ruta_estado_cuenta   = '/sessions/friendly-magical-davinci/mnt/uploads/4685067_20260731_estado_de_cuenta.xlsx',
-    ruta_salida          = '/sessions/friendly-magical-davinci/mnt/outputs/DEPOSITOS BANCARIOS FORTEZ_prueba.xlsx',
-    banco_override       = 'BANORTE',
-)
-print("\nArchivo generado.")

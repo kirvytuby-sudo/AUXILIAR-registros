@@ -1639,6 +1639,11 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
         if movs: return movs
 
     # ── Auto-detección ──────────────────────────────────────────────────────
+    # Afirme: marcadores únicos del banco
+    if any(k in texto_total.upper() for k in ("BANCA AFIRME", "AFIRME GRUPO FINANCIERO",
+                                               "BAF-950102-JP5", "AFIRMENET")):
+        movs = _parsear_afirme(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
+        if movs: return movs
     # American Express: "Corporate Card" (Formato A) o "Detalle de Transacción" (Formato B)
     if any(k in texto_total for k in ("Corporate Card", "American Express", "Detalle de Transacción")):
         movs = _parsear_amex(texto_total)

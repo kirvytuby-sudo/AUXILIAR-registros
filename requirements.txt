@@ -1,5 +1,5 @@
-# reboot 2026-07-13
-streamlit>=1.35.0
+# reboot 2026-08-05
+streamlit>=1.38.0
 pandas>=2.0.0
 openpyxl>=3.1.0
 pdfplumber>=0.10.0
@@ -12,4 +12,4 @@ satcfdi>=26.7.2
 supabase>=2.3.0
 cryptography>=42.0.0
 weasyprint>=62.0
-playwright>=1.44.0
+# playwright removido temporalmente

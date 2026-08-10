@@ -7,7 +7,7 @@ en la plantilla, el reporte se adapta automáticamente.
 
 import streamlit as st
 from io import BytesIO
-import tempfile, os, sys
+import tempfile, os
 
 st.set_page_config(
     page_title="Depósitos Bancarios FORTEZ",
@@ -21,65 +21,59 @@ _theme.aplicar_header(
     "Plantilla con hoja CUENTAS + Estado de cuenta → póliza con cargos y abonos clasificados",
 )
 
-# ── Importar motor de generación ──────────────────────────────────────────────
+# ── Importar motor ────────────────────────────────────────────────────────────
 try:
-    from fortez_depositos import generar_poliza_fortez, _leer_cuentas, _EXTRA_ALIASES
+    from fortez_depositos import generar_poliza_fortez, _leer_cuentas
     _motor_ok = True
-except Exception as e:
+except Exception as _e:
     _motor_ok = False
-    _motor_err = str(e)
-
-if not _motor_ok:
-    st.error(f"No se pudo cargar el módulo de generación: {_motor_err}")
+    st.error(f"No se pudo cargar el módulo de generación: {_e}")
     st.stop()
 
-# ── UI principal ──────────────────────────────────────────────────────────────
+# ── Carga de archivos ─────────────────────────────────────────────────────────
 col_a, col_b = st.columns(2)
 
 with col_a:
     st.markdown("#### 📋 Plantilla Excel")
     st.caption("Debe contener la hoja **CUENTAS** con cuentas de cargo (cols A-B) y abono (cols D-E).")
     f_plantilla = st.file_uploader(
-        "Selecciona la plantilla",
-        type=["xlsx"],
-        key="fortez_plantilla",
-        label_visibility="collapsed",
+        "Selecciona la plantilla", type=["xlsx"],
+        key="fortez_plantilla", label_visibility="collapsed",
     )
 
 with col_b:
     st.markdown("#### 📈 Estado de Cuenta")
     st.caption("Excel generado por el módulo **Estado de Cuenta** (hoja *Movimientos*).")
     f_estado = st.file_uploader(
-        "Selecciona el estado de cuenta",
-        type=["xlsx"],
-        key="fortez_ec",
-        label_visibility="collapsed",
+        "Selecciona el estado de cuenta", type=["xlsx"],
+        key="fortez_ec", label_visibility="collapsed",
     )
+
+# ── Leer bytes UNA sola vez al inicio (evita problemas con seek en Cloud) ─────
+bytes_plantilla = f_plantilla.read() if f_plantilla else None
+bytes_estado    = f_estado.read()    if f_estado    else None
 
 # ── Selector de banco ─────────────────────────────────────────────────────────
-col_banco, col_btn = st.columns([2, 3])
-with col_banco:
-    banco_sel = st.selectbox(
-        "Banco",
-        ["BANORTE", "BBVA", "INBURSA", "BANAMEX", "HSBC", "SANTANDER"],
-        index=0,
-        key="fortez_banco",
-    )
+banco_sel = st.selectbox(
+    "Banco",
+    ["BANORTE", "BBVA", "INBURSA", "BANAMEX", "HSBC", "SANTANDER"],
+    index=0,
+    key="fortez_banco",
+)
 
-# ── Vista previa de cuentas en plantilla ─────────────────────────────────────
-if f_plantilla:
+# ── Vista previa de cuentas ───────────────────────────────────────────────────
+if bytes_plantilla:
     try:
         import openpyxl
-        _tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-        _tmp.write(f_plantilla.read()); _tmp.close()
-        f_plantilla.seek(0)  # reset para uso posterior
-
-        wb_prev = openpyxl.load_workbook(_tmp.name)
+        wb_prev = openpyxl.load_workbook(BytesIO(bytes_plantilla))
         if "CUENTAS" not in wb_prev.sheetnames:
-            st.warning("⚠️ La plantilla no tiene hoja **CUENTAS**.")
+            st.warning(
+                f"⚠️ La plantilla no tiene hoja **CUENTAS** "
+                f"(hojas encontradas: {', '.join(wb_prev.sheetnames)})."
+            )
         else:
             cargos_prev, abonos_prev = _leer_cuentas(wb_prev["CUENTAS"])
-            with st.expander("👁 Cuentas detectadas en la plantilla", expanded=False):
+            with st.expander("👁 Cuentas detectadas en la plantilla", expanded=True):
                 col_c, col_ab = st.columns(2)
                 with col_c:
                     st.markdown("**CARGOS**")
@@ -89,7 +83,6 @@ if f_plantilla:
                     st.markdown("**ABONOS**")
                     for ab in abonos_prev:
                         st.markdown(f"- `{ab['num']}` — {ab['nombre']}")
-        os.unlink(_tmp.name)
     except Exception as ex:
         st.caption(f"No se pudo previsualizar CUENTAS: {ex}")
 
@@ -97,20 +90,34 @@ if f_plantilla:
 st.divider()
 generar = st.button(
     "⚙️ Generar Póliza",
-    disabled=(f_plantilla is None or f_estado is None),
+    disabled=(bytes_plantilla is None or bytes_estado is None),
     type="primary",
     use_container_width=True,
 )
 
 if generar:
+    # Validar hoja CUENTAS antes de proceder
+    try:
+        import openpyxl as _ox
+        _wb_check = _ox.load_workbook(BytesIO(bytes_plantilla))
+        if "CUENTAS" not in _wb_check.sheetnames:
+            st.error(
+                f"La plantilla no tiene hoja **CUENTAS**. "
+                f"Hojas disponibles: {', '.join(_wb_check.sheetnames)}"
+            )
+            st.stop()
+    except Exception as ex:
+        st.error(f"No se pudo leer la plantilla: {ex}")
+        st.stop()
+
     with st.spinner("Generando póliza…"):
         try:
-            # Guardar archivos en tmp
-            tmp_p = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-            tmp_p.write(f_plantilla.read()); tmp_p.close()
+            # Escribir bytes a archivos temporales (fortez_depositos usa rutas de archivo)
+            tmp_p   = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+            tmp_p.write(bytes_plantilla); tmp_p.close()
 
-            tmp_e = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-            tmp_e.write(f_estado.read()); tmp_e.close()
+            tmp_e   = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+            tmp_e.write(bytes_estado); tmp_e.close()
 
             tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
             tmp_out.close()
@@ -125,7 +132,6 @@ if generar:
             with open(tmp_out.name, "rb") as fh:
                 datos_excel = fh.read()
 
-            # Limpiar tmp
             for f in [tmp_p.name, tmp_e.name, tmp_out.name]:
                 try: os.unlink(f)
                 except: pass
@@ -133,41 +139,39 @@ if generar:
             # ── Resultado ─────────────────────────────────────────────────────
             n_cls = n_total - n_sin
             st.success(
-                f"✅ Póliza generada — **{n_cls:,}** movimientos clasificados "
-                f"| **{n_sin:,}** sin clasificar "
-                f"| **{n_total:,}** total depósitos"
+                f"✅ **{n_cls:,}** movimientos clasificados  |  "
+                f"**{n_sin:,}** sin clasificar  |  "
+                f"**{n_total:,}** total depósitos"
             )
 
-            # Vista previa del RESUMEN
-            import openpyxl as _ox
-            from io import BytesIO as _BIO
-            wb_res = _ox.load_workbook(_BIO(datos_excel))
+            # Vista previa RESUMEN
+            import pandas as pd
+            wb_res = _ox.load_workbook(BytesIO(datos_excel))
             if "RESUMEN" in wb_res.sheetnames:
                 ws_r = wb_res["RESUMEN"]
-                import pandas as _pd
                 data_res = []
                 for r in range(2, ws_r.max_row + 1):
-                    num   = ws_r.cell(r, 1).value
-                    nom   = ws_r.cell(r, 2).value
-                    cnt   = ws_r.cell(r, 3).value
-                    imp   = ws_r.cell(r, 4).value
+                    num = ws_r.cell(r, 1).value
+                    nom = ws_r.cell(r, 2).value
+                    cnt = ws_r.cell(r, 3).value
+                    imp = ws_r.cell(r, 4).value
                     if nom:
                         data_res.append({
-                            "N° Cuenta": num or "",
-                            "Nombre":    nom,
+                            "N° Cuenta":   num or "",
+                            "Nombre":      nom,
                             "Movimientos": cnt or "",
-                            "Importe":   f"${imp:,.2f}" if isinstance(imp, (int, float)) else "",
+                            "Importe":     f"${imp:,.2f}" if isinstance(imp, (int, float)) else "",
                         })
                 if data_res:
                     st.markdown("##### Resumen por cuenta")
                     st.dataframe(
-                        _pd.DataFrame(data_res),
+                        pd.DataFrame(data_res),
                         use_container_width=True,
                         hide_index=True,
                     )
 
-            # ── Botón descarga ─────────────────────────────────────────────────
-            nombre_ec = (f_estado.name or "ec").replace(".xlsx", "")
+            # ── Descarga ──────────────────────────────────────────────────────
+            nombre_ec  = (f_estado.name if f_estado else "ec").replace(".xlsx", "")
             nombre_sal = f"DEPOSITOS_FORTEZ_{banco_sel}_{nombre_ec}.xlsx"
             st.download_button(
                 label="💾 Descargar póliza Excel",

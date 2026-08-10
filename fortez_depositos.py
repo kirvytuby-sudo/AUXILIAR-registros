@@ -101,6 +101,12 @@ def generar_poliza_fortez(
 ):
     # 1. Leer CUENTAS ─────────────────────────────────────────────────────────
     wb_tmpl = openpyxl.load_workbook(ruta_plantilla)
+    if "CUENTAS" not in wb_tmpl.sheetnames:
+        hojas = ", ".join(wb_tmpl.sheetnames)
+        raise ValueError(
+            f"La plantilla no contiene la hoja 'CUENTAS'. "
+            f"Hojas encontradas: {hojas}"
+        )
     cargos, abonos = _leer_cuentas(wb_tmpl["CUENTAS"])
     # Banco desde la primera cuenta cargo
     banco_carta = cargos[0]["banco"].upper() if cargos else "BANORTE"

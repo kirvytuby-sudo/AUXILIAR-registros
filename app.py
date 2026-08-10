@@ -22,6 +22,7 @@ pg = st.navigation(
         ],
         "Banco": [
             st.Page("pages/11_Depositos_Bancarios.py",        title="Depósitos Bancarios",         icon="🏦"),
+            st.Page("pages/17_Depositos_Bancarios_Fortez.py", title="Depósitos Bancarios FORTEZ",  icon="🏧"),
             st.Page("pages/9_Estado_de_Cuenta.py",            title="Estado de Cuenta",            icon="📈"),
             st.Page("pages/8_Conciliacion_Banco_Auxiliar.py", title="Conciliación Banco/Auxiliar", icon="🔀"),
         ],

@@ -129,13 +129,27 @@ def generar_poliza_fortez(
     # 3. Clasificar ───────────────────────────────────────────────────────────
     rows = [(f, d, m, _clasificar(d, abonos)) for f, d, m in movs]
 
+    # ── Filtrar columnas sin datos ────────────────────────────────────────────
+    # Abonos: solo los que tienen al menos un match
+    abonos_con_datos = {ab_idx for _, _, _, ab_idx in rows if ab_idx is not None}
+    abonos_activos = []
+    idx_remap = {}          # índice original → índice nuevo
+    for i, ab in enumerate(abonos):
+        if i in abonos_con_datos:
+            idx_remap[i] = len(abonos_activos)
+            abonos_activos.append(ab)
+
+    # Cargos: solo si hay al menos una fila clasificada
+    hay_datos = bool(abonos_activos)
+    cargos_activos = cargos if hay_datos else []
+
     # 4. Construir Excel ──────────────────────────────────────────────────────
     wb_out = openpyxl.Workbook()
     ws = wb_out.active
     ws.title = "POLIZA"
 
-    nc = len(cargos)
-    na = len(abonos)
+    nc = len(cargos_activos)
+    na = len(abonos_activos)
     # Mapa de columnas (1-based)
     C_TIPO   = 1; C_FECHA  = 2; C_REF   = 3; C_CONC   = 4
     C_ERR    = 5; C_UIDD   = 6; C_NUMPOL = 7; C_PROC  = 8
@@ -162,12 +176,12 @@ def generar_poliza_fortez(
         cell.font = _font(bold=True, sz=9)
         cell.alignment = _align()
         if C_CARGO_0 <= c <= C_CARGO_0 + nc - 1:
-            cell.value = cargos[c - C_CARGO_0]["num"]
+            cell.value = cargos_activos[c - C_CARGO_0]["num"]
             cell.fill = _fill(_AZUL_CLAR)
         elif C_TOTAL_C == c:
             cell.fill = _fill(_NARANJA_CLR)
         elif C_ABONO_0 <= c <= C_ABONO_0 + na - 1:
-            cell.value = abonos[c - C_ABONO_0]["num"]
+            cell.value = abonos_activos[c - C_ABONO_0]["num"]
             cell.fill = _fill(_VERDE_CLAR)
         elif C_TOTAL_A == c:
             cell.fill = _fill(_NARANJA_CLR)
@@ -186,7 +200,7 @@ def generar_poliza_fortez(
         cell.border = _border()
     for c in range(C_CARGO_0, C_CARGO_0 + nc):
         cell = ws.cell(3, c)
-        cell.value = cargos[c - C_CARGO_0]["banco"]
+        cell.value = cargos_activos[c - C_CARGO_0]["banco"]
         cell.font = _font(bold=True, sz=9)
         cell.fill = _fill(_AZUL_CLAR)
         cell.alignment = _align(wrap=True)
@@ -196,7 +210,7 @@ def generar_poliza_fortez(
     cell.fill = _fill(_NARANJA_CLR); cell.alignment = _align(wrap=True); cell.border = _border()
     for c in range(C_ABONO_0, C_ABONO_0 + na):
         cell = ws.cell(3, c)
-        cell.value = abonos[c - C_ABONO_0]["nombre"]
+        cell.value = abonos_activos[c - C_ABONO_0]["nombre"]
         cell.font = _font(bold=True, sz=9)
         cell.fill = _fill(_VERDE_CLAR)
         cell.alignment = _align(wrap=True)
@@ -250,9 +264,10 @@ def generar_poliza_fortez(
         _fmt_num(ws, r, C_TOTAL_C, monto)
         ws.cell(r, C_TOTAL_C).fill = _fill(_NARANJA_CLR if bg == _BLANCO else "FDE68A")
 
-        # Abonos
+        # Abonos (usar índice remapeado)
+        ab_idx_new = idx_remap[ab_idx]
         for c in range(C_ABONO_0, C_ABONO_0 + na):
-            val = monto if (c - C_ABONO_0) == ab_idx else None
+            val = monto if (c - C_ABONO_0) == ab_idx_new else None
             _fmt_num(ws, r, c, val)
             ws.cell(r, c).fill = _fill(_VERDE_CLAR if bg == _BLANCO else "A7F3D0")
 
@@ -318,7 +333,7 @@ def generar_poliza_fortez(
 
     fila_r = 2
     # Sección CARGOS
-    for ci, cargo in enumerate(cargos):
+    for ci, cargo in enumerate(cargos_activos):
         bg_c = _AZUL_CLAR
         wr.cell(fila_r, 1).value = cargo["num"]
         wr.cell(fila_r, 2).value = cargo["banco"]
@@ -336,10 +351,12 @@ def generar_poliza_fortez(
     # Separador
     fila_r += 1
 
-    # Sección ABONOS
-    for ai, ab in enumerate(abonos):
-        monto_ab = tot_por_cuenta.get(ai, 0.0)
-        cnt_ab   = cnt_por_cuenta.get(ai, 0)
+    # Sección ABONOS (solo cuentas activas)
+    for ai, ab in enumerate(abonos_activos):
+        # tot_por_cuenta usa el índice ORIGINAL; buscamos el original de este activo
+        orig_idx = next(k for k, v in idx_remap.items() if v == ai)
+        monto_ab = tot_por_cuenta.get(orig_idx, 0.0)
+        cnt_ab   = cnt_por_cuenta.get(orig_idx, 0)
         bg_a = _VERDE_CLAR
         wr.cell(fila_r, 1).value = ab["num"]
         wr.cell(fila_r, 2).value = ab["nombre"]

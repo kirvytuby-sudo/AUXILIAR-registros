@@ -13,8 +13,8 @@ import re, sys, os
 # ── Aliases adicionales (palabras clave que no están en el nombre de cuenta) ──
 # key = palabra clave del nombre de cuenta (UPPERCASE), value = lista de alias
 _EXTRA_ALIASES = {
-    "BANORTE":    ["SUPER SERV VALLEJO", "SUPER SERV PARIFERICO", "SUPER SERV PERIFÉRICO",
-                   "SUPER SERV PERIFERICO", "SERV MENA", "BANORTE"],
+    "BANORTE":    ["SUPER SERV VALLEJO", "SUPER SERV PARIFERIC", "SUPER SERV PERIFÉRIC",
+                   "SUPER SERV PERIFERIC", "SERV MENA", "BANORTE"],
     "EDENRED":    ["EDENRED", "EDENR"],
     "PLUXE":      ["PLUXEE", "PLUXE"],
     "EFECTIVALE": ["EFECTIVALE", "DEL CLIENTE EFECTI"],

@@ -539,20 +539,25 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     from datetime import date as _date_cls
 
     ws_res = wb.create_sheet("RESUMEN")
-    F_R_TITLE  = PatternFill("solid", fgColor="0F172A")   # slate-950
-    F_R_SEC    = PatternFill("solid", fgColor="1E3A8A")   # blue-800
-    F_R_HDR    = PatternFill("solid", fgColor="1E293B")   # slate-800
-    F_R_TOT    = PatternFill("solid", fgColor="1D4ED8")   # blue-700
-    F_R_DIFF_G = PatternFill("solid", fgColor="065F46")   # verde OK
-    F_R_DIFF_R = PatternFill("solid", fgColor="7F1D1D")   # rojo diferencia
-    F_R_ODD    = PatternFill("solid", fgColor="EEF2FF")   # indigo-50
-    F_R_EVN    = PatternFill("solid", fgColor="E0F2FE")   # sky-100
-    # Sub-cabeceras por banco — azul/índigo/cielo oscuro
+    F_R_TITLE  = PatternFill("solid", fgColor="0F172A")
+    F_R_SEC    = PatternFill("solid", fgColor="1E3A8A")
+    F_R_HDR    = PatternFill("solid", fgColor="1E293B")
+    F_R_TOT    = PatternFill("solid", fgColor="1D4ED8")
+    F_R_MTOT   = PatternFill("solid", fgColor="1E40AF")
+    F_R_DIFF_G = PatternFill("solid", fgColor="065F46")
+    F_R_DIFF_R = PatternFill("solid", fgColor="7F1D1D")
+    F_R_ODD    = PatternFill("solid", fgColor="EEF2FF")
+    F_R_EVN    = PatternFill("solid", fgColor="E0F2FE")
     F_R_BNK = {
-        "BANORTE": PatternFill("solid", fgColor="312E81"),  # índigo-900
-        "BBVA":    PatternFill("solid", fgColor="1E3A8A"),  # blue-800
-        "INBURSA": PatternFill("solid", fgColor="0C4A6E"),  # sky-900
+        "BANORTE": PatternFill("solid", fgColor="312E81"),
+        "BBVA":    PatternFill("solid", fgColor="1E3A8A"),
+        "INBURSA": PatternFill("solid", fgColor="0C4A6E"),
     }
+    # Paleta de meses (azul/índigo/cielo — 12 variantes)
+    _MES_PAL = [
+        "0F172A","1E3A8A","312E81","0C4A6E","164E63","0F4C81",
+        "1E40AF","0369A1","3730A3","0E7490","1D4ED8","083344",
+    ]
     _BS  = Side(style="thin",   color="CBD5E1")
     _BSH = Side(style="medium", color="64748B")
     _BSW = Side(style="medium", color="FFFFFF")
@@ -576,7 +581,14 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         _rsc(row, 1, label, bold=True, color="FFFFFF",
              fill=PatternFill("solid", fgColor=fill_color),
              align=A_LEFT, border=B_RW, size=11)
-        ws_res.row_dimensions[row].height = 22
+        ws_res.row_dimensions[row].height = 24
+
+    def _mes_hdr(row, label, fill_color):
+        ws_res.merge_cells(f"A{row}:F{row}")
+        _rsc(row, 1, f"   📅  {label}", bold=True, color="FFFFFF",
+             fill=PatternFill("solid", fgColor=fill_color),
+             align=A_LEFT, border=B_RW, size=10)
+        ws_res.row_dimensions[row].height = 20
 
     def _col_hdrs(row, labels, fill=None):
         _f = fill or F_R_HDR
@@ -584,30 +596,35 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
             _rsc(row, _cn2, _lb2, bold=True, color="CBD5E1",
                  fill=_f, align=A_CTR, border=B_RH, size=8)
 
-    # ── Acumular ──────────────────────────────────────────────────────────────────
-    _bank_d      = defaultdict(lambda: {"count": 0, "total": 0.0})
-    _bank_abon_d = defaultdict(lambda: defaultdict(lambda: {"count": 0, "total": 0.0}))
-    _no_cls_d    = defaultdict(lambda: {"count": 0, "total": 0.0})
+    # ── Acumular por mes y banco ───────────────────────────────────────────────────
+    _bank_d       = defaultdict(lambda: {"count": 0, "total": 0.0})
+    _bank_abon_d  = defaultdict(lambda: defaultdict(lambda: {"count": 0, "total": 0.0}))
+    _no_cls_d     = defaultdict(lambda: {"count": 0, "total": 0.0})
+    _mes_bank_d   = defaultdict(lambda: defaultdict(lambda: {"count": 0, "total": 0.0}))
+    _mes_abon_d   = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {"count": 0, "total": 0.0})))
+    _mes_no_cls_d = defaultdict(lambda: defaultdict(lambda: {"count": 0, "total": 0.0}))
 
     for _r in registros:
-        _bank_d[_r["banco"]]["count"] += 1
-        _bank_d[_r["banco"]]["total"] += _r["monto"]
+        _mk2 = (getattr(_r["fecha"],"year",0), getattr(_r["fecha"],"month",0))
+        _bn  = _r["banco"]; _mn = _r["monto"]
+        _bank_d[_bn]["count"] += 1;        _bank_d[_bn]["total"] += _mn
+        _mes_bank_d[_mk2][_bn]["count"] += 1; _mes_bank_d[_mk2][_bn]["total"] += _mn
         _ac = semantic_to_actual.get(_r["col_abono"])
         if _ac is not None:
-            _bank_abon_d[_r["banco"]][_ac]["count"] += 1
-            _bank_abon_d[_r["banco"]][_ac]["total"] += _r["monto"]
+            _bank_abon_d[_bn][_ac]["count"] += 1; _bank_abon_d[_bn][_ac]["total"] += _mn
+            _mes_abon_d[_mk2][_bn][_ac]["count"] += 1; _mes_abon_d[_mk2][_bn][_ac]["total"] += _mn
         else:
-            _no_cls_d[_r["banco"]]["count"] += 1
-            _no_cls_d[_r["banco"]]["total"] += _r["monto"]
+            _no_cls_d[_bn]["count"] += 1; _no_cls_d[_bn]["total"] += _mn
+            _mes_no_cls_d[_mk2][_bn]["count"] += 1; _mes_no_cls_d[_mk2][_bn]["total"] += _mn
 
+    _meses_sorted = sorted(_mes_bank_d.keys())
     _tot_carg     = sum(v["total"] for v in _bank_d.values())
-    _tot_abon_all = sum(
-        sum(ad["total"] for ad in ba.values())
-        for ba in _bank_abon_d.values()
-    )
-    _dif_conc = _tot_carg - _tot_abon_all
+    _tot_abon_all = sum(sum(ad["total"] for ad in ba.values()) for ba in _bank_abon_d.values())
+    _dif_conc     = _tot_carg - _tot_abon_all
 
     # ── Título ────────────────────────────────────────────────────────────────────
+    MESES_R = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
+               7:"JULIO",8:"AGOSTO",9:"SEPTIEMBRE",10:"OCTUBRE",11:"NOVIEMBRE",12:"DICIEMBRE"}
     _fec_str = _date_cls.today().strftime("%d/%m/%Y")
     ws_res.merge_cells("A1:F1")
     _tc = ws_res.cell(row=1, column=1,
@@ -618,23 +635,42 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
 
     _row = 3
 
-    # ══ Sección A: Resumen global por banco ═══════════════════════════════════════
-    _sec_hdr(_row, "A   RESUMEN POR BANCO"); _row += 1
-    _col_hdrs(_row, [(1,"BANCO"),(2,"N° CUENTA CARGO"),(3,"# MOV"),
-                      (4,"TOTAL DEPÓSITO"),(5,"% DEL TOTAL"),(6,"")]); _row += 1
+    # ══ Sección A: Resumen por mes y banco ════════════════════════════════════════
+    _sec_hdr(_row, "A   RESUMEN POR MES Y BANCO"); _row += 1
 
+    for _mi, _mk2 in enumerate(_meses_sorted):
+        _mfill = _MES_PAL[_mi % len(_MES_PAL)]
+        _mes_lbl = f"{MESES_R.get(_mk2[1], str(_mk2[1]))} {_mk2[0]}"
+        _mes_hdr(_row, _mes_lbl, _mfill); _row += 1
+        _col_hdrs(_row, [(1,"BANCO"),(2,"N° CUENTA"),(3,"# MOV"),
+                          (4,"TOTAL DEPÓSITO"),(5,"% MES"),(6,"% TOTAL")],
+                  fill=PatternFill("solid", fgColor=_mfill)); _row += 1
+        _mes_tot = sum(_mes_bank_d[_mk2][_ci["banco"]]["total"] for _ci in cargos_list)
+        for _i2, _ci in enumerate(cargos_list):
+            _fl   = F_R_ODD if _i2 % 2 == 0 else F_R_EVN
+            _bd2  = _mes_bank_d[_mk2][_ci["banco"]]
+            _pct_m = (_bd2["total"] / _mes_tot * 100)  if _mes_tot  else 0
+            _pct_t = (_bd2["total"] / _tot_carg * 100) if _tot_carg else 0
+            _rsc(_row,1,_ci["banco"],bold=True,color="1E293B",fill=_fl,align=A_LEFT,border=B_R)
+            _rsc(_row,2,_ci["cuenta"],color="64748B",fill=_fl,align=A_CTR,border=B_R,size=9,italic=True)
+            _rsc(_row,3,_bd2["count"],color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="#,##0")
+            _rsc(_row,4,_bd2["total"],color="1E293B",fill=_fl,align=A_RIGHT,border=B_R,nf=FMT_NUM)
+            _rsc(_row,5,_pct_m/100,color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
+            _rsc(_row,6,_pct_t/100,color="475569",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
+            _row += 1
+        _mes_cnt = sum(_mes_bank_d[_mk2][_ci["banco"]]["count"] for _ci in cargos_list)
+        _pct_gt  = (_mes_tot / _tot_carg * 100) if _tot_carg else 0
+        _tf = PatternFill("solid", fgColor=_mfill)
+        _rsc(_row,1,f"TOTAL {_mes_lbl}",bold=True,color="FFFFFF",fill=_tf,align=A_LEFT,border=B_RW)
+        _rsc(_row,2,"",fill=_tf,border=B_RW)
+        _rsc(_row,3,_mes_cnt,bold=True,color="FFFFFF",fill=_tf,align=A_CTR,border=B_RW,nf="#,##0")
+        _rsc(_row,4,_mes_tot,bold=True,color="FFFFFF",fill=_tf,align=A_RIGHT,border=B_RW,nf=FMT_NUM)
+        _rsc(_row,5,1.0,bold=True,color="FFFFFF",fill=_tf,align=A_CTR,border=B_RW,nf="0.0%")
+        _rsc(_row,6,_pct_gt/100,bold=True,color="FFFFFF",fill=_tf,align=A_CTR,border=B_RW,nf="0.0%")
+        _row += 2
+
+    # Total global
     _grand_cnt = sum(v["count"] for v in _bank_d.values())
-    for _i2, _ci in enumerate(cargos_list):
-        _fl  = F_R_ODD if _i2 % 2 == 0 else F_R_EVN
-        _bd  = _bank_d[_ci["banco"]]
-        _pct = (_bd["total"] / _tot_carg * 100) if _tot_carg else 0
-        _rsc(_row,1,_ci["banco"],bold=True,color="1E293B",fill=_fl,align=A_LEFT,border=B_R)
-        _rsc(_row,2,_ci["cuenta"],color="64748B",fill=_fl,align=A_CTR,border=B_R,size=9,italic=True)
-        _rsc(_row,3,_bd["count"],color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="#,##0")
-        _rsc(_row,4,_bd["total"],color="1E293B",fill=_fl,align=A_RIGHT,border=B_R,nf=FMT_NUM)
-        _rsc(_row,5,_pct/100,color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
-        _rsc(_row,6,"",fill=_fl,border=B_R); _row += 1
-
     _rsc(_row,1,"TOTAL GENERAL",bold=True,color="FFFFFF",fill=F_R_TOT,align=A_LEFT,border=B_RW)
     _rsc(_row,2,"",fill=F_R_TOT,border=B_RW)
     _rsc(_row,3,_grand_cnt,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RW,nf="#,##0")
@@ -642,81 +678,74 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     _rsc(_row,5,1.0,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RW,nf="0.0%")
     _rsc(_row,6,"",fill=F_R_TOT,border=B_RW); _row += 2
 
-    # ══ Sección B: Desglose de abonos por banco ═══════════════════════════════════
-    _sec_hdr(_row, "B   DESGLOSE DE ABONOS POR BANCO"); _row += 1
+    # ══ Sección B: Desglose de abonos por mes y banco ═════════════════════════════
+    _sec_hdr(_row, "B   DESGLOSE DE ABONOS POR MES Y BANCO"); _row += 1
 
-    for _ci in cargos_list:
-        _bnc    = _ci["banco"]
-        _bnk_f  = F_R_BNK.get(_bnc, F_R_HDR)
-        _bd     = _bank_d[_bnc]
+    for _mi, _mk2 in enumerate(_meses_sorted):
+        _mfill  = _MES_PAL[_mi % len(_MES_PAL)]
+        _mes_lbl = f"{MESES_R.get(_mk2[1], str(_mk2[1]))} {_mk2[0]}"
+        _mes_hdr(_row, _mes_lbl, _mfill); _row += 1
+        _mes_tot = sum(_mes_bank_d[_mk2][_ci["banco"]]["total"] for _ci in cargos_list)
 
-        # Sub-cabecera del banco
-        ws_res.merge_cells(f"A{_row}:F{_row}")
-        _rsc(_row, 1, f"  {_bnc}  —  {_ci['cuenta']}",
-             bold=True, color="FFFFFF", fill=_bnk_f,
-             align=A_LEFT, border=B_RW, size=10)
-        ws_res.row_dimensions[_row].height = 20; _row += 1
+        for _ci in cargos_list:
+            _bnc   = _ci["banco"]
+            _bnk_f = F_R_BNK.get(_bnc, F_R_HDR)
+            _bd2   = _mes_bank_d[_mk2][_bnc]
+            ws_res.merge_cells(f"A{_row}:F{_row}")
+            _rsc(_row,1,f"  {_bnc}  —  {_ci['cuenta']}",bold=True,color="FFFFFF",
+                 fill=_bnk_f,align=A_LEFT,border=B_RW,size=10)
+            ws_res.row_dimensions[_row].height = 18; _row += 1
+            _col_hdrs(_row,[(1,"TIPO DE ABONO"),(2,"N° CUENTA"),
+                             (3,"# MOV"),(4,"TOTAL"),(5,"% BANCO"),(6,"% MES")],
+                      fill=_bnk_f); _row += 1
+            _abs2 = _mes_abon_d[_mk2].get(_bnc, {})
+            _has  = False
+            for _i2, _ab2 in enumerate(abonos_efectivos):
+                _ad = _abs2.get(_ab2["col"])
+                if not _ad or _ad["total"] == 0: continue
+                _has = True
+                _fl  = F_R_ODD if _i2 % 2 == 0 else F_R_EVN
+                _pb  = (_ad["total"] / _bd2["total"] * 100) if _bd2["total"] else 0
+                _pt  = (_ad["total"] / _mes_tot      * 100) if _mes_tot      else 0
+                _rsc(_row,1,_ab2["nombre"],color="1E293B",fill=_fl,align=A_LEFT,border=B_R)
+                _rsc(_row,2,_ab2["cuenta"],color="64748B",fill=_fl,align=A_CTR,border=B_R,size=9,italic=True)
+                _rsc(_row,3,_ad["count"],color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="#,##0")
+                _rsc(_row,4,_ad["total"],color="1E293B",fill=_fl,align=A_RIGHT,border=B_R,nf=FMT_NUM)
+                _rsc(_row,5,_pb/100,color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
+                _rsc(_row,6,_pt/100,color="475569",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
+                _row += 1
+            _nc2 = _mes_no_cls_d[_mk2].get(_bnc)
+            if _nc2 and _nc2["total"] > 0:
+                _has = True
+                _pb  = (_nc2["total"] / _bd2["total"] * 100) if _bd2["total"] else 0
+                _pt  = (_nc2["total"] / _mes_tot      * 100) if _mes_tot      else 0
+                _rsc(_row,1,"Sin clasificar",color="DC2626",fill=F_R_ODD,align=A_LEFT,border=B_R)
+                _rsc(_row,2,"—",color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,size=9)
+                _rsc(_row,3,_nc2["count"],color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="#,##0")
+                _rsc(_row,4,_nc2["total"],color="DC2626",fill=F_R_ODD,align=A_RIGHT,border=B_R,nf=FMT_NUM)
+                _rsc(_row,5,_pb/100,color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="0.0%")
+                _rsc(_row,6,_pt/100,color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="0.0%")
+                _row += 1
+            if not _has:
+                _rsc(_row,1,"(sin movimientos clasificados)",color="94A3B8",fill=F_R_ODD,
+                     align=A_LEFT,border=B_R,italic=True)
+                for _c2 in range(2,7): _rsc(_row,_c2,"",fill=F_R_ODD,border=B_R)
+                _row += 1
+            _pct_t_b = (_bd2["total"] / _mes_tot * 100) if _mes_tot else 0
+            _rsc(_row,1,f"TOTAL {_bnc}",bold=True,color="FFFFFF",fill=_bnk_f,align=A_LEFT,border=B_RW)
+            _rsc(_row,2,"",fill=_bnk_f,border=B_RW)
+            _rsc(_row,3,_bd2["count"],bold=True,color="FFFFFF",fill=_bnk_f,align=A_CTR,border=B_RW,nf="#,##0")
+            _rsc(_row,4,_bd2["total"],bold=True,color="FFFFFF",fill=_bnk_f,align=A_RIGHT,border=B_RW,nf=FMT_NUM)
+            _rsc(_row,5,1.0,bold=True,color="FFFFFF",fill=_bnk_f,align=A_CTR,border=B_RW,nf="0.0%")
+            _rsc(_row,6,_pct_t_b/100,bold=True,color="FFFFFF",fill=_bnk_f,align=A_CTR,border=B_RW,nf="0.0%")
+            _row += 2
 
-        # Columnas de detalle
-        _col_hdrs(_row, [(1,"TIPO DE ABONO"),(2,"N° CUENTA"),
-                          (3,"# MOV"),(4,"TOTAL"),(5,"% BANCO"),(6,"% TOTAL")],
-                  fill=_bnk_f); _row += 1
-
-        _bank_abs = _bank_abon_d.get(_bnc, {})
-        _has_rows = False
-        for _i2, _ab2 in enumerate(abonos_efectivos):
-            _ad = _bank_abs.get(_ab2["col"])
-            if not _ad or _ad["total"] == 0:
-                continue
-            _has_rows = True
-            _fl    = F_R_ODD if _i2 % 2 == 0 else F_R_EVN
-            _pct_b = (_ad["total"] / _bd["total"] * 100) if _bd["total"] else 0
-            _pct_t = (_ad["total"] / _tot_carg   * 100) if _tot_carg    else 0
-            _rsc(_row,1,_ab2["nombre"],color="1E293B",fill=_fl,align=A_LEFT,border=B_R)
-            _rsc(_row,2,_ab2["cuenta"],color="64748B",fill=_fl,align=A_CTR,border=B_R,size=9,italic=True)
-            _rsc(_row,3,_ad["count"],color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="#,##0")
-            _rsc(_row,4,_ad["total"],color="1E293B",fill=_fl,align=A_RIGHT,border=B_R,nf=FMT_NUM)
-            _rsc(_row,5,_pct_b/100,color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
-            _rsc(_row,6,_pct_t/100,color="475569",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
-            _row += 1
-
-        # Sin clasificar de este banco
-        _nc = _no_cls_d.get(_bnc)
-        if _nc and _nc["total"] > 0:
-            _has_rows = True
-            _pct_b = (_nc["total"] / _bd["total"] * 100) if _bd["total"] else 0
-            _pct_t = (_nc["total"] / _tot_carg   * 100) if _tot_carg    else 0
-            _rsc(_row,1,"Sin clasificar",color="DC2626",fill=F_R_ODD,align=A_LEFT,border=B_R)
-            _rsc(_row,2,"—",color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,size=9)
-            _rsc(_row,3,_nc["count"],color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="#,##0")
-            _rsc(_row,4,_nc["total"],color="DC2626",fill=F_R_ODD,align=A_RIGHT,border=B_R,nf=FMT_NUM)
-            _rsc(_row,5,_pct_b/100,color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="0.0%")
-            _rsc(_row,6,_pct_t/100,color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="0.0%")
-            _row += 1
-
-        if not _has_rows:
-            _rsc(_row,1,"(sin movimientos clasificados)",color="94A3B8",fill=F_R_ODD,
-                 align=A_LEFT,border=B_R,italic=True)
-            for _c2 in range(2,7):
-                _rsc(_row,_c2,"",fill=F_R_ODD,border=B_R)
-            _row += 1
-
-        # Subtotal banco
-        _pct_t_bnk = (_bd["total"] / _tot_carg * 100) if _tot_carg else 0
-        _rsc(_row,1,f"TOTAL {_bnc}",bold=True,color="FFFFFF",fill=_bnk_f,align=A_LEFT,border=B_RW)
-        _rsc(_row,2,"",fill=_bnk_f,border=B_RW)
-        _rsc(_row,3,_bd["count"],bold=True,color="FFFFFF",fill=_bnk_f,align=A_CTR,border=B_RW,nf="#,##0")
-        _rsc(_row,4,_bd["total"],bold=True,color="FFFFFF",fill=_bnk_f,align=A_RIGHT,border=B_RW,nf=FMT_NUM)
-        _rsc(_row,5,1.0,bold=True,color="FFFFFF",fill=_bnk_f,align=A_CTR,border=B_RW,nf="0.0%")
-        _rsc(_row,6,_pct_t_bnk/100,bold=True,color="FFFFFF",fill=_bnk_f,align=A_CTR,border=B_RW,nf="0.0%")
-        _row += 2
-
-    # ══ Sección C: Conciliación ═══════════════════════════════════════════════════
-    _sec_hdr(_row, "C   CONCILIACIÓN"); _row += 1
+    # ══ Sección C: Conciliación global ═══════════════════════════════════════════
+    _sec_hdr(_row, "C   CONCILIACIÓN GLOBAL"); _row += 1
 
     for _lbl_c, _val_c in [
-        ("Total Cargos (suma de bancos)",      _tot_carg),
-        ("Total Abonos clasificados",          _tot_abon_all),
+        ("Total Cargos (suma de todos los meses)",  _tot_carg),
+        ("Total Abonos clasificados",               _tot_abon_all),
     ]:
         _rsc(_row,1,_lbl_c,color="1E293B",fill=F_R_ODD,align=A_LEFT,border=B_R)
         _rsc(_row,2,"",fill=F_R_ODD,border=B_R)

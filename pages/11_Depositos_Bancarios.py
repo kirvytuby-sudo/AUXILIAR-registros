@@ -270,8 +270,27 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         if num_format: c.number_format = num_format
         if border:     c.border = border
         return c
-    # Cuentas de cargos: se usan las hardcodeadas como default
-    cargos_efectivos = dict(CARGOS)
+    # ── Keyword → col semántico (solo para asignar color de encabezado) ──────────
+    _ABONO_KW = [
+        (["AMEX", "AMERICAN"],                    12),
+        (["EFECTIVALE"],                           13),
+        (["EDENRED", "TICKET", "TICKETCARD"],      14),
+        (["FONDO", "CAJA"],                        15),
+        (["GASNGO", "GASN", "BANORTE"],            16),
+        (["SHELL", "SMARTBT", "ICIGAS"],           17),
+        (["BANCOMER", "BBVA", "TDC", "VISA"],      18),
+        (["INBURSA"],                              19),
+    ]
+    ABONO_FILLS = {12:F_H_AMEX, 13:F_H_EFEC, 14:F_H_EDEN, 15:F_H_CAJA,
+                   16:F_H_BNTTR, 17:F_H_SHLL, 18:F_H_BBVAT, 19:F_H_INBTR}
+
+    # ── Cuentas: 100 % desde la plantilla ─────────────────────────────────────
+    # cargos_efectivos : {banco: (cuenta, nombre)}
+    # abonos_efectivos : [{col, cuenta, nombre, sem_col}]  — orden de CUENTAS
+    # semantic_to_actual: {sem_col → actual_col}
+    cargos_efectivos  = dict(CARGOS)
+    abonos_efectivos  = []
+    semantic_to_actual = {}
 
     if plantilla is not None:
         wb = openpyxl.load_workbook(plantilla)
@@ -279,62 +298,100 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         for row_idx in range(1, ws.max_row + 1):
             for col_idx in range(1, ws.max_column + 1):
                 ws.cell(row=row_idx, column=col_idx).value = None
-        # ── Leer cuentas de cargos desde hoja CUENTAS ─────────────────
-        _hoja_cuentas = next((s for s in wb.sheetnames if s.strip().upper() == "CUENTAS"), None)
+
+        _hoja_cuentas = next(
+            (s for s in wb.sheetnames if s.strip().upper() == "CUENTAS"), None)
         if _hoja_cuentas:
             _wc = wb[_hoja_cuentas]
             for _row in _wc.iter_rows(min_row=3, values_only=True):
-                _cta, _banco = (_row[0] or ""), (_row[1] or "")
-                _cta = str(_cta).strip(); _banco = str(_banco).strip().upper()
-                if not _cta or not _banco:
-                    continue
-                for _key in ("BANORTE", "BBVA", "INBURSA"):
-                    if _key in _banco:
-                        cargos_efectivos[_key] = (_cta, cargos_efectivos[_key][1])
-                        break
+                # ── CARGOS (cols 1-2) ─────────────────────────────────────
+                _cta   = str(_row[0] or "").strip()
+                _banco = str(_row[1] or "").strip().upper()
+                if _cta and _banco:
+                    for _key in ("BANORTE", "BBVA", "INBURSA"):
+                        if _key in _banco:
+                            cargos_efectivos[_key] = (_cta, cargos_efectivos[_key][1])
+                            break
+                # ── ABONOS (cols 4-5) en el orden exacto de CUENTAS ───────
+                _cta_ab  = str(_row[3] or "").strip() if len(_row) > 3 else ""
+                _nom_raw = (str(_row[4] or "").strip().replace("\n", "").strip()
+                            if len(_row) > 4 else "")
+                if _cta_ab and _nom_raw:
+                    _nom_up  = _nom_raw.upper().replace(" ", "")
+                    _sem_col = None
+                    for _kws, _sc in _ABONO_KW:
+                        if any(kw.replace(" ", "") in _nom_up for kw in _kws):
+                            _sem_col = _sc
+                            break
+                    _actual_col = 12 + len(abonos_efectivos)
+                    abonos_efectivos.append({
+                        "col":     _actual_col,
+                        "cuenta":  _cta_ab,
+                        "nombre":  _nom_raw,
+                        "sem_col": _sem_col,
+                    })
+
+        # mapa semántico → posición real en la póliza
+        for _ab in abonos_efectivos:
+            if _ab["sem_col"] is not None:
+                semantic_to_actual[_ab["sem_col"]] = _ab["col"]
     else:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "POLIZA"
 
-    for pol_idx in range(21):
-        set_cell(ws, 1, pol_idx + 1, value=pol_idx,
+    # Sin plantilla o CUENTAS vacía → defaults hardcodeados
+    if not abonos_efectivos:
+        abonos_efectivos  = [dict(a, sem_col=a["col"]) for a in ABONOS]
+        semantic_to_actual = {a["col"]: a["col"] for a in ABONOS}
+
+    # ── Posiciones dinámicas ───────────────────────────────────────────────────
+    N_ABONOS       = len(abonos_efectivos)
+    COL_TOT_CARGOS = 12
+    COL_TOT_ABONOS = 12 + N_ABONOS + 1
+    COL_DIFERENCIA = 12 + N_ABONOS + 2
+    N_COLS         = COL_DIFERENCIA
+
+    # ── Fila 1: numeración ────────────────────────────────────────────────────
+    for idx in range(N_COLS):
+        set_cell(ws, 1, idx + 1, value=idx,
                  font=fnt(color="000000"), fill=F_NONE, align=A_CTR)
 
+    # ── Fila 2: N° de cuentas ─────────────────────────────────────────────────
     fnt_cta = fnt(bold=False, color="FFFFFF", size=9, italic=True)
     for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
-        set_cell(ws, 2, pol_idx + 1, value=cargos_efectivos[banco][0],
-                 font=fnt_cta, fill=F_GRAY2, align=A_CTR, border=BORDER)
-    for a in ABONOS:
-        set_cell(ws, 2, a["col"] + 1, value=a["cuenta"],
+        cta = cargos_efectivos[banco][0]
+        if cta:
+            set_cell(ws, 2, pol_idx + 1, value=cta,
+                     font=fnt_cta, fill=F_GRAY2, align=A_CTR, border=BORDER)
+    for _ab in abonos_efectivos:
+        set_cell(ws, 2, _ab["col"] + 1, value=_ab["cuenta"],
                  font=fnt_cta, fill=F_GRAY2, align=A_CTR, border=BORDER)
 
+    # ── Fila 3: encabezados ───────────────────────────────────────────────────
     fnt_h = lambda: fnt(bold=True, color="FFFFFF")
     for col, lbl in [(1,"TIPO"),(2,"FECHA"),(3,"REFERENCIA"),(4,"CONCEPTO"),
                      (5,"ERROR"),(6,"UIDD"),(7,"NÚM PÓLIZA"),(8,"PROCESADO")]:
         set_cell(ws, 3, col, value=lbl, font=fnt_h(), fill=F_ADMIN,
                  align=A_CTR, border=BORDER_H)
-
     for pol_idx, banco, fill_h in [
-        (8, "BANORTE", F_H_BNT), (9, "BBVA", F_H_BBVA), (10, "INBURSA", F_H_INB)]:
+            (8, "BANORTE", F_H_BNT), (9, "BBVA", F_H_BBVA), (10, "INBURSA", F_H_INB)]:
         set_cell(ws, 3, pol_idx + 1, value=CARGOS[banco][1].strip(),
                  font=fnt_h(), fill=fill_h, align=A_CTR, border=BORDER_H)
-
-    set_cell(ws, 3, 12, value="TOTAL CARGOS",
+    set_cell(ws, 3, COL_TOT_CARGOS, value="TOTAL CARGOS",
              font=fnt_h(), fill=F_H_TCARG, align=A_CTR, border=BORDER_H)
-
-    ABONO_FILLS = {12:F_H_AMEX,13:F_H_EFEC,14:F_H_EDEN,15:F_H_CAJA,
-                   16:F_H_BNTTR,17:F_H_SHLL,18:F_H_BBVAT,19:F_H_INBTR}
-    for a in ABONOS:
-        dark = a["col"] in {15, 17}
-        set_cell(ws, 3, a["col"]+1, value=a["nombre"],
-                 font=fnt(bold=True, color="1A1A1A" if dark else "FFFFFF"),
-                 fill=ABONO_FILLS.get(a["col"], F_ADMIN), align=A_CTR_W, border=BORDER_H)
-
-    set_cell(ws, 3, 21, value="TOTAL ABONOS",
+    for _ab in abonos_efectivos:
+        _dark    = _ab.get("sem_col") in {15, 17}
+        _fill_ab = ABONO_FILLS.get(_ab.get("sem_col"), F_ADMIN)
+        set_cell(ws, 3, _ab["col"] + 1, value=_ab["nombre"],
+                 font=fnt(bold=True, color="1A1A1A" if _dark else "FFFFFF"),
+                 fill=_fill_ab, align=A_CTR_W, border=BORDER_H)
+    set_cell(ws, 3, COL_TOT_ABONOS, value="TOTAL ABONOS",
              font=fnt_h(), fill=F_H_TABON, align=A_CTR, border=BORDER_H)
-    set_cell(ws, 3, 22, value="DIFERENCIA",
+    set_cell(ws, 3, COL_DIFERENCIA, value="DIFERENCIA",
              font=fnt_h(), fill=F_H_DIFF,  align=A_CTR, border=BORDER_H)
+
+    # ── Filas de datos ────────────────────────────────────────────────────────
     orden_banco = {"BBVA": 0, "INBURSA": 1, "BANORTE": 2}
     registros_sorted = sorted(registros, key=lambda x: (orden_banco[x["banco"]], x["fecha"]))
 
@@ -344,7 +401,6 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         "BANORTE": (F_BNT_1,  F_BNT_2),
     }
     BANCO_COLOR = {"BBVA": "2563EB", "BANORTE": "DC2626", "INBURSA": "059669"}
-    BANCO_ABREV = {"BBVA": "BBV", "BANORTE": "BNT", "INBURSA": "INB"}
 
     for fila_num, r in enumerate(registros_sorted, start=4):
         f1, f2 = FILLS_BANCO[r["banco"]]
@@ -358,41 +414,52 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
             return c
 
         monto = r["monto"]
-        # Col TIPO: negrita con color del banco
         set_cell(ws, fila_num, 1, value="I",
                  font=fnt(bold=True, color=BANCO_COLOR[r["banco"]]),
                  fill=fill_row, align=A_CTR, border=BORDER)
         dat(2, r["fecha"], num_fmt=FMT_DATE)
         dat(3, r["ref"],   align=A_LEFT)
         dat(4, r["ref"],   align=A_LEFT)
-        for col in [5, 6, 7, 8]: dat(col, None)
+        for col in [5, 6, 7, 8]:
+            dat(col, None)
         dat(r["col_cargo"] + 1, monto, num_fmt=FMT_NUM, align=A_RIGHT)
-        dat(12, monto, num_fmt=FMT_NUM, align=A_RIGHT)
-        dat(r["col_abono"] + 1, monto, num_fmt=FMT_NUM, align=A_RIGHT)
-        dat(21, monto, num_fmt=FMT_NUM, align=A_RIGHT)
+        dat(COL_TOT_CARGOS,     monto, num_fmt=FMT_NUM, align=A_RIGHT)
 
-        col_L = get_column_letter(12)
-        col_U = get_column_letter(21)
-        c_diff = ws.cell(row=fila_num, column=22,
+        # Abono: remapear col semántico → col real de esta póliza
+        _actual_ab = semantic_to_actual.get(r["col_abono"])
+        if _actual_ab is not None:
+            dat(_actual_ab + 1, monto, num_fmt=FMT_NUM, align=A_RIGHT)
+
+        dat(COL_TOT_ABONOS, monto, num_fmt=FMT_NUM, align=A_RIGHT)
+
+        col_L  = get_column_letter(COL_TOT_CARGOS)
+        col_U  = get_column_letter(COL_TOT_ABONOS)
+        c_diff = ws.cell(row=fila_num, column=COL_DIFERENCIA,
                          value=f"={col_L}{fila_num}-{col_U}{fila_num}")
-        c_diff.font   = fnt(bold=True, color="7C3AED")
-        c_diff.fill   = fill_row
-        c_diff.border = BORDER
-        c_diff.alignment  = A_RIGHT
+        c_diff.font          = fnt(bold=True, color="7C3AED")
+        c_diff.fill          = fill_row
+        c_diff.border        = BORDER
+        c_diff.alignment     = A_RIGHT
         c_diff.number_format = FMT_NUM
         ws.row_dimensions[fila_num].height = 18
-    anchos = {
+
+    # ── Anchos de columna ─────────────────────────────────────────────────────
+    anchos_fijos = {
         1:14.4, 2:13.0, 3:36.9, 4:26.3, 5:6.7, 6:5.3, 7:11.3, 8:11.6,
-        9:16.0, 10:16.0, 11:16.0, 12:16.3, 13:32.0, 14:26.0, 15:30.0,
-        16:18.0, 17:28.0, 18:32.0, 19:12.0, 20:28.0, 21:14.1, 22:12.6,
+        9:16.0, 10:16.0, 11:16.0, 12:16.3,
     }
-    for col_num, w in anchos.items():
+    for col_num, w in anchos_fijos.items():
         ws.column_dimensions[get_column_letter(col_num)].width = w
+    for _ab in abonos_efectivos:
+        ws.column_dimensions[get_column_letter(_ab["col"] + 1)].width = 18.0
+    ws.column_dimensions[get_column_letter(COL_TOT_ABONOS)].width = 14.1
+    ws.column_dimensions[get_column_letter(COL_DIFERENCIA)].width  = 12.6
     ws.row_dimensions[1].height = 14
     ws.row_dimensions[2].height = 20
     ws.row_dimensions[3].height = 36
     ws.freeze_panes = "B4"
 
+    # ── Hoja CUENTAS (solo cuando no hay plantilla) ───────────────────────────
     if plantilla is None:
         wc = wb.create_sheet("CUENTAS")
         fn_th  = fnt(bold=True, color="FFFFFF")
@@ -403,7 +470,6 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         F_ROW2 = PatternFill("solid", fgColor="F0FDF4")
         A_L  = Alignment(horizontal="left",   vertical="center")
         A_C2 = Alignment(horizontal="center", vertical="center")
-
         set_cell(wc,1,1,"CARGOS",font=fn_th,fill=F_TH_C,align=A_C2,border=BORDER_H)
         set_cell(wc,1,2,"",      font=fn_th,fill=F_TH_C,align=A_C2,border=BORDER_H)
         set_cell(wc,1,4,"ABONOS",font=fn_th,fill=F_TH_A,align=A_C2,border=BORDER_H)
@@ -415,10 +481,10 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
             fl = F_ROW1 if i%2==0 else F_ROW2
             set_cell(wc,i,1,cuenta,        font=fn_row,fill=fl,align=A_L,border=BORDER)
             set_cell(wc,i,2,nombre.strip(),font=fn_row,fill=fl,align=A_L,border=BORDER)
-        for i,a in enumerate(ABONOS,start=3):
+        for i,_ab in enumerate(abonos_efectivos,start=3):
             fl = F_ROW1 if i%2==0 else F_ROW2
-            set_cell(wc,i,4,a["cuenta"],font=fn_row,fill=fl,align=A_L,border=BORDER)
-            set_cell(wc,i,5,a["nombre"],font=fn_row,fill=fl,align=A_L,border=BORDER)
+            set_cell(wc,i,4,_ab["cuenta"],font=fn_row,fill=fl,align=A_L,border=BORDER)
+            set_cell(wc,i,5,_ab["nombre"],font=fn_row,fill=fl,align=A_L,border=BORDER)
         for col_num,w in {1:20.0,2:12.0,4:20.0,5:48.0}.items():
             wc.column_dimensions[get_column_letter(col_num)].width = w
         wc.row_dimensions[1].height = 22

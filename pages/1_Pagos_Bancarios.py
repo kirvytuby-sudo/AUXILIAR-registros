@@ -1,6 +1,6 @@
 """
-AUXILIAR DE REGISTROS — Módulo: Pagos Bancarios
-Conciliación de nómina BBVA Net Cash. PDFs → Excel.
+AUXILIAR DE REGISTROS — Módulo: Pagos Bancarios (unificado con Préstamos)
+PDFs BBVA Net Cash → Excel. Categorías: Nómina | Complementos | Vacaciones | Préstamos
 """
 import os, tempfile
 import streamlit as st
@@ -26,7 +26,10 @@ if not _CN_OK:
 
 # ── Estado de sesión ───────────────────────────────────────────────────────────
 if "pb_clasificados" not in st.session_state:
-    st.session_state.pb_clasificados = {"nomina": [], "complementos": [], "vacaciones": [], "no_reconocidos": []}
+    st.session_state.pb_clasificados = {
+        "nomina": [], "complementos": [], "vacaciones": [],
+        "prestamos": [], "no_reconocidos": [],
+    }
 if "pb_resultado_bytes" not in st.session_state:
     st.session_state.pb_resultado_bytes = None
 if "pb_tmp" not in st.session_state:
@@ -37,7 +40,7 @@ TMP = st.session_state.pb_tmp
 def _clasificar(path):
     """Devuelve (categoria, descripcion). Propaga excepciones para que el caller las logee."""
     nombre = os.path.basename(path).upper()
-    tipo = cn.detect_template(path)           # puede lanzar excepción
+    tipo = cn.detect_template(path)
     if tipo == "dispersion":
         meta, _ = cn.parse_dispersion(path)
     else:
@@ -47,7 +50,7 @@ def _clasificar(path):
     if "VAC" in buscar:
         cat = "vacaciones"
     elif "PRESTAMO" in buscar or "PRÉSTAMO" in buscar:
-        cat = "no_reconocidos"
+        cat = "prestamos"          # ← antes iba a no_reconocidos
     elif tipo == "dispersion":
         cat = "nomina"
     else:
@@ -55,12 +58,12 @@ def _clasificar(path):
     return cat, meta.get("descripcion") or os.path.basename(path)
 
 def clasificar_uploads(uploaded_files):
-    res  = {"nomina": [], "complementos": [], "vacaciones": [], "no_reconocidos": []}
+    res  = {"nomina": [], "complementos": [], "vacaciones": [], "prestamos": [], "no_reconocidos": []}
     errs = []
     for uf in uploaded_files:
         tmp_path = os.path.join(TMP, uf.name)
         try:
-            uf.seek(0)                        # reset puntero — necesario en reruns de Streamlit
+            uf.seek(0)
             with open(tmp_path, "wb") as f:
                 f.write(uf.read())
             cat, desc = _clasificar(tmp_path)
@@ -71,21 +74,28 @@ def clasificar_uploads(uploaded_files):
             errs.append(traceback.format_exc())
         res[cat].append((uf.name, desc, tmp_path))
     return res, errs
-    return res
 
-# ── Estilos adicionales ────────────────────────────────────────────────────────
+# ── Estilos ────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
 .listbox-header {
     background:#1E3A8A; color:#FBCFE8; font-weight:700;
     padding:5px 10px; border-radius:6px 6px 0 0; font-size:.9rem;
 }
+.listbox-header-prest {
+    background:#7C3AED; color:#EDE9FE; font-weight:700;
+    padding:5px 10px; border-radius:6px 6px 0 0; font-size:.9rem;
+}
 .listbox-body {
     border:1.5px solid #1E3A8A; border-top:none;
     border-radius:0 0 6px 6px; background:#fff;
-    min-height:140px; padding:6px 8px; margin-bottom:6px;
+    min-height:120px; padding:6px 8px; margin-bottom:6px;
 }
-.listbox-item { padding:3px 4px; font-size:.85rem; color:#1e293b; }
+.listbox-body-prest {
+    border:1.5px solid #7C3AED; border-top:none;
+    border-radius:0 0 6px 6px; background:#fff;
+    min-height:120px; padding:6px 8px; margin-bottom:6px;
+}
 .reporte-bar {
     background:#1E3A8A; color:#fff; padding:6px 14px;
     border-radius:6px 6px 0 0; font-weight:700; font-size:.9rem;
@@ -107,16 +117,14 @@ _c_pdf, _c_cat = st.columns([3, 2])
 with _c_pdf:
     pdfs = st.file_uploader(
         "📂 PDFs...", type=["pdf"], accept_multiple_files=True, label_visibility="collapsed",
-        help="Selecciona uno o varios PDFs de nómina BBVA Net Cash",
+        help="Selecciona uno o varios PDFs de nómina BBVA Net Cash (nómina, complementos, vacaciones o préstamos)",
     )
 with _c_cat:
     catalogo_file = st.file_uploader(
         "📊 Catálogo de cuentas (.xlsx)", type=["xlsx","xls"], label_visibility="visible",
     )
 
-# Clasificar al subir
-# Usamos file_id (único por cada acción de upload, aunque el nombre sea igual)
-# para detectar correctamente cuando el usuario sube archivos nuevos.
+# ── Clasificar al subir ────────────────────────────────────────────────────────
 if pdfs:
     _ids = tuple(sorted(getattr(f, "file_id", f.name) for f in pdfs))
 else:
@@ -128,17 +136,18 @@ if _ids != st.session_state.get("_pb_ids", ()):
         _clas, _errs = clasificar_uploads(pdfs)
         st.session_state.pb_clasificados = _clas
         st.session_state.pb_log = ["PDFs cargados y clasificados."] + _errs
-        # Pre-fijar ms_* con TODOS los ítems seleccionados (evita depender de default=)
-        for _k in ("nomina", "complementos", "vacaciones"):
+        for _k in ("nomina", "complementos", "vacaciones", "prestamos"):
             _its = _clas.get(_k, [])
             st.session_state[f"ms_{_k}"] = [f"{n}  —  {d}" for n, d, _ in _its]
     else:
-        st.session_state.pb_clasificados = {"nomina": [], "complementos": [], "vacaciones": [], "no_reconocidos": []}
+        st.session_state.pb_clasificados = {
+            "nomina": [], "complementos": [], "vacaciones": [],
+            "prestamos": [], "no_reconocidos": [],
+        }
         st.session_state.pb_log = []
-        for _mk in ("ms_nomina", "ms_complementos", "ms_vacaciones"):
+        for _mk in ("ms_nomina", "ms_complementos", "ms_vacaciones", "ms_prestamos"):
             st.session_state[_mk] = []
     st.session_state.pb_resultado_bytes = None
-    # No se necesita st.rerun() — session_state ya tiene los valores correctos
 
 catalogo_path = None
 if catalogo_file:
@@ -152,24 +161,22 @@ if "pb_log" not in st.session_state:
 
 clas = st.session_state.pb_clasificados
 
-# ── Tres listboxes ─────────────────────────────────────────────────────────────
-_col1, _col2, _col3 = st.columns(3)
+# ── Cuatro listboxes ───────────────────────────────────────────────────────────
+_col1, _col2, _col3, _col4 = st.columns(4)
 
-def _render_lista(col, key, titulo, emoji):
+def _render_lista(col, key, titulo, emoji, es_prestamo=False):
     items = clas.get(key, [])
     ms_key = f"ms_{key}"
+    hdr_cls  = "listbox-header-prest" if es_prestamo else "listbox-header"
     with col:
-        st.markdown(f'<div class="listbox-header">{emoji} {titulo}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="{hdr_cls}">{emoji} {titulo}</div>', unsafe_allow_html=True)
         opciones = [f"{n}  —  {d}" for n, d, _ in items] if items else []
-        # session_state ya fue pre-fijado en el bloque de clasificación;
-        # si por algún motivo no existe, lo inicializamos aquí también
         if ms_key not in st.session_state:
             st.session_state[ms_key] = opciones
         sel = st.multiselect(
             titulo, options=opciones,
             label_visibility="collapsed", key=ms_key,
         )
-        # Botones Todos / Ninguno: escriben directo al session_state del multiselect
         _bt, _bn = st.columns(2)
         with _bt:
             if st.button("✔ Todos",  key=f"btn_todos_{key}", use_container_width=True):
@@ -179,17 +186,26 @@ def _render_lista(col, key, titulo, emoji):
             if st.button("✖ Ninguno", key=f"btn_ning_{key}", use_container_width=True):
                 st.session_state[ms_key] = []
                 st.rerun()
-        # Rutas seleccionadas
         paths_sel = [p for (n, d, p), etq in zip(items, opciones) if etq in sel]
         return paths_sel
 
-_sel_nom  = _render_lista(_col1, "nomina",       "Nómina principal", "💼")
-_sel_comp = _render_lista(_col2, "complementos", "Complementos",     "💗")
-_sel_vac  = _render_lista(_col3, "vacaciones",   "Vacaciones",       "🌴")
+_sel_nom   = _render_lista(_col1, "nomina",       "Nómina principal", "💼")
+_sel_comp  = _render_lista(_col2, "complementos", "Complementos",     "💗")
+_sel_vac   = _render_lista(_col3, "vacaciones",   "Vacaciones",       "🌴")
+_sel_prest = _render_lista(_col4, "prestamos",    "Préstamos",        "💳", es_prestamo=True)
 
-# ── Botones de proceso individuales ───────────────────────────────────────────
-_pb1, _pb2, _pb3 = st.columns(3)
+# ── Catálogo ───────────────────────────────────────────────────────────────────
+def _cargar_catalogo():
+    catalogo = {"empleados": {}, "prestamos": {}}
+    if catalogo_path and os.path.isfile(catalogo_path):
+        mapa = cn.load_poliza(catalogo_path)
+        for k in ("empleados", "prestamos"):
+            df = mapa.get(k)
+            if df is not None and not df.empty:
+                catalogo[k] = {idx: str(row["Cuenta"]) for idx, row in df.iterrows()}
+    return catalogo
 
+# ── Procesar ───────────────────────────────────────────────────────────────────
 def _procesar(pdfs_lista, etiqueta, out_nombre):
     if not pdfs_lista:
         st.session_state.pb_log.append(f"⚠ Sin PDFs seleccionados en {etiqueta}.")
@@ -198,12 +214,7 @@ def _procesar(pdfs_lista, etiqueta, out_nombre):
         st.session_state.pb_log.append("⚠ Carga el catálogo de cuentas primero.")
         return
     try:
-        catalogo = {"empleados": {}, "prestamos": {}}
-        mapa = cn.load_poliza(catalogo_path)
-        for k in ("empleados", "prestamos"):
-            df = mapa.get(k)
-            if df is not None and not df.empty:
-                catalogo[k] = {idx: str(row["Cuenta"]) for idx, row in df.iterrows()}
+        catalogo = _cargar_catalogo()
         out_path = os.path.join(TMP, out_nombre)
         cn.escribir_pagos_bancarios_todo(pdfs_lista, catalogo, out_path)
         with open(out_path, "rb") as f:
@@ -214,6 +225,9 @@ def _procesar(pdfs_lista, etiqueta, out_nombre):
         import traceback
         st.session_state.pb_log.append(f"❌ Error en {etiqueta}: {e}")
         st.session_state.pb_log.append(traceback.format_exc())
+
+# ── Botones individuales ───────────────────────────────────────────────────────
+_pb1, _pb2, _pb3, _pb4 = st.columns(4)
 
 with _pb1:
     if st.button("▶ Conciliar seleccionados", use_container_width=True, key="btn_conc"):
@@ -233,11 +247,17 @@ with _pb3:
             _procesar(_sel_vac, "Vacaciones", "Vacaciones.xlsx")
         st.rerun()
 
+with _pb4:
+    if st.button("▶ Procesar préstamos", use_container_width=True, key="btn_prest"):
+        with st.spinner("Procesando préstamos..."):
+            _procesar(_sel_prest, "Préstamos", "Prestamos_Consolidado.xlsx")
+        st.rerun()
+
 # ── Generar TODO ───────────────────────────────────────────────────────────────
-_todos_pdfs = _sel_nom + _sel_comp + _sel_vac
+_todos_pdfs = _sel_nom + _sel_comp + _sel_vac + _sel_prest
 _hay_cat    = catalogo_path is not None
 if st.button(
-    f"⚙ Generar TODO en un solo Excel  (usa lo seleccionado en las 3 listas)  — {len(_todos_pdfs)} PDF(s)",
+    f"⚙ Generar TODO en un solo Excel  (nómina + complementos + vacaciones + préstamos)  — {len(_todos_pdfs)} PDF(s)",
     disabled=(len(_todos_pdfs) == 0 or not _hay_cat),
     use_container_width=True, type="primary", key="btn_todo",
 ):
@@ -265,7 +285,6 @@ if _r_bytes:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True, key="dl_rep",
         )
-    # Vista previa
     try:
         import pandas as pd, io
         _df_prev = pd.read_excel(io.BytesIO(_r_bytes), nrows=50)
@@ -291,6 +310,7 @@ if st.session_state.pb_log:
         st.session_state.pb_log = []
         st.rerun()
 
+# ── PDFs no reconocidos ────────────────────────────────────────────────────────
 if clas.get("no_reconocidos"):
     nombres_nr = ", ".join(n for n, _, _ in clas["no_reconocidos"])
-    st.warning(f"⚠️ No reconocidos (posibles préstamos — úsalos en el módulo Préstamos): {nombres_nr}")
+    st.warning(f"⚠️ No reconocidos (error al leer): {nombres_nr}")

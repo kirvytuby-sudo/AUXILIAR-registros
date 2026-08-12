@@ -236,28 +236,15 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     FONT_NAME = "Aptos Narrow"
     FONT_SIZE = 11
 
-    F_ADMIN   = PatternFill("solid", fgColor="4B5563")
-    F_H_BBVA  = PatternFill("solid", fgColor="2563EB")
-    F_H_BNT   = PatternFill("solid", fgColor="DC2626")
-    F_H_INB   = PatternFill("solid", fgColor="059669")
-    F_H_TCARG = PatternFill("solid", fgColor="D97706")
-    F_H_AMEX  = PatternFill("solid", fgColor="4F46E5")
-    F_H_EFEC  = PatternFill("solid", fgColor="E11D48")
-    F_H_EDEN  = PatternFill("solid", fgColor="EA580C")
-    F_H_CAJA  = PatternFill("solid", fgColor="F59E0B")
-    F_H_BNTTR = PatternFill("solid", fgColor="B91C1C")
-    F_H_SHLL  = PatternFill("solid", fgColor="CA8A04")
-    F_H_BBVAT = PatternFill("solid", fgColor="1D4ED8")
-    F_H_INBTR = PatternFill("solid", fgColor="047857")
-    F_H_TABON = PatternFill("solid", fgColor="15803D")
-    F_H_DIFF  = PatternFill("solid", fgColor="7C3AED")
-    F_GRAY2   = PatternFill("solid", fgColor="374151")
-    F_BBVA_1  = PatternFill("solid", fgColor="EFF6FF")
-    F_BBVA_2  = PatternFill("solid", fgColor="DBEAFE")
-    F_BNT_1   = PatternFill("solid", fgColor="FFF1F2")
-    F_BNT_2   = PatternFill("solid", fgColor="FFE4E6")
-    F_INB_1   = PatternFill("solid", fgColor="F0FDF4")
-    F_INB_2   = PatternFill("solid", fgColor="DCFCE7")
+    F_ADMIN   = PatternFill("solid", fgColor="1E293B")
+    F_GRAY2   = PatternFill("solid", fgColor="1E293B")
+    # Fondos de fila — familia azul por banco
+    F_BBVA_1  = PatternFill("solid", fgColor="EFF6FF")  # blue-50
+    F_BBVA_2  = PatternFill("solid", fgColor="DBEAFE")  # blue-100
+    F_BNT_1   = PatternFill("solid", fgColor="EEF2FF")  # indigo-50
+    F_BNT_2   = PatternFill("solid", fgColor="E0E7FF")  # indigo-100
+    F_INB_1   = PatternFill("solid", fgColor="F0F9FF")  # sky-50
+    F_INB_2   = PatternFill("solid", fgColor="E0F2FE")  # sky-100
     F_NONE    = PatternFill(fill_type=None)
 
     _S = Side(style="thin", color="999999")
@@ -299,22 +286,22 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     ]
     # Col semántico → color header de abono
     _SEM_FILL = {
-        12: PatternFill("solid", fgColor="312E81"),  # AMEX — índigo
-        13: PatternFill("solid", fgColor="831843"),  # EFECTIVALE — fucsia
-        14: PatternFill("solid", fgColor="7C2D12"),  # EDENRED — naranja
-        15: PatternFill("solid", fgColor="713F12"),  # CAJA — ámbar
-        16: PatternFill("solid", fgColor="7F1D1D"),  # GASNGO — rojo
-        17: PatternFill("solid", fgColor="14532D"),  # SHELL/ICIGAS — verde
-        18: PatternFill("solid", fgColor="1E3A8A"),  # BBVA — azul
-        19: PatternFill("solid", fgColor="134E4A"),  # INBURSA — teal
+        12: PatternFill("solid", fgColor="312E81"),  # AMEX — índigo-900
+        13: PatternFill("solid", fgColor="3730A3"),  # EFECTIVALE — índigo-800
+        14: PatternFill("solid", fgColor="1D4ED8"),  # EDENRED — blue-700
+        15: PatternFill("solid", fgColor="1E40AF"),  # CAJA — blue-800
+        16: PatternFill("solid", fgColor="0C4A6E"),  # GASNGO — sky-900
+        17: PatternFill("solid", fgColor="164E63"),  # SHELL/ICIGAS — cyan-900
+        18: PatternFill("solid", fgColor="1E3A8A"),  # BBVA — blue-800
+        19: PatternFill("solid", fgColor="0F4C81"),  # INBURSA — blue oscuro
     }
-    _DEFAULT_AB_FILL = PatternFill("solid", fgColor="374151")
+    _DEFAULT_AB_FILL = PatternFill("solid", fgColor="1E3A8A")
 
-    # Cargo banco → (fill header, color texto datos)
+    # Cargo banco → (fill header, color texto datos) — familia azul/índigo/cielo
     _CARGO_STYLE = {
-        "BANORTE": (PatternFill("solid", fgColor="7F1D1D"), "B91C1C"),
-        "BBVA":    (PatternFill("solid", fgColor="1E3A8A"), "1D4ED8"),
-        "INBURSA": (PatternFill("solid", fgColor="134E4A"), "047857"),
+        "BANORTE": (PatternFill("solid", fgColor="312E81"), "4338CA"),  # índigo
+        "BBVA":    (PatternFill("solid", fgColor="1E3A8A"), "1D4ED8"),  # azul
+        "INBURSA": (PatternFill("solid", fgColor="0C4A6E"), "0369A1"),  # cielo
     }
 
     # ── Construir listas 100 % desde CUENTAS ─────────────────────────────────────
@@ -395,11 +382,11 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     cargos_col_map = {_c["banco"]: _c["col"] for _c in cargos_list}
 
     # ── Fills de color ────────────────────────────────────────────────────────────
-    F_META_HDR = PatternFill("solid", fgColor="0F172A")
-    F_TOT_CARG = PatternFill("solid", fgColor="92400E")
-    F_TOT_ABON = PatternFill("solid", fgColor="065F46")
-    F_DIFF_HDR = PatternFill("solid", fgColor="4C1D95")
-    F_CTA_BG   = PatternFill("solid", fgColor="1E293B")
+    F_META_HDR = PatternFill("solid", fgColor="0F172A")   # slate-950
+    F_TOT_CARG = PatternFill("solid", fgColor="6D28D9")   # violet-700
+    F_TOT_ABON = PatternFill("solid", fgColor="0369A1")   # sky-700
+    F_DIFF_HDR = PatternFill("solid", fgColor="4C1D95")   # violet-900
+    F_CTA_BG   = PatternFill("solid", fgColor="1E293B")   # slate-800
 
     # ── Fila 1: numeración ────────────────────────────────────────────────────────
     for _idx in range(N_COLS):
@@ -438,26 +425,60 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
              font=fnt_h(), fill=F_DIFF_HDR, align=A_CTR, border=BORDER_H)
 
     # ── Filas de datos ────────────────────────────────────────────────────────────
+    MESES_ES = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
+                7:"JULIO",8:"AGOSTO",9:"SEPTIEMBRE",10:"OCTUBRE",11:"NOVIEMBRE",12:"DICIEMBRE"}
     orden_banco = {"BBVA": 0, "INBURSA": 1, "BANORTE": 2}
     registros_sorted = sorted(registros,
-                               key=lambda x: (orden_banco.get(x["banco"], 9), x["fecha"]))
+                               key=lambda x: (
+                                   getattr(x["fecha"],"year",0),
+                                   getattr(x["fecha"],"month",0),
+                                   orden_banco.get(x["banco"], 9),
+                                   x["fecha"]))
+
+    # Inyectar separadores de mes
+    _rows_excel = []
+    _prev_mes   = None
+    for _rx in registros_sorted:
+        _mk = (getattr(_rx["fecha"],"year",0), getattr(_rx["fecha"],"month",0))
+        if _mk != _prev_mes:
+            _rows_excel.append({"_type": "mes_hdr",
+                                 "label": f"{MESES_ES.get(_mk[1],'')} {_mk[0]}"})
+            _prev_mes = _mk
+        _rows_excel.append(_rx)
 
     FILLS_BANCO = {
         "BBVA":    (F_BBVA_1, F_BBVA_2),
         "INBURSA": (F_INB_1,  F_INB_2),
         "BANORTE": (F_BNT_1,  F_BNT_2),
     }
-    BANCO_COLOR = {"BBVA": "1D4ED8", "BANORTE": "B91C1C", "INBURSA": "047857"}
+    BANCO_COLOR = {"BBVA": "1D4ED8", "BANORTE": "4338CA", "INBURSA": "0369A1"}
 
-    for fila_num, r in enumerate(registros_sorted, start=4):
-        _f1, _f2 = FILLS_BANCO.get(r["banco"], (F_BBVA_1, F_BBVA_2))
-        fill_row  = _f1 if fila_num % 2 == 0 else _f2
-        fn_dat    = fnt(color="1E293B")
+    fila_num    = 4
+    _row_parity = 0
+    for _item in _rows_excel:
+        if _item.get("_type") == "mes_hdr":
+            # Fila separadora de mes (fondo oscuro, texto centrado)
+            ws.merge_cells(start_row=fila_num, start_column=1,
+                           end_row=fila_num, end_column=N_COLS)
+            _mhc = ws.cell(row=fila_num, column=1, value=_item["label"])
+            _mhc.font      = Font(name=FONT_NAME, size=11, bold=True, color="FFFFFF")
+            _mhc.fill      = F_META_HDR
+            _mhc.alignment = A_CTR
+            _mhc.border    = BORDER_H
+            ws.row_dimensions[fila_num].height = 22
+            fila_num    += 1
+            _row_parity  = 0
+            continue
+        r            = _item
+        _row_parity += 1
+        _f1, _f2    = FILLS_BANCO.get(r["banco"], (F_BBVA_1, F_BBVA_2))
+        fill_row    = _f1 if _row_parity % 2 == 1 else _f2
+        fn_dat      = fnt(color="1E293B")
         _, _col_color = _CARGO_STYLE.get(r["banco"], (_DEFAULT_AB_FILL, "374151"))
 
-        def dat(col, val, num_fmt=None, align=A_CTR):
-            c = set_cell(ws, fila_num, col, value=val,
-                         font=fn_dat, fill=fill_row, align=align, border=BORDER)
+        def dat(col, val, num_fmt=None, align=A_CTR, _fn=fila_num, _fr=fill_row):
+            c = set_cell(ws, _fn, col, value=val,
+                         font=fn_dat, fill=_fr, align=align, border=BORDER)
             if num_fmt: c.number_format = num_fmt
             return c
 
@@ -495,6 +516,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         _cd.fill = fill_row; _cd.border = BORDER
         _cd.alignment = A_RIGHT; _cd.number_format = FMT_NUM
         ws.row_dimensions[fila_num].height = 18
+        fila_num += 1
 
     # ── Anchos de columna ─────────────────────────────────────────────────────────
     for _cn, _w in {1:5.0, 2:13.0, 3:38.0, 4:28.0,
@@ -517,19 +539,19 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     from datetime import date as _date_cls
 
     ws_res = wb.create_sheet("RESUMEN")
-    F_R_TITLE  = PatternFill("solid", fgColor="020617")
-    F_R_SEC    = PatternFill("solid", fgColor="1E3A8A")
-    F_R_HDR    = PatternFill("solid", fgColor="1E293B")
-    F_R_TOT    = PatternFill("solid", fgColor="065F46")
-    F_R_DIFF_G = PatternFill("solid", fgColor="14532D")
-    F_R_DIFF_R = PatternFill("solid", fgColor="7F1D1D")
-    F_R_ODD    = PatternFill("solid", fgColor="F8FAFC")
-    F_R_EVN    = PatternFill("solid", fgColor="EFF6FF")
-    # Header de banco — colores más oscuros que los de cargo
+    F_R_TITLE  = PatternFill("solid", fgColor="0F172A")   # slate-950
+    F_R_SEC    = PatternFill("solid", fgColor="1E3A8A")   # blue-800
+    F_R_HDR    = PatternFill("solid", fgColor="1E293B")   # slate-800
+    F_R_TOT    = PatternFill("solid", fgColor="1D4ED8")   # blue-700
+    F_R_DIFF_G = PatternFill("solid", fgColor="065F46")   # verde OK
+    F_R_DIFF_R = PatternFill("solid", fgColor="7F1D1D")   # rojo diferencia
+    F_R_ODD    = PatternFill("solid", fgColor="EEF2FF")   # indigo-50
+    F_R_EVN    = PatternFill("solid", fgColor="E0F2FE")   # sky-100
+    # Sub-cabeceras por banco — azul/índigo/cielo oscuro
     F_R_BNK = {
-        "BANORTE": PatternFill("solid", fgColor="450A0A"),
-        "BBVA":    PatternFill("solid", fgColor="172554"),
-        "INBURSA": PatternFill("solid", fgColor="042F2E"),
+        "BANORTE": PatternFill("solid", fgColor="312E81"),  # índigo-900
+        "BBVA":    PatternFill("solid", fgColor="1E3A8A"),  # blue-800
+        "INBURSA": PatternFill("solid", fgColor="0C4A6E"),  # sky-900
     }
     _BS  = Side(style="thin",   color="CBD5E1")
     _BSH = Side(style="medium", color="64748B")
@@ -754,26 +776,35 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown('<div class="upload-box">', unsafe_allow_html=True)
-    st.markdown("**🟦 BBVA Bancomer**")
-    file_bbva = st.file_uploader("Estado de cuenta BBVA (.xlsx)",
-                                  type=["xlsx"], key="bbva",
-                                  label_visibility="collapsed")
+    st.markdown("**🟦 BBVA Bancomer** *(uno o varios meses)*")
+    files_bbva = st.file_uploader("Estado de cuenta BBVA (.xlsx)",
+                                   type=["xlsx"], key="bbva",
+                                   accept_multiple_files=True,
+                                   label_visibility="collapsed")
+    if files_bbva:
+        st.caption(f"📎 {len(files_bbva)} archivo(s) cargado(s)")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col2:
     st.markdown('<div class="upload-box">', unsafe_allow_html=True)
-    st.markdown("**🟥 Banorte**")
-    file_banorte = st.file_uploader("Estado de cuenta Banorte (.xlsx)",
-                                     type=["xlsx"], key="banorte",
-                                     label_visibility="collapsed")
+    st.markdown("**🟥 Banorte** *(uno o varios meses)*")
+    files_banorte = st.file_uploader("Estado de cuenta Banorte (.xlsx)",
+                                      type=["xlsx"], key="banorte",
+                                      accept_multiple_files=True,
+                                      label_visibility="collapsed")
+    if files_banorte:
+        st.caption(f"📎 {len(files_banorte)} archivo(s) cargado(s)")
     st.markdown('</div>', unsafe_allow_html=True)
 
 with col3:
     st.markdown('<div class="upload-box">', unsafe_allow_html=True)
-    st.markdown("**🟧 Inbursa**")
-    file_inbursa = st.file_uploader("Estado de cuenta Inbursa (.xlsx)",
-                                     type=["xlsx"], key="inbursa",
-                                     label_visibility="collapsed")
+    st.markdown("**🟧 Inbursa** *(uno o varios meses)*")
+    files_inbursa = st.file_uploader("Estado de cuenta Inbursa (.xlsx)",
+                                      type=["xlsx"], key="inbursa",
+                                      accept_multiple_files=True,
+                                      label_visibility="collapsed")
+    if files_inbursa:
+        st.caption(f"📎 {len(files_inbursa)} archivo(s) cargado(s)")
     st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown('<div class="upload-box">', unsafe_allow_html=True)
@@ -790,47 +821,76 @@ st.divider()
 if "dep_result" not in st.session_state:
     st.session_state.dep_result = None
 
-if st.button("⚙️ Generar Póliza", type="primary",
-             disabled=not any([file_bbva, file_banorte, file_inbursa])):
+_any_files = any([files_bbva, files_banorte, files_inbursa])
+
+if st.button("⚙️ Generar Póliza", type="primary", disabled=not _any_files):
 
     todos_ok, todos_nc = [], []
-    archivos_bytes = {}
-    progress = st.progress(0)
+    archivos_bytes = {}   # banco -> [raw_bytes, ...]
 
-    archivos = [
-        (file_bbva,    "BBVA",    "🟦"),
-        (file_banorte, "BANORTE", "🟥"),
-        (file_inbursa, "INBURSA", "🟧"),
+    banco_files = [
+        (files_bbva,    "BBVA",    "🟦"),
+        (files_banorte, "BANORTE", "🟥"),
+        (files_inbursa, "INBURSA", "🟧"),
     ]
 
-    for i, (f, banco, ico) in enumerate(archivos):
-        if f:
+    total_files = sum(len(fl or []) for fl, _, _ in banco_files)
+    progress = st.progress(0)
+    done = 0
+
+    for fl, banco, ico in banco_files:
+        if not fl:
+            continue
+        archivos_bytes[banco] = []
+        for fi, f in enumerate(fl):
             raw = f.read()
-            archivos_bytes[banco] = raw
-            with st.spinner(f"{ico} Leyendo {banco}..."):
+            archivos_bytes[banco].append(raw)
+            with st.spinner(f"{ico} Leyendo {banco} — archivo {fi+1}/{len(fl)}..."):
                 try:
                     ok, nc = leer_banco(BytesIO(raw), banco)
+                    for r in ok:
+                        r["archivo_idx"] = fi  # para marcar el archivo correcto
                     todos_ok.extend(ok)
                     todos_nc.extend(nc)
-                    st.success(f"{ico} {banco}: **{len(ok)}** depósitos clasificados"
+                    st.success(f"{ico} {banco} [{fi+1}]: **{len(ok)}** depósitos"
                                + (f", {len(nc)} sin clasificar" if nc else ""))
                 except Exception as e:
-                    st.error(f"Error leyendo {banco}: {e}")
-        progress.progress((i + 1) / 3)
+                    st.error(f"Error leyendo {banco} [{fi+1}]: {e}")
+            done += 1
+            progress.progress(done / max(total_files, 1))
+
     if todos_ok:
         excel_bytes = generar_excel(todos_ok, plantilla=file_plantilla)
-        nombre_archivo = f"DEPOSITOS BANCARIOS {datetime.now().strftime('%Y-%m')}.xlsx"
 
-        marked = {}
-        for _, banco, ico in archivos:
-            if banco in archivos_bytes:
-                filas = {r["fila_excel"] for r in todos_ok if r["banco"] == banco}
+        # Nombre con rango de fechas
+        _fechas = [r["fecha"] for r in todos_ok if hasattr(r["fecha"], "month")]
+        if _fechas:
+            _fmin, _fmax = min(_fechas), max(_fechas)
+            if _fmin.year == _fmax.year and _fmin.month == _fmax.month:
+                _rango = _fmin.strftime("%Y-%m")
+            else:
+                _rango = f"{_fmin.strftime('%Y-%m')} al {_fmax.strftime('%Y-%m')}"
+        else:
+            _rango = datetime.now().strftime("%Y-%m")
+        nombre_archivo = f"DEPOSITOS BANCARIOS {_rango}.xlsx"
+
+        # Marcar cada archivo fuente por separado
+        marked = {}   # banco -> [{ico, bytes, n, nombre}]
+        for fl, banco, ico in banco_files:
+            if banco not in archivos_bytes:
+                continue
+            marked[banco] = []
+            for fi, raw in enumerate(archivos_bytes[banco]):
+                filas = {r["fila_excel"] for r in todos_ok
+                         if r["banco"] == banco and r.get("archivo_idx") == fi}
                 if filas:
-                    marked[banco] = {
-                        "ico":   ico,
-                        "bytes": marcar_estado_cuenta(archivos_bytes[banco], filas, banco),
-                        "n":     len(filas),
-                    }
+                    _fn = fl[fi].name if fl and fi < len(fl) else f"{banco}_{fi+1}.xlsx"
+                    marked[banco].append({
+                        "ico":    ico,
+                        "bytes":  marcar_estado_cuenta(raw, filas, banco),
+                        "n":      len(filas),
+                        "nombre": _fn,
+                    })
 
         st.session_state.dep_result = {
             "todos_ok":       todos_ok,
@@ -843,7 +903,6 @@ if st.button("⚙️ Generar Póliza", type="primary",
         st.session_state.dep_result = None
 
 if st.session_state.dep_result:
-    import pandas as pd
     res      = st.session_state.dep_result
     todos_ok = res["todos_ok"]
     todos_nc = res["todos_nc"]
@@ -852,6 +911,7 @@ if st.session_state.dep_result:
     df_ok = pd.DataFrame(todos_ok)
     total_general = df_ok["monto"].sum()
 
+    # Métricas por banco
     sc = st.columns(4)
     for ci, (banco, ico) in enumerate([("BBVA","🟦"),("BANORTE","🟥"),("INBURSA","🟧")]):
         sub = df_ok[df_ok["banco"] == banco]
@@ -860,17 +920,33 @@ if st.session_state.dep_result:
                       f"{len(sub)} mov.")
     sc[3].metric("💰 TOTAL", f"${total_general:,.2f}", f"{len(df_ok)} mov.")
 
+    # Métricas por mes (si hay más de uno)
+    _meses_ok = sorted(df_ok["fecha"].apply(
+        lambda x: x.strftime("%Y-%m") if hasattr(x,"strftime") else "").unique())
+    if len(_meses_ok) > 1:
+        st.caption(f"Meses procesados: {', '.join(_meses_ok)}")
+        _mes_cols = st.columns(min(len(_meses_ok), 6))
+        for _mi, _mes in enumerate(_meses_ok):
+            _sub_m = df_ok[df_ok["fecha"].apply(
+                lambda x: x.strftime("%Y-%m") if hasattr(x,"strftime") else "") == _mes]
+            _mes_cols[_mi % 6].metric(_mes, f"${_sub_m['monto'].sum():,.2f}",
+                                       f"{len(_sub_m)} mov.")
+
     st.subheader("📋 Vista previa")
     abono_nombre = {a["col"]: a["nombre"][:30] for a in ABONOS}
     cargo_nombre = {9:"BANORTE",10:"BBVA",11:"INBURSA"}
+    _ord_banco   = {"BBVA":0,"BANORTE":1,"INBURSA":2}
 
     preview_rows = []
-    orden = {"BBVA":0,"BANORTE":1,"INBURSA":2}
-    for r in sorted(todos_ok, key=lambda x:(x["fecha"],orden[x["banco"]])):
+    for r in sorted(todos_ok, key=lambda x:(
+                        getattr(x["fecha"],"year",0),
+                        getattr(x["fecha"],"month",0),
+                        _ord_banco.get(x["banco"],9),
+                        x["fecha"])):
         preview_rows.append({
+            "Mes":         r["fecha"].strftime("%Y-%m") if hasattr(r["fecha"],"strftime") else "",
             "Fecha":       r["fecha"].strftime("%d/%m/%Y") if hasattr(r["fecha"],"strftime") else str(r["fecha"]),
             "Banco":       r["banco"],
-            "Cargo":       cargo_nombre.get(r["col_cargo"]+1, str(r["col_cargo"])),
             "Abono":       abono_nombre.get(r["col_abono"], str(r["col_abono"])),
             "Monto":       r["monto"],
             "Descripción": r["desc"][:55],
@@ -898,14 +974,16 @@ if st.session_state.dep_result:
     if res["marked"]:
         st.subheader("🗙️ Estados de cuenta marcados")
         st.caption("Las filas incluidas en la póliza aparecen resaltadas en el color del banco.")
-        for banco, info in res["marked"].items():
-            st.download_button(
-                label=f"{info['ico']} Descargar {banco} marcado  ({info['n']} movimientos incluidos)",
-                data=info["bytes"],
-                file_name=f"MARCADO_{banco}_{datetime.now().strftime('%Y-%m')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"dl_marcado_{banco}",
-            )
+        for banco, info_list in res["marked"].items():
+            for _idx2, info in enumerate(info_list):
+                _lbl = f"{info['ico']} {info['nombre']} — {info['n']} mov. marcados"
+                st.download_button(
+                    label=_lbl,
+                    data=info["bytes"],
+                    file_name=f"MARCADO_{banco}_{_idx2+1}_{datetime.now().strftime('%Y-%m')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_marcado_{banco}_{_idx2}",
+                )
 
 else:
     st.info("⬆️ Sube al menos un archivo de depósito para continuar.")

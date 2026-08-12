@@ -15,6 +15,7 @@ pg = st.navigation(
             st.Page("pages/2_Provision_Nomina.py",            title="Provisión de Nómina",         icon="📋"),
             st.Page("pages/3_Prestamos.py",                   title="Préstamos",                   icon="💳"),
             st.Page("pages/14_Poliza_Nomina.py",              title="Póliza de Nómina",            icon="📄"),
+            st.Page("pages/18_Poliza_Pago_Nomina.py",         title="Póliza Pago de Nómina",       icon="💸"),
         ],
         "Ventas": [
             st.Page("pages/4_Ventas_del_Dia.py",              title="Ventas del Día",              icon="⛽"),

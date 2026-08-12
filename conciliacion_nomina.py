@@ -1,7 +1,7 @@
 # =============================================================================
 # 🔒 ARCHIVO BLOQUEADO — VER CLAUDE.md
 # No modificar sin orden explícita de KIRVY.
-# Versión: v5 | Fecha: 30-Jun-2026
+# Versión: v6 | Fecha: 11-Ago-2026 | fix: columna Hoja = título PDF
 # Columnas nómina/préstamos: Nombre | Nota | Cta. Contable | Importe | Fecha
 # =============================================================================
 """

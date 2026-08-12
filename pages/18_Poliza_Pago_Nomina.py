@@ -90,6 +90,23 @@ def generar_poliza_pago(bytes_consolidado: bytes,
                 regs, float(imp_src) if imp_src else 0.0
             ))
 
+    # Ordenar por fecha (DD/MM/YYYY → clave de sort YYYY-MM-DD)
+    def _fecha_key(row):
+        f = row[2]
+        if not f:
+            return "0000-00-00"
+        s = str(f).strip()
+        try:
+            # formato DD/MM/YYYY
+            if "/" in s:
+                d, m, y = s.split("/")
+                return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+            return s
+        except Exception:
+            return s
+
+    resumen.sort(key=_fecha_key)
+
     # empleados únicos en orden de aparición
     empleados_ord = OrderedDict()
     for desc, hoja, *_ in resumen:

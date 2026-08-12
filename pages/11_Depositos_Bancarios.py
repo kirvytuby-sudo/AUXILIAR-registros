@@ -84,6 +84,10 @@ def clasificar_banorte(desc: str, monto: float):
     """
     d = desc.upper()
 
+    # Devoluciones SPEI → nunca son un depósito real
+    if "DEV.SPEI" in d or "DEVOLUCION SPEI" in d or d.startswith("DEV."):
+        return None
+
     # Cheques → no clasificar
     if "DEP. CH." in d or "CHEQUE SBC" in d:
         return None
@@ -123,8 +127,8 @@ def clasificar_banorte(desc: str, monto: float):
     if "BCO:0036" in d or ("INBURSA" in d and "SPEI RECIBIDO" in d):
         return 19
 
-    # GASnGO / depósito de cuenta GAS → tránsito GASnGO-BANORTE
-    if "GASNGO" in d or "GASN GO" in d or "GAS 122" in d:
+    # GASnGO → tránsito GASnGO-BANORTE (match exacto del nombre de empresa)
+    if "GASNGO" in d or "GASN GO" in d:
         return 16
 
     # ICIGAS

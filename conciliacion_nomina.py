@@ -556,7 +556,9 @@ def escribir_pagos_bancarios_todo(pdf_paths, catalogo, out_path):
     for path in pdf_paths:
         meta, filas, _ = _extraer_filas_pdf(path)
         desc = meta.get("descripcion") or os.path.splitext(os.path.basename(path))[0]
-        sname = _safe_sheet_name(desc[:28], used_names)
+        # Nombre de hoja = título del PDF (sin extensión) para identificar el origen
+        pdf_titulo = os.path.splitext(os.path.basename(path))[0]
+        sname = _safe_sheet_name(pdf_titulo[:28], used_names)
         ws = wb.create_sheet(sname)
         _escribir_hoja_pagos(ws, filas, catalogo, meta)
         total = sum(r["importe"] for r in filas)
@@ -581,7 +583,7 @@ def escribir_pagos_bancarios_todo(pdf_paths, catalogo, out_path):
     for c in range(1,6):
         ws_resumen.cell(row=row,column=c).border=BORDER
         ws_resumen.cell(row=row,column=c).fill=PatternFill("solid",start_color=TOTAL_FILL)
-    autosize(ws_resumen,[36,26,14,10,16])
+    autosize(ws_resumen,[36,52,14,10,16])
     wb.move_sheet(ws_resumen.title, offset=-len(wb.sheetnames))
     wb.save(out_path)
 

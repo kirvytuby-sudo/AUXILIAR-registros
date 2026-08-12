@@ -19,6 +19,22 @@ _BASE_CSS = """
 .page-header p  { margin: 4px 0 0; font-size: .9rem; color: #93C5FD; }
 #MainMenu { visibility: hidden; }
 footer    { visibility: hidden; }
+
+/* ── Divisores de sección en el sidebar ── */
+[data-testid="stNavSectionHeader"] {
+    border-top: 1.5px solid rgba(30, 58, 138, 0.30) !important;
+    margin-top: 10px !important;
+    padding-top: 8px !important;
+}
+[data-testid="stNavSectionHeader"] p,
+[data-testid="stNavSectionHeader"] span {
+    font-size: 0.65rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.6px !important;
+    color: #1E3A8A !important;
+    opacity: 0.85 !important;
+}
 </style>
 """
 

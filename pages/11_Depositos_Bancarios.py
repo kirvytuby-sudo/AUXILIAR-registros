@@ -119,6 +119,18 @@ def clasificar_banorte(desc: str, monto: float):
     if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d:
         return 15
 
+    # INBURSA via SPEI (BCO:0036 = código Inbursa en SPEI) → tránsito Inbursa
+    if "BCO:0036" in d or ("INBURSA" in d and "SPEI RECIBIDO" in d):
+        return 19
+
+    # GASnGO / depósito de cuenta GAS → tránsito GASnGO-BANORTE
+    if "GASNGO" in d or "GASN GO" in d or "GAS 122" in d:
+        return 16
+
+    # ICIGAS
+    if "ICIGAS" in d:
+        return 17
+
     # SERV <NOMBRE> <DÍGITOS>C/D
     if "07277262C" in d or "07277262D" in d or (
             "SERV" in d and re.search(r'\d{5,}[CD]', d)):
@@ -285,12 +297,14 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
                    16:F_H_BNTTR, 17:F_H_SHLL, 18:F_H_BBVAT, 19:F_H_INBTR}
 
     # ── Cuentas: 100 % desde la plantilla ─────────────────────────────────────
-    # cargos_efectivos : {banco: (cuenta, nombre)}
-    # abonos_efectivos : [{col, cuenta, nombre, sem_col}]  — orden de CUENTAS
+    # cargos_efectivos  : {banco: (cuenta, nombre)}
+    # cargos_en_plantilla: set de bancos con cargo en CUENTAS (para filtrar headers)
+    # abonos_efectivos  : [{col, cuenta, nombre, sem_col}]  — orden de CUENTAS
     # semantic_to_actual: {sem_col → actual_col}
-    cargos_efectivos  = dict(CARGOS)
-    abonos_efectivos  = []
-    semantic_to_actual = {}
+    cargos_efectivos    = dict(CARGOS)
+    cargos_en_plantilla = set()          # bancos que SÍ aparecen en CUENTAS
+    abonos_efectivos    = []
+    semantic_to_actual  = {}
 
     if plantilla is not None:
         wb = openpyxl.load_workbook(plantilla)
@@ -311,6 +325,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
                     for _key in ("BANORTE", "BBVA", "INBURSA"):
                         if _key in _banco:
                             cargos_efectivos[_key] = (_cta, cargos_efectivos[_key][1])
+                            cargos_en_plantilla.add(_key)   # ← marcar como presente
                             break
                 # ── ABONOS (cols 4-5) en el orden exacto de CUENTAS ───────
                 _cta_ab  = str(_row[3] or "").strip() if len(_row) > 3 else ""
@@ -360,10 +375,12 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     # ── Fila 2: N° de cuentas ─────────────────────────────────────────────────
     fnt_cta = fnt(bold=False, color="FFFFFF", size=9, italic=True)
     for pol_idx, banco in [(8, "BANORTE"), (9, "BBVA"), (10, "INBURSA")]:
-        cta = cargos_efectivos[banco][0]
-        if cta:
-            set_cell(ws, 2, pol_idx + 1, value=cta,
-                     font=fnt_cta, fill=F_GRAY2, align=A_CTR, border=BORDER)
+        # Solo escribir si el banco está en la plantilla (o no hay plantilla)
+        if plantilla is None or banco in cargos_en_plantilla:
+            cta = cargos_efectivos[banco][0]
+            if cta:
+                set_cell(ws, 2, pol_idx + 1, value=cta,
+                         font=fnt_cta, fill=F_GRAY2, align=A_CTR, border=BORDER)
     for _ab in abonos_efectivos:
         set_cell(ws, 2, _ab["col"] + 1, value=_ab["cuenta"],
                  font=fnt_cta, fill=F_GRAY2, align=A_CTR, border=BORDER)
@@ -376,8 +393,10 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
                  align=A_CTR, border=BORDER_H)
     for pol_idx, banco, fill_h in [
             (8, "BANORTE", F_H_BNT), (9, "BBVA", F_H_BBVA), (10, "INBURSA", F_H_INB)]:
-        set_cell(ws, 3, pol_idx + 1, value=CARGOS[banco][1].strip(),
-                 font=fnt_h(), fill=fill_h, align=A_CTR, border=BORDER_H)
+        # Solo encabezado si el banco existe en la plantilla (o no hay plantilla)
+        if plantilla is None or banco in cargos_en_plantilla:
+            set_cell(ws, 3, pol_idx + 1, value=CARGOS[banco][1].strip(),
+                     font=fnt_h(), fill=fill_h, align=A_CTR, border=BORDER_H)
     set_cell(ws, 3, COL_TOT_CARGOS, value="TOTAL CARGOS",
              font=fnt_h(), fill=F_H_TCARG, align=A_CTR, border=BORDER_H)
     for _ab in abonos_efectivos:

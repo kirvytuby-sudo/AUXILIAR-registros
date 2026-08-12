@@ -67,6 +67,16 @@ def generar_poliza_pago(bytes_consolidado: bytes,
     wb_c   = openpyxl.load_workbook(io.BytesIO(bytes_consolidado), data_only=True)
     ws_res = wb_c["Resumen"]
 
+    # Mapa nombre_stripped → nombre_real para tolerar espacios finales en sheet names
+    _sheet_map = {s.strip(): s for s in wb_c.sheetnames}
+
+    def _get_sheet(hoja_str):
+        """Devuelve la hoja por nombre exacto o por nombre strippeado."""
+        if hoja_str in wb_c.sheetnames:
+            return wb_c[hoja_str]
+        real = _sheet_map.get(hoja_str.strip())
+        return wb_c[real] if real else None
+
     resumen = []
     for r in range(2, ws_res.max_row + 1):
         desc    = ws_res.cell(r, 1).value
@@ -83,9 +93,9 @@ def generar_poliza_pago(bytes_consolidado: bytes,
     # empleados únicos en orden de aparición
     empleados_ord = OrderedDict()
     for desc, hoja, *_ in resumen:
-        if hoja not in wb_c.sheetnames:
+        if _get_sheet(hoja) is None:
             continue
-        ws = wb_c[hoja]
+        ws = _get_sheet(hoja)
         for r in range(2, ws.max_row + 1):
             n  = ws.cell(r, 1).value
             nc = ws.cell(r, 2).value
@@ -148,9 +158,9 @@ def generar_poliza_pago(bytes_consolidado: bytes,
     poliza_rows = []
     ROW = 4
     for desc, hoja, fecha, regs_src, imp_src in resumen:
-        if hoja not in wb_c.sheetnames:
+        ws = _get_sheet(hoja)
+        if ws is None:
             continue
-        ws = wb_c[hoja]
         lote = {}
         for r in range(2, ws.max_row + 1):
             n  = ws.cell(r, 1).value

@@ -46,6 +46,20 @@ _LFT = Alignment(horizontal="left",   vertical="center")
 _RGT = Alignment(horizontal="right",  vertical="center")
 
 
+def _parse_fecha(v):
+    """Convierte 'DD/MM/YYYY' (str) o datetime a date para que Excel lo trate como fecha."""
+    if v is None:
+        return None
+    if hasattr(v, "date"):          # ya es datetime/date
+        return v
+    from datetime import datetime
+    s = str(v).strip()
+    try:
+        return datetime.strptime(s, "%d/%m/%Y").date()
+    except ValueError:
+        return s                    # devuelve el string si no parsea
+
+
 def _w(ws, r, c, v, bold=False, color="000000", sz=8,
        bg=None, al=None, nf=None):
     cell = ws.cell(r, c)
@@ -203,7 +217,7 @@ def generar_poliza_pago(bytes_consolidado: bytes,
 
         bg_r = "FFFFFF" if ROW % 2 == 0 else GRIS
         _w(ws_pol, ROW, 1, TIPO_POL, bg=bg_r, al=_CTR)
-        _w(ws_pol, ROW, 2, fecha,    bg=bg_r, al=_CTR)
+        _w(ws_pol, ROW, 2, _parse_fecha(fecha), bg=bg_r, al=_CTR, nf='DD/MM/YYYY')
         _w(ws_pol, ROW, 3, desc,     bg=bg_r, al=_LFT)
         _w(ws_pol, ROW, 4, desc,     bg=bg_r, al=_LFT)
         for c in range(5, 9):
@@ -263,7 +277,7 @@ def generar_poliza_pago(bytes_consolidado: bytes,
         clr  = "166534" if ok else "991B1B"
         _w(ws_conc, ri, 1, pr["desc"],     bg=bg_r, al=_LFT)
         _w(ws_conc, ri, 2, pr["hoja"],     bg=bg_r, al=_LFT, sz=7)
-        _w(ws_conc, ri, 3, pr["fecha"],    bg=bg_r, al=_CTR)
+        _w(ws_conc, ri, 3, _parse_fecha(pr["fecha"]), bg=bg_r, al=_CTR, nf='DD/MM/YYYY')
         _w(ws_conc, ri, 4, pr["regs_src"], bg=bg_r, al=_CTR)
         _w(ws_conc, ri, 5, pr["imp_src"],  bg=bg_r, al=_RGT, nf='#,##0.00')
         _w(ws_conc, ri, 6, pr["regs_gen"], bg=bg_r, al=_CTR)

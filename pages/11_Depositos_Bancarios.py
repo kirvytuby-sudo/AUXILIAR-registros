@@ -517,19 +517,26 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     from datetime import date as _date_cls
 
     ws_res = wb.create_sheet("RESUMEN")
-    F_R_TITLE = PatternFill("solid", fgColor="0F172A")
-    F_R_SEC   = PatternFill("solid", fgColor="1E3A8A")
-    F_R_HDR   = PatternFill("solid", fgColor="1E293B")
-    F_R_TOT   = PatternFill("solid", fgColor="065F46")
-    F_R_DIFF_G= PatternFill("solid", fgColor="14532D")
-    F_R_DIFF_R= PatternFill("solid", fgColor="7F1D1D")
-    F_R_ODD   = PatternFill("solid", fgColor="F8FAFC")
-    F_R_EVN   = PatternFill("solid", fgColor="EFF6FF")
-    F_R_NONE  = PatternFill(fill_type=None)
+    F_R_TITLE  = PatternFill("solid", fgColor="020617")
+    F_R_SEC    = PatternFill("solid", fgColor="1E3A8A")
+    F_R_HDR    = PatternFill("solid", fgColor="1E293B")
+    F_R_TOT    = PatternFill("solid", fgColor="065F46")
+    F_R_DIFF_G = PatternFill("solid", fgColor="14532D")
+    F_R_DIFF_R = PatternFill("solid", fgColor="7F1D1D")
+    F_R_ODD    = PatternFill("solid", fgColor="F8FAFC")
+    F_R_EVN    = PatternFill("solid", fgColor="EFF6FF")
+    # Header de banco — colores más oscuros que los de cargo
+    F_R_BNK = {
+        "BANORTE": PatternFill("solid", fgColor="450A0A"),
+        "BBVA":    PatternFill("solid", fgColor="172554"),
+        "INBURSA": PatternFill("solid", fgColor="042F2E"),
+    }
     _BS  = Side(style="thin",   color="CBD5E1")
-    _BSH = Side(style="medium", color="FFFFFF")
+    _BSH = Side(style="medium", color="64748B")
+    _BSW = Side(style="medium", color="FFFFFF")
     B_R  = Border(left=_BS,  right=_BS,  top=_BS,  bottom=_BS)
     B_RH = Border(left=_BSH, right=_BSH, top=_BSH, bottom=_BSH)
+    B_RW = Border(left=_BSW, right=_BSW, top=_BSW, bottom=_BSW)
 
     def _rsc(row, col, value=None, bold=False, color="FFFFFF", fill=None,
              align=None, nf=None, border=None, italic=False, size=None):
@@ -542,125 +549,172 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         if border: c.border = border
         return c
 
-    # Acumular desde registros
-    _bank_d  = defaultdict(lambda: {"count": 0, "total": 0.0})
-    _abon_d  = defaultdict(lambda: {"count": 0, "total": 0.0, "nombre": ""})
-    _no_cls_count = 0; _no_cls_total = 0.0
+    def _sec_hdr(row, label, fill_color="1E3A8A"):
+        ws_res.merge_cells(f"A{row}:F{row}")
+        _rsc(row, 1, label, bold=True, color="FFFFFF",
+             fill=PatternFill("solid", fgColor=fill_color),
+             align=A_LEFT, border=B_RW, size=11)
+        ws_res.row_dimensions[row].height = 22
+
+    def _col_hdrs(row, labels, fill=None):
+        _f = fill or F_R_HDR
+        for _cn2, _lb2 in labels:
+            _rsc(row, _cn2, _lb2, bold=True, color="CBD5E1",
+                 fill=_f, align=A_CTR, border=B_RH, size=8)
+
+    # ── Acumular ──────────────────────────────────────────────────────────────────
+    _bank_d      = defaultdict(lambda: {"count": 0, "total": 0.0})
+    _bank_abon_d = defaultdict(lambda: defaultdict(lambda: {"count": 0, "total": 0.0}))
+    _no_cls_d    = defaultdict(lambda: {"count": 0, "total": 0.0})
+
     for _r in registros:
         _bank_d[_r["banco"]]["count"] += 1
         _bank_d[_r["banco"]]["total"] += _r["monto"]
         _ac = semantic_to_actual.get(_r["col_abono"])
         if _ac is not None:
-            _nab = next((a for a in abonos_efectivos if a["col"] == _ac), None)
-            if _nab:
-                _abon_d[_ac]["count"] += 1
-                _abon_d[_ac]["total"] += _r["monto"]
-                _abon_d[_ac]["nombre"] = _nab["nombre"]
+            _bank_abon_d[_r["banco"]][_ac]["count"] += 1
+            _bank_abon_d[_r["banco"]][_ac]["total"] += _r["monto"]
         else:
-            _no_cls_count += 1; _no_cls_total += _r["monto"]
+            _no_cls_d[_r["banco"]]["count"] += 1
+            _no_cls_d[_r["banco"]]["total"] += _r["monto"]
 
-    _tot_carg = sum(v["total"] for v in _bank_d.values())
-    _tot_abon = sum(v["total"] for v in _abon_d.values())
-    _dif_conc = _tot_carg - _tot_abon
+    _tot_carg     = sum(v["total"] for v in _bank_d.values())
+    _tot_abon_all = sum(
+        sum(ad["total"] for ad in ba.values())
+        for ba in _bank_abon_d.values()
+    )
+    _dif_conc = _tot_carg - _tot_abon_all
 
-    # Título
+    # ── Título ────────────────────────────────────────────────────────────────────
     _fec_str = _date_cls.today().strftime("%d/%m/%Y")
     ws_res.merge_cells("A1:F1")
     _tc = ws_res.cell(row=1, column=1,
-                      value=f"RESUMEN DE DEPÓSITOS BANCARIOS — {_fec_str}")
-    _tc.font = Font(name=FONT_NAME, size=13, bold=True, color="FFFFFF")
+                      value=f"RESUMEN DE DEPÓSITOS BANCARIOS  —  {_fec_str}")
+    _tc.font = Font(name=FONT_NAME, size=14, bold=True, color="FFFFFF")
     _tc.fill = F_R_TITLE; _tc.alignment = A_CTR
+    ws_res.row_dimensions[1].height = 32
 
     _row = 3
-    # ── Sección A: por banco ──────────────────────────────────────────────────
-    ws_res.merge_cells(f"A{_row}:F{_row}")
-    _rsc(_row,1,"A.  MOVIMIENTOS POR BANCO",bold=True,color="FFFFFF",
-         fill=F_R_SEC,align=A_LEFT,border=B_RH); _row += 1
-    for _cn2,_lb2 in [(1,"BANCO"),(2,"N° CUENTA"),(3,"# MOV"),
-                       (4,"TOTAL DEPÓSITO"),(5,"% DEL TOTAL"),(6,"")]:
-        _rsc(_row,_cn2,_lb2,bold=True,color="FFFFFF",fill=F_R_HDR,
-             align=A_CTR,border=B_RH)
-    _row += 1
+
+    # ══ Sección A: Resumen global por banco ═══════════════════════════════════════
+    _sec_hdr(_row, "A   RESUMEN POR BANCO"); _row += 1
+    _col_hdrs(_row, [(1,"BANCO"),(2,"N° CUENTA CARGO"),(3,"# MOV"),
+                      (4,"TOTAL DEPÓSITO"),(5,"% DEL TOTAL"),(6,"")]); _row += 1
+
     _grand_cnt = sum(v["count"] for v in _bank_d.values())
     for _i2, _ci in enumerate(cargos_list):
-        _fl = F_R_ODD if _i2 % 2 == 0 else F_R_EVN
-        _bd = _bank_d[_ci["banco"]]
+        _fl  = F_R_ODD if _i2 % 2 == 0 else F_R_EVN
+        _bd  = _bank_d[_ci["banco"]]
         _pct = (_bd["total"] / _tot_carg * 100) if _tot_carg else 0
-        _rsc(_row,1,_ci["banco"],color="1E293B",fill=_fl,align=A_LEFT,border=B_R)
+        _rsc(_row,1,_ci["banco"],bold=True,color="1E293B",fill=_fl,align=A_LEFT,border=B_R)
         _rsc(_row,2,_ci["cuenta"],color="64748B",fill=_fl,align=A_CTR,border=B_R,size=9,italic=True)
         _rsc(_row,3,_bd["count"],color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="#,##0")
         _rsc(_row,4,_bd["total"],color="1E293B",fill=_fl,align=A_RIGHT,border=B_R,nf=FMT_NUM)
         _rsc(_row,5,_pct/100,color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
         _rsc(_row,6,"",fill=_fl,border=B_R); _row += 1
-    _rsc(_row,1,"TOTAL",bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RH)
-    _rsc(_row,2,"",bold=True,color="FFFFFF",fill=F_R_TOT,border=B_RH)
-    _rsc(_row,3,_grand_cnt,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RH,nf="#,##0")
-    _rsc(_row,4,_tot_carg,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_RIGHT,border=B_RH,nf=FMT_NUM)
-    _rsc(_row,5,1.0,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RH,nf="0.0%")
-    _rsc(_row,6,"",bold=True,color="FFFFFF",fill=F_R_TOT,border=B_RH); _row += 2
 
-    # ── Sección B: por abono ──────────────────────────────────────────────────
-    ws_res.merge_cells(f"A{_row}:F{_row}")
-    _rsc(_row,1,"B.  CLASIFICACIÓN DE ABONOS",bold=True,color="FFFFFF",
-         fill=F_R_SEC,align=A_LEFT,border=B_RH); _row += 1
-    for _cn2,_lb2 in [(1,"TIPO"),(2,"N° CUENTA"),(3,"# MOV"),
-                       (4,"TOTAL ABONO"),(5,"% DEL TOTAL"),(6,"")]:
-        _rsc(_row,_cn2,_lb2,bold=True,color="FFFFFF",fill=F_R_HDR,
-             align=A_CTR,border=B_RH)
-    _row += 1
-    for _i2, _ab2 in enumerate(abonos_efectivos):
-        _fl = F_R_ODD if _i2 % 2 == 0 else F_R_EVN
-        _ad = _abon_d.get(_ab2["col"], {"count":0,"total":0.0})
-        _pct = (_ad["total"] / _tot_carg * 100) if _tot_carg else 0
-        _rsc(_row,1,_ab2["nombre"],color="1E293B",fill=_fl,align=A_LEFT,border=B_R)
-        _rsc(_row,2,_ab2["cuenta"],color="64748B",fill=_fl,align=A_CTR,border=B_R,size=9,italic=True)
-        _rsc(_row,3,_ad["count"],color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="#,##0")
-        _rsc(_row,4,_ad["total"],color="1E293B",fill=_fl,align=A_RIGHT,border=B_R,nf=FMT_NUM)
-        _rsc(_row,5,_pct/100,color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
-        _rsc(_row,6,"",fill=_fl,border=B_R); _row += 1
-    if _no_cls_count:
-        _rsc(_row,1,"Sin clasificar / en blanco",color="DC2626",fill=F_R_ODD,align=A_LEFT,border=B_R)
-        _rsc(_row,2,"—",color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,size=9)
-        _rsc(_row,3,_no_cls_count,color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="#,##0")
-        _rsc(_row,4,_no_cls_total,color="DC2626",fill=F_R_ODD,align=A_RIGHT,border=B_R,nf=FMT_NUM)
-        _pct2 = (_no_cls_total / _tot_carg * 100) if _tot_carg else 0
-        _rsc(_row,5,_pct2/100,color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="0.0%")
-        _rsc(_row,6,"",fill=F_R_ODD,border=B_R); _row += 1
-    _rsc(_row,1,"TOTAL ABONOS",bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RH)
-    _rsc(_row,2,"",bold=True,color="FFFFFF",fill=F_R_TOT,border=B_RH)
-    _rsc(_row,3,_grand_cnt,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RH,nf="#,##0")
-    _rsc(_row,4,_tot_abon,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_RIGHT,border=B_RH,nf=FMT_NUM)
-    _pct_a = (_tot_abon / _tot_carg * 100) if _tot_carg else 0
-    _rsc(_row,5,_pct_a/100,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RH,nf="0.0%")
-    _rsc(_row,6,"",bold=True,color="FFFFFF",fill=F_R_TOT,border=B_RH); _row += 2
+    _rsc(_row,1,"TOTAL GENERAL",bold=True,color="FFFFFF",fill=F_R_TOT,align=A_LEFT,border=B_RW)
+    _rsc(_row,2,"",fill=F_R_TOT,border=B_RW)
+    _rsc(_row,3,_grand_cnt,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RW,nf="#,##0")
+    _rsc(_row,4,_tot_carg,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_RIGHT,border=B_RW,nf=FMT_NUM)
+    _rsc(_row,5,1.0,bold=True,color="FFFFFF",fill=F_R_TOT,align=A_CTR,border=B_RW,nf="0.0%")
+    _rsc(_row,6,"",fill=F_R_TOT,border=B_RW); _row += 2
 
-    # ── Sección C: Conciliación ───────────────────────────────────────────────
-    ws_res.merge_cells(f"A{_row}:F{_row}")
-    _rsc(_row,1,"C.  CONCILIACIÓN",bold=True,color="FFFFFF",
-         fill=F_R_SEC,align=A_LEFT,border=B_RH); _row += 1
+    # ══ Sección B: Desglose de abonos por banco ═══════════════════════════════════
+    _sec_hdr(_row, "B   DESGLOSE DE ABONOS POR BANCO"); _row += 1
+
+    for _ci in cargos_list:
+        _bnc    = _ci["banco"]
+        _bnk_f  = F_R_BNK.get(_bnc, F_R_HDR)
+        _bd     = _bank_d[_bnc]
+
+        # Sub-cabecera del banco
+        ws_res.merge_cells(f"A{_row}:F{_row}")
+        _rsc(_row, 1, f"  {_bnc}  —  {_ci['cuenta']}",
+             bold=True, color="FFFFFF", fill=_bnk_f,
+             align=A_LEFT, border=B_RW, size=10)
+        ws_res.row_dimensions[_row].height = 20; _row += 1
+
+        # Columnas de detalle
+        _col_hdrs(_row, [(1,"TIPO DE ABONO"),(2,"N° CUENTA"),
+                          (3,"# MOV"),(4,"TOTAL"),(5,"% BANCO"),(6,"% TOTAL")],
+                  fill=_bnk_f); _row += 1
+
+        _bank_abs = _bank_abon_d.get(_bnc, {})
+        _has_rows = False
+        for _i2, _ab2 in enumerate(abonos_efectivos):
+            _ad = _bank_abs.get(_ab2["col"])
+            if not _ad or _ad["total"] == 0:
+                continue
+            _has_rows = True
+            _fl    = F_R_ODD if _i2 % 2 == 0 else F_R_EVN
+            _pct_b = (_ad["total"] / _bd["total"] * 100) if _bd["total"] else 0
+            _pct_t = (_ad["total"] / _tot_carg   * 100) if _tot_carg    else 0
+            _rsc(_row,1,_ab2["nombre"],color="1E293B",fill=_fl,align=A_LEFT,border=B_R)
+            _rsc(_row,2,_ab2["cuenta"],color="64748B",fill=_fl,align=A_CTR,border=B_R,size=9,italic=True)
+            _rsc(_row,3,_ad["count"],color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="#,##0")
+            _rsc(_row,4,_ad["total"],color="1E293B",fill=_fl,align=A_RIGHT,border=B_R,nf=FMT_NUM)
+            _rsc(_row,5,_pct_b/100,color="1E293B",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
+            _rsc(_row,6,_pct_t/100,color="475569",fill=_fl,align=A_CTR,border=B_R,nf="0.0%")
+            _row += 1
+
+        # Sin clasificar de este banco
+        _nc = _no_cls_d.get(_bnc)
+        if _nc and _nc["total"] > 0:
+            _has_rows = True
+            _pct_b = (_nc["total"] / _bd["total"] * 100) if _bd["total"] else 0
+            _pct_t = (_nc["total"] / _tot_carg   * 100) if _tot_carg    else 0
+            _rsc(_row,1,"Sin clasificar",color="DC2626",fill=F_R_ODD,align=A_LEFT,border=B_R)
+            _rsc(_row,2,"—",color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,size=9)
+            _rsc(_row,3,_nc["count"],color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="#,##0")
+            _rsc(_row,4,_nc["total"],color="DC2626",fill=F_R_ODD,align=A_RIGHT,border=B_R,nf=FMT_NUM)
+            _rsc(_row,5,_pct_b/100,color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="0.0%")
+            _rsc(_row,6,_pct_t/100,color="DC2626",fill=F_R_ODD,align=A_CTR,border=B_R,nf="0.0%")
+            _row += 1
+
+        if not _has_rows:
+            _rsc(_row,1,"(sin movimientos clasificados)",color="94A3B8",fill=F_R_ODD,
+                 align=A_LEFT,border=B_R,italic=True)
+            for _c2 in range(2,7):
+                _rsc(_row,_c2,"",fill=F_R_ODD,border=B_R)
+            _row += 1
+
+        # Subtotal banco
+        _pct_t_bnk = (_bd["total"] / _tot_carg * 100) if _tot_carg else 0
+        _rsc(_row,1,f"TOTAL {_bnc}",bold=True,color="FFFFFF",fill=_bnk_f,align=A_LEFT,border=B_RW)
+        _rsc(_row,2,"",fill=_bnk_f,border=B_RW)
+        _rsc(_row,3,_bd["count"],bold=True,color="FFFFFF",fill=_bnk_f,align=A_CTR,border=B_RW,nf="#,##0")
+        _rsc(_row,4,_bd["total"],bold=True,color="FFFFFF",fill=_bnk_f,align=A_RIGHT,border=B_RW,nf=FMT_NUM)
+        _rsc(_row,5,1.0,bold=True,color="FFFFFF",fill=_bnk_f,align=A_CTR,border=B_RW,nf="0.0%")
+        _rsc(_row,6,_pct_t_bnk/100,bold=True,color="FFFFFF",fill=_bnk_f,align=A_CTR,border=B_RW,nf="0.0%")
+        _row += 2
+
+    # ══ Sección C: Conciliación ═══════════════════════════════════════════════════
+    _sec_hdr(_row, "C   CONCILIACIÓN"); _row += 1
+
     for _lbl_c, _val_c in [
-        ("Total Cargos (banco → póliza)",      _tot_carg),
-        ("Total Abonos (contrapartidas)",       _tot_abon),
+        ("Total Cargos (suma de bancos)",      _tot_carg),
+        ("Total Abonos clasificados",          _tot_abon_all),
     ]:
-        _fl = F_R_ODD
-        _rsc(_row,1,_lbl_c,color="1E293B",fill=_fl,align=A_LEFT,border=B_R)
-        _rsc(_row,2,"",fill=_fl,border=B_R)
-        _rsc(_row,3,"",fill=_fl,border=B_R)
-        _rsc(_row,4,_val_c,bold=True,color="1E293B",fill=_fl,align=A_RIGHT,border=B_R,nf=FMT_NUM)
-        _rsc(_row,5,"",fill=_fl,border=B_R)
-        _rsc(_row,6,"",fill=_fl,border=B_R); _row += 1
+        _rsc(_row,1,_lbl_c,color="1E293B",fill=F_R_ODD,align=A_LEFT,border=B_R)
+        _rsc(_row,2,"",fill=F_R_ODD,border=B_R)
+        _rsc(_row,3,"",fill=F_R_ODD,border=B_R)
+        _rsc(_row,4,_val_c,bold=True,color="1E293B",fill=F_R_ODD,align=A_RIGHT,border=B_R,nf=FMT_NUM)
+        _rsc(_row,5,"",fill=F_R_ODD,border=B_R)
+        _rsc(_row,6,"",fill=F_R_ODD,border=B_R); _row += 1
+
     _diff_fill  = F_R_DIFF_G if abs(_dif_conc) < 0.01 else F_R_DIFF_R
     _diff_label = "CONCILIADO" if abs(_dif_conc) < 0.01 else "DIFERENCIA"
-    _rsc(_row,1,"DIFERENCIA",bold=True,color="FFFFFF",fill=_diff_fill,align=A_LEFT,border=B_RH,size=12)
-    _rsc(_row,2,"",bold=True,color="FFFFFF",fill=_diff_fill,border=B_RH)
-    _rsc(_row,3,"",bold=True,color="FFFFFF",fill=_diff_fill,border=B_RH)
-    _rsc(_row,4,_dif_conc,bold=True,color="FFFFFF",fill=_diff_fill,align=A_RIGHT,border=B_RH,nf=FMT_NUM,size=12)
-    _rsc(_row,5,_diff_label,bold=True,color="FFFFFF",fill=_diff_fill,align=A_CTR,border=B_RH)
-    _rsc(_row,6,"",bold=True,color="FFFFFF",fill=_diff_fill,border=B_RH)
+    _rsc(_row,1,"DIFERENCIA",bold=True,color="FFFFFF",fill=_diff_fill,align=A_LEFT,border=B_RW,size=12)
+    _rsc(_row,2,"",fill=_diff_fill,border=B_RW)
+    _rsc(_row,3,"",fill=_diff_fill,border=B_RW)
+    _rsc(_row,4,_dif_conc,bold=True,color="FFFFFF",fill=_diff_fill,align=A_RIGHT,border=B_RW,nf=FMT_NUM,size=12)
+    _rsc(_row,5,_diff_label,bold=True,color="FFFFFF",fill=_diff_fill,align=A_CTR,border=B_RW,size=10)
+    _rsc(_row,6,"",fill=_diff_fill,border=B_RW)
 
-    for _cn2,_w2 in {1:38.0,2:22.0,3:9.0,4:18.0,5:13.0,6:4.0}.items():
+    for _cn2,_w2 in {1:35.0,2:20.0,3:9.0,4:18.0,5:11.0,6:11.0}.items():
         ws_res.column_dimensions[get_column_letter(_cn2)].width = _w2
-    ws_res.row_dimensions[1].height = 28
+    ws_res.row_dimensions[1].height = 32
 
     # ── Hoja CUENTAS (solo cuando no hay plantilla) ───────────────────────────────
     if plantilla is None:

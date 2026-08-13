@@ -246,7 +246,8 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                 cta = emp_prestamo.get(nu, '')
                 col_ins = col_tot1
                 ws.insert_cols(col_ins)
-                ws.cell(2, col_ins, value=cta)
+                if cta:
+                    ws.cell(2, col_ins, value=cta)
                 ws.cell(3, col_ins, value=f"PREST.OTROP. {nu}")
                 otro_prest_cols[nu] = col_ins
                 col_tot1 += 1
@@ -272,7 +273,8 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                 cta = emp_prestamo.get(nu, '')
                 col_ins = col_tot2
                 ws.insert_cols(col_ins)
-                ws.cell(2, col_ins, value=cta)
+                if cta:
+                    ws.cell(2, col_ins, value=cta)
                 ws.cell(3, col_ins, value=f"PREST. {nu}")
                 prest_cols[nu] = col_ins
                 col_tot2 += 1
@@ -292,7 +294,8 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                 cta = emp_reg.get(nu) or emp_asim.get(nu) or ''
                 col_ins = col_tot2
                 ws.insert_cols(col_ins)
-                ws.cell(2, col_ins, value=cta)
+                if cta:
+                    ws.cell(2, col_ins, value=cta)
                 ws.cell(3, col_ins, value=nu)
                 emp_cols[nu] = col_ins
                 col_tot2 += 1

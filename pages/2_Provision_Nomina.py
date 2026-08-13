@@ -134,58 +134,6 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                 st.error("❌ No se encontraron columnas TOTAL 1 / TOTAL 2 en fila 3 de la plantilla.")
                 st.stop()
 
-            col_perc_start = col_tot1
-
-            # ── Mapas cuenta-por-nombre (de CUENTAS — solo para lookup) ───────
-            perc_map = {nombre: cta for cta, nombre in perc_cat}
-            ded_map  = {nombre: cta for cta, nombre in ded_cat}
-
-            # ── Recolectar conceptos únicos de percepciones presentes en XMLs ─
-            perc_vistos = []
-            for f in filas:
-                for c_name in f['perc']:
-                    if c_name not in perc_vistos:
-                        perc_vistos.append(c_name)
-
-            # ── Insertar columnas de percepciones (solo las que aparecen en XMLs)
-            perc_cols = {}
-            for i, c_name in enumerate(perc_vistos):
-                col_ins = col_tot1 + i
-                ws.insert_cols(col_ins)
-                cta = perc_map.get(c_name, '')
-                if cta:
-                    ws.cell(2, col_ins, value=cta)    # cuenta solo si existe en CUENTAS
-                ws.cell(3, col_ins, value=c_name)
-                perc_cols[c_name] = col_ins
-            col_tot1 += len(perc_vistos)
-            col_tot2 += len(perc_vistos)
-
-            # ── Recolectar conceptos únicos de deducciones presentes en XMLs ──
-            ded_vistos = []
-            for f in filas:
-                for c_name in f['ded']:
-                    if 'PRESTAMO' in c_name:
-                        continue
-                    col_key = c_name
-                    if f.get('asimilado') and c_name == 'ISR':
-                        col_key = 'ISR ASIMILADOS'
-                    if col_key not in ded_vistos:
-                        ded_vistos.append(col_key)
-
-            # ── Insertar columnas de deducciones (solo las que aparecen en XMLs)
-            ded_cols = {}
-            for i, c_name in enumerate(ded_vistos):
-                col_ins = col_tot1 + 1 + i
-                ws.insert_cols(col_ins)
-                cta = ded_map.get(c_name, '')
-                if cta:
-                    ws.cell(2, col_ins, value=cta)    # cuenta solo si existe en CUENTAS
-                ws.cell(3, col_ins, value=c_name)
-                ded_cols[c_name] = col_ins
-            col_tot2 += len(ded_vistos)
-
-            logs.append(f"Estructura: TOTAL 1=col{col_tot1}  |  TOTAL 2=col{col_tot2}")
-
             # ── Parsear XMLs ──────────────────────────────────────────────────
             filas = []
             for uf in xml_files:
@@ -262,6 +210,57 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                 st.stop()
 
             filas.sort(key=lambda f: f['fecha'])
+
+            # ── Mapas cuenta-por-nombre (CUENTAS como lookup) ─────────────────
+            col_perc_start = col_tot1
+            perc_map = {nombre: cta for cta, nombre in perc_cat}
+            ded_map  = {nombre: cta for cta, nombre in ded_cat}
+
+            # ── Recolectar conceptos únicos de percepciones en los XMLs ───────
+            perc_vistos = []
+            for f in filas:
+                for c_name in f['perc']:
+                    if c_name not in perc_vistos:
+                        perc_vistos.append(c_name)
+
+            # ── Insertar columnas de percepciones (solo las que aparecen en XMLs)
+            perc_cols = {}
+            for i, c_name in enumerate(perc_vistos):
+                col_ins = col_tot1 + i
+                ws.insert_cols(col_ins)
+                cta = perc_map.get(c_name, '')
+                if cta:
+                    ws.cell(2, col_ins, value=cta)
+                ws.cell(3, col_ins, value=c_name)
+                perc_cols[c_name] = col_ins
+            col_tot1 += len(perc_vistos)
+            col_tot2 += len(perc_vistos)
+
+            # ── Recolectar conceptos únicos de deducciones en los XMLs ────────
+            ded_vistos = []
+            for f in filas:
+                for c_name in f['ded']:
+                    if 'PRESTAMO' in c_name:
+                        continue
+                    col_key = c_name
+                    if f.get('asimilado') and c_name == 'ISR':
+                        col_key = 'ISR ASIMILADOS'
+                    if col_key not in ded_vistos:
+                        ded_vistos.append(col_key)
+
+            # ── Insertar columnas de deducciones (solo las que aparecen en XMLs)
+            ded_cols = {}
+            for i, c_name in enumerate(ded_vistos):
+                col_ins = col_tot1 + 1 + i
+                ws.insert_cols(col_ins)
+                cta = ded_map.get(c_name, '')
+                if cta:
+                    ws.cell(2, col_ins, value=cta)
+                ws.cell(3, col_ins, value=c_name)
+                ded_cols[c_name] = col_ins
+            col_tot2 += len(ded_vistos)
+
+            logs.append(f"Estructura: TOTAL 1=col{col_tot1}  |  TOTAL 2=col{col_tot2}")
 
             # ── Columnas OtroPago PRESTAMO (antes TOTAL 1) ───────────────────
             otro_prest_cols = {}

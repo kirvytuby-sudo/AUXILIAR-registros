@@ -178,9 +178,16 @@ ticker_items = []
 for n in noticias:
     icon = "📌" if n["fuente"] == "DOF" else "🏛️"
     etiq = " · ".join(n["cats"]) if n["cats"] else n["fuente"]
-    ticker_items.append(f'{icon} <span style="color:#FBCFE8;font-weight:700">[{_esc(etiq)}]</span> {_esc(n["titulo"])}')
+    href = n["link"] if n["link"] else "#"
+    href_esc = href.replace("&", "&amp;").replace("'", "%27").replace('"', "%22")
+    ticker_items.append(
+        f'<a href="{href_esc}" target="_blank" style="color:inherit;text-decoration:none;">'
+        f'{icon} <span style="color:#FBCFE8;font-weight:700">[{_esc(etiq)}]</span>'
+        f' {_esc(n["titulo"])}'
+        f'</a>'
+    )
 
-ticker_html = "     ◆     ".join(ticker_items)
+ticker_html = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#93C5FD;opacity:.7">◆</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'.join(ticker_items)
 
 components.html(f"""
 <!DOCTYPE html>
@@ -224,7 +231,9 @@ components.html(f"""
     padding-left:100%;
     letter-spacing:.2px;
   }}
-  .scroll-inner:hover{{animation-play-state:paused;cursor:default;}}
+  .scroll-inner:hover{{animation-play-state:paused;}}
+  .scroll-inner a{{color:inherit;text-decoration:none;cursor:pointer;}}
+  .scroll-inner a:hover{{text-decoration:underline;text-underline-offset:3px;}}
   @keyframes ticker{{
     from{{transform:translateX(0);}}
     to{{transform:translateX(-100%);}}
@@ -264,34 +273,86 @@ components.html(f"""
 """, height=72, scrolling=False)
 
 # ── Tarjetas por categoría ────────────────────────────────────────────────────
-tab_sat, tab_isr, tab_iva = st.tabs(["🏛️ SAT", "📊 ISR", "💵 IVA"])
+CARD_CSS = """
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:transparent;font-family:'Segoe UI',Arial,sans-serif;}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:4px 2px 8px;}
+  .card{
+    background:#fff;border:1.5px solid #BFDBFE;border-radius:12px;
+    padding:16px 16px 12px;min-height:130px;
+    box-shadow:0 2px 8px rgba(30,58,138,.08);
+    transition:box-shadow .2s,border-color .2s,transform .15s;
+    display:flex;flex-direction:column;gap:8px;cursor:pointer;
+  }
+  .card:hover{
+    box-shadow:0 6px 20px rgba(30,58,138,.18);
+    border-color:#2563EB;transform:translateY(-2px);
+  }
+  .badge{
+    display:inline-block;background:#DBEAFE;color:#1E40AF;
+    font-size:.63rem;font-weight:800;border-radius:5px;
+    padding:3px 8px;letter-spacing:.5px;width:fit-content;
+  }
+  .titulo{
+    font-size:.86rem;color:#1E293B;line-height:1.5;flex:1;
+    text-decoration:none;
+  }
+  .titulo:hover{color:#1D4ED8;text-decoration:underline;}
+  .footer{display:flex;justify-content:space-between;align-items:center;margin-top:4px;}
+  .fecha{font-size:.67rem;color:#9CA3AF;}
+  .btn{
+    display:inline-flex;align-items:center;gap:4px;
+    background:#EFF6FF;color:#1D4ED8;
+    font-size:.72rem;font-weight:600;
+    border:1.5px solid #BFDBFE;border-radius:6px;
+    padding:4px 10px;text-decoration:none;
+    transition:background .15s,border-color .15s;
+  }
+  .btn:hover{background:#DBEAFE;border-color:#2563EB;}
+  @media(max-width:700px){.grid{grid-template-columns:1fr;}}
+</style>
+"""
 
-def _tarjetas(filtro: str):
+def _tarjetas_html(filtro: str) -> str:
     items = [n for n in noticias if filtro in n["cats"]]
     if not items:
-        st.caption("Sin novedades disponibles en este momento.")
+        return "<p style='color:#6B7280;font-size:.85rem;padding:12px'>Sin novedades disponibles en este momento.</p>"
+    cards = ""
+    for n in items[:9]:
+        href  = _esc(n["link"]) if n["link"] else "#"
+        fecha = f'<span class="fecha">{_esc(n["fecha"])}</span>' if n["fecha"] else '<span></span>'
+        cards += f"""
+<div class="card" onclick="window.open('{href}','_blank')">
+  <span class="badge">{_esc(n["fuente"])}</span>
+  <a class="titulo" href="{href}" target="_blank">{_esc(n["titulo"])}</a>
+  <div class="footer">
+    {fecha}
+    <a class="btn" href="{href}" target="_blank">🔗 Ver fuente</a>
+  </div>
+</div>"""
+    rows = max(1, (len(items[:9]) + 2) // 3)
+    return cards, rows
+
+tab_sat, tab_isr, tab_iva = st.tabs(["🏛️ SAT", "📊 ISR", "💵 IVA"])
+
+def _render_tab(filtro: str):
+    result = _tarjetas_html(filtro)
+    if isinstance(result, str):
+        st.markdown(result, unsafe_allow_html=True)
         return
-    cols = st.columns(min(3, len(items)))
-    for i, n in enumerate(items[:9]):
-        with cols[i % 3]:
-            fecha_str = f"<br><span style='font-size:.68rem;color:#6B7280'>{n['fecha']}</span>" if n["fecha"] else ""
-            link_str  = f"<a href='{n['link']}' target='_blank' style='font-size:.7rem;color:#2563EB;text-decoration:none'>🔗 Ver fuente</a>" if n["link"] else ""
-            st.markdown(f"""
-<div style="background:#fff;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 14px 10px;
-            margin-bottom:8px;min-height:110px;transition:box-shadow .2s;
-            box-shadow:0 2px 6px rgba(30,58,138,.07)">
-  <span style="background:#DBEAFE;color:#1E40AF;font-size:.65rem;font-weight:700;
-               border-radius:4px;padding:2px 7px;">{_esc(n['fuente'])}</span>
-  <p style="font-size:.82rem;color:#1E293B;margin:8px 0 6px;line-height:1.45">{_esc(n['titulo'])}</p>
-  {fecha_str}{link_str}
-</div>""", unsafe_allow_html=True)
+    cards_html, rows = result
+    h = 160 * rows + 20
+    components.html(f"<!DOCTYPE html><html><head>{CARD_CSS}</head>"
+                    f"<body><div class='grid'>{cards_html}</div></body></html>",
+                    height=h, scrolling=False)
 
 with tab_sat:
-    _tarjetas("SAT")
+    _render_tab("SAT")
 with tab_isr:
-    _tarjetas("ISR")
+    _render_tab("ISR")
 with tab_iva:
-    _tarjetas("IVA")
+    _render_tab("IVA")
 
 st.markdown("---")
 st.caption("AUXILIAR DE REGISTROS · La Sanitaria · v2.0")

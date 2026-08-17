@@ -277,63 +277,63 @@ def _fetch_novedades():
 # Items estáticos con links directos a secciones clave del SAT (siempre disponibles)
 _SAT_FALLBACK = [
     {
-        "titulo": "Resolución Miscelánea Fiscal — última versión vigente",
-        "link":   "https://www.sat.gob.mx/consultas/miscelanea-fiscal",
+        "titulo": "Resolución Miscelánea Fiscal — última versión vigente en el DOF",
+        "link":   "https://www.dof.gob.mx/",
         "fecha":  "",
     },
     {
-        "titulo": "CFDI 4.0 — Complementos y esquemas actualizados",
-        "link":   "https://www.sat.gob.mx/consultas/63226/genera-tus-facturas-electronicas",
+        "titulo": "CFDI 4.0 — Complementos, esquemas XSD y guías de llenado",
+        "link":   "https://www.sat.gob.mx/personas",
         "fecha":  "",
     },
     {
-        "titulo": "Declaración Anual 2024 — Personas físicas y morales",
-        "link":   "https://www.sat.gob.mx/declaracion/83241/declaracion-anual--personas-fisicas",
+        "titulo": "Declaración Anual — Personas físicas y morales (portal SAT)",
+        "link":   "https://www.sat.gob.mx/personas",
         "fecha":  "",
     },
     {
-        "titulo": "Catálogos SAT para CFDI — claves c_ClaveProdServ y c_Impuesto",
-        "link":   "https://www.sat.gob.mx/consultas/63315/catalogo-de-clave-de-producto-o-servicio",
+        "titulo": "Catálogos SAT para CFDI — c_ClaveProdServ, c_Impuesto, c_RegimenFiscal",
+        "link":   "https://www.sat.gob.mx/consultas",
         "fecha":  "",
     },
     {
         "titulo": "Buzón Tributario — notificaciones y trámites electrónicos",
-        "link":   "https://www.sat.gob.mx/tramites/28525/abre-tu-buzon-tributario",
+        "link":   "https://www.sat.gob.mx/tramites",
         "fecha":  "",
     },
     {
-        "titulo": "Constancia de Situación Fiscal — descarga en línea con RFC",
-        "link":   "https://www.sat.gob.mx/aplicacion/53027/constancia-de-situacion-fiscal",
+        "titulo": "Constancia de Situación Fiscal — descarga gratuita con RFC y e.firma",
+        "link":   "https://www.sat.gob.mx/tramites",
         "fecha":  "",
     },
     {
-        "titulo": "Opinión de Cumplimiento 32-D — verifica en el portal SAT",
-        "link":   "https://www.sat.gob.mx/tramites/16703/obten-tu-opinion-de-cumplimiento-de-obligaciones-fiscales",
+        "titulo": "Opinión de Cumplimiento 32-D — verifica tus obligaciones fiscales",
+        "link":   "https://www.sat.gob.mx/tramites",
         "fecha":  "",
     },
     {
-        "titulo": "Servicio de Declaraciones y Pagos (DyP) — presentación mensual",
-        "link":   "https://www.sat.gob.mx/declaracion/82923/presenta-tu-declaracion-provisional-o-definitiva-de-impuestos-federales",
+        "titulo": "Declaraciones y Pagos (DyP) — presentación mensual de impuestos",
+        "link":   "https://www.sat.gob.mx/personas",
         "fecha":  "",
     },
     {
-        "titulo": "e.firma (antes FIEL) — renovación y trámite en línea",
-        "link":   "https://www.sat.gob.mx/tramites/16703/obten-tu-e.firma-(antes-fiel)",
+        "titulo": "e.firma — renovación y obtención en línea o en módulo SAT",
+        "link":   "https://www.sat.gob.mx/tramites",
         "fecha":  "",
     },
     {
-        "titulo": "Lista de 69-B LISC — contribuyentes con operaciones inexistentes",
-        "link":   "https://www.sat.gob.mx/consultas/76288/consulta-la-lista-del-articulo-69-b",
+        "titulo": "Lista 69-B LISC — contribuyentes con operaciones inexistentes (EFOS)",
+        "link":   "https://www.sat.gob.mx/consultas",
         "fecha":  "",
     },
     {
         "titulo": "Tarifas y tablas ISR vigentes — subsidio al empleo 2025",
-        "link":   "https://www.sat.gob.mx/consultas/14027/tablas-y-tarifas",
+        "link":   "https://www.sat.gob.mx/personas",
         "fecha":  "",
     },
     {
-        "titulo": "Pagos provisionales ISR — cálculo y presentación mensual",
-        "link":   "https://www.sat.gob.mx/declaracion/82923/presenta-tu-declaracion-provisional",
+        "titulo": "Pagos provisionales ISR — cálculo y presentación mensual de personas morales",
+        "link":   "https://www.sat.gob.mx/empresas",
         "fecha":  "",
     },
 ]
@@ -749,7 +749,7 @@ _ISR_RESUMEN = (
     "indispensables y estar amparadas con CFDI (art.&nbsp;27). Los dividendos distribuidos "
     "causan una retención adicional del <strong>10&nbsp;%</strong> (art.&nbsp;10)."
 )
-_ISR_URL = "https://www.diputados.gob.mx/LeyesBiblio/pdf/LISR.pdf"
+_ISR_URL = "https://www.diputados.gob.mx/LeyesBiblio/ref/lisr.htm"
 _ISR_ARTS = [
     ("Art. 1",   "Sujetos del ISR",
      "Residentes en México y extranjeros con ingresos de fuente de riqueza nacional están obligados al pago del impuesto."),
@@ -789,7 +789,7 @@ _IVA_RESUMEN = (
     "al causado se obtiene un <strong>saldo a favor</strong> solicitado en devolución o "
     "compensado en períodos siguientes (art.&nbsp;6)."
 )
-_IVA_URL = "https://www.diputados.gob.mx/LeyesBiblio/pdf/LIVA.pdf"
+_IVA_URL = "https://www.diputados.gob.mx/LeyesBiblio/ref/liva.htm"
 _IVA_ARTS = [
     ("Art. 1",   "Tasa general 16 %",
      "Personas físicas y morales en México que enajenen bienes, presten servicios, otorguen uso temporal de bienes o importen están obligadas al pago del IVA."),

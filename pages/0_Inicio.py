@@ -190,43 +190,78 @@ components.html(f"""
   *{{box-sizing:border-box;margin:0;padding:0;}}
   body{{background:transparent;font-family:'Segoe UI',Arial,sans-serif;overflow:hidden;}}
   .wrap{{
-    background:linear-gradient(135deg,#1E3A8A 0%,#2563EB 100%);
-    border-radius:10px;overflow:hidden;display:flex;align-items:center;height:44px;
+    background:linear-gradient(135deg,#0F2167 0%,#1E40AF 60%,#2563EB 100%);
+    border-radius:12px;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    height:64px;
+    box-shadow:0 4px 18px rgba(30,58,138,.45);
   }}
   .badge{{
-    background:rgba(251,207,232,.18);border-right:1px solid rgba(255,255,255,.2);
-    padding:0 14px;height:100%;display:flex;align-items:center;
-    font-size:.68rem;font-weight:700;color:#FBCFE8;white-space:nowrap;flex-shrink:0;
+    background:rgba(251,207,232,.15);
+    border-right:2px solid rgba(255,255,255,.18);
+    padding:0 20px;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:2px;
+    flex-shrink:0;
+    min-width:90px;
   }}
+  .badge-icon{{font-size:1.3rem;line-height:1;}}
+  .badge-label{{font-size:.6rem;font-weight:800;color:#FBCFE8;letter-spacing:1.5px;text-transform:uppercase;}}
   .scroll-area{{flex:1;overflow:hidden;height:100%;display:flex;align-items:center;}}
   .scroll-inner{{
-    white-space:nowrap;display:inline-block;
-    animation:ticker {max(40, len(noticias)*8)}s linear infinite;
-    color:#E0F2FE;font-size:.82rem;padding-left:100%;
+    white-space:nowrap;
+    display:inline-block;
+    animation:ticker {max(50, len(noticias)*9)}s linear infinite;
+    color:#F0F9FF;
+    font-size:.95rem;
+    font-weight:500;
+    padding-left:100%;
+    letter-spacing:.2px;
   }}
   .scroll-inner:hover{{animation-play-state:paused;cursor:default;}}
   @keyframes ticker{{
     from{{transform:translateX(0);}}
     to{{transform:translateX(-100%);}}
   }}
-  .ts{{font-size:.6rem;color:rgba(224,242,254,.55);padding:0 12px;flex-shrink:0;white-space:nowrap;}}
+  .ts-wrap{{
+    display:flex;flex-direction:column;align-items:flex-end;
+    padding:0 14px;flex-shrink:0;gap:3px;
+  }}
+  .ts{{font-size:.62rem;color:rgba(224,242,254,.6);white-space:nowrap;}}
+  .live-dot{{
+    display:inline-block;width:7px;height:7px;border-radius:50%;
+    background:#34D399;box-shadow:0 0 6px #34D399;
+    animation:pulse 1.8s ease-in-out infinite;
+  }}
+  @keyframes pulse{{0%,100%{{opacity:1;transform:scale(1);}}50%{{opacity:.5;transform:scale(.75);}}}}
 </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="badge">📡 FISCAL</div>
+    <div class="badge">
+      <span class="badge-icon">📡</span>
+      <span class="badge-label">FISCAL</span>
+    </div>
     <div class="scroll-area">
       <span class="scroll-inner">{ticker_html}</span>
     </div>
-    <div class="ts">↻ {_esc(ultima_act)}</div>
+    <div class="ts-wrap">
+      <span class="live-dot"></span>
+      <span class="ts">↻ {_esc(ultima_act)}</span>
+    </div>
   </div>
   <script>
-    // Auto-reload la página completa cada hora
     setTimeout(function(){{ window.parent.location.reload(); }}, 3600000);
   </script>
 </body>
 </html>
-""", height=52, scrolling=False)
+""", height=72, scrolling=False)
 
 # ── Tarjetas por categoría ────────────────────────────────────────────────────
 tab_sat, tab_isr, tab_iva = st.tabs(["🏛️ SAT", "📊 ISR", "💵 IVA"])
@@ -257,60 +292,6 @@ with tab_isr:
     _tarjetas("ISR")
 with tab_iva:
     _tarjetas("IVA")
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MÓDULOS
-# ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("---")
-st.markdown("##### 🗂️ Módulos disponibles")
-
-MODULOS = [
-    {"icon": "💼", "title": "Pagos Bancarios",
-     "desc": "Conciliación de nómina BBVA Net Cash — PDF → Excel",
-     "pagina": "pages/1_Pagos_Bancarios.py"},
-    {"icon": "📋", "title": "Provisión de Nómina",
-     "desc": "XML (CFDI) → Plantilla SINUBE con columnas dinámicas",
-     "pagina": "pages/2_Provision_Nomina.py"},
-    {"icon": "💳", "title": "Préstamos",
-     "desc": "PDFs de préstamos → Excel con catálogo de cuentas",
-     "pagina": "pages/3_Prestamos.py"},
-    {"icon": "⛽", "title": "Ventas del Día",
-     "desc": "Reporte de ventas diarias — póliza contable",
-     "pagina": "pages/4_Ventas_del_Dia.py"},
-    {"icon": "📊", "title": "Control Despacho vs Ventas",
-     "desc": "Concilia despachos contra póliza — UUID, IVA, IEPS",
-     "pagina": "pages/10_Control_Despacho_vs_Ventas.py"},
-    {"icon": "🏦", "title": "Depósitos Bancarios",
-     "desc": "BBVA, Banorte e Inbursa → póliza de depósitos",
-     "pagina": "pages/11_Depositos_Bancarios.py"},
-    {"icon": "📈", "title": "Estado de Cuenta",
-     "desc": "Análisis y conciliación de estados de cuenta.",
-     "pagina": "pages/9_Estado_de_Cuenta.py"},
-    {"icon": "📑", "title": "Reconciliación",
-     "desc": "Reconciliación contable con plantilla SINUBE",
-     "pagina": "pages/6_Reconciliacion.py"},
-    {"icon": "🔗", "title": "Conciliación SAT",
-     "desc": "Conciliación de CFDIs contra registros contables",
-     "pagina": "pages/5_Conciliacion_SAT.py"},
-    {"icon": "🔀", "title": "Conciliación Banco vs Auxiliar",
-     "desc": "Compara movimientos bancarios contra el auxiliar",
-     "pagina": "pages/8_Conciliacion_Banco_Auxiliar.py"},
-    {"icon": "🏛️", "title": "Constancia y Opinión SAT",
-     "desc": "Genera Constancia Fiscal y Opinión 32-D con e.firma",
-     "pagina": "pages/12_Constancia_y_Opinion_SAT.py"},
-    {"icon": "📄", "title": "Póliza de Nómina",
-     "desc": "Pagos Bancarios Excel → póliza matriz empleados × semana",
-     "pagina": "pages/14_Poliza_Nomina.py"},
-]
-
-cols = st.columns(4)
-for i, mod in enumerate(MODULOS):
-    with cols[i % 4]:
-        label = f"{mod['icon']}\n\n{mod['title']}\n\n{mod['desc']}\n\n✅ Disponible"
-        if st.button(label, key=f"mod_{i}", use_container_width=True):
-            st.switch_page(mod["pagina"])
 
 st.markdown("---")
 st.caption("AUXILIAR DE REGISTROS · La Sanitaria · v2.0")

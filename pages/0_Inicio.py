@@ -934,15 +934,47 @@ def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str,
 tab_sat, tab_isr, tab_iva = st.tabs(["🏛️ SAT", "📊 ISR", "💵 IVA"])
 
 def _render_tab(filtro: str):
-    result = _tarjetas_html(filtro)
-    if isinstance(result, str):
-        st.markdown(result, unsafe_allow_html=True)
+    """Renderiza tarjetas de noticias con componentes nativos de Streamlit (sin iframe)."""
+    items = [n for n in noticias if filtro in n["cats"]]
+    if not items:
+        st.markdown(
+            "<p style='color:#9CA3AF;font-size:.86rem;padding:8px 0'>"
+            "Sin novedades disponibles en este momento.</p>",
+            unsafe_allow_html=True,
+        )
         return
-    cards_html, rows = result
-    h = 160 * rows + 20
-    components.html(f"<!DOCTYPE html><html><head>{CARD_CSS}</head>"
-                    f"<body><div class='grid'>{cards_html}</div></body></html>",
-                    height=h, scrolling=False)
+
+    for row_start in range(0, min(len(items), 9), 3):
+        cols = st.columns(3)
+        for j, col in enumerate(cols):
+            idx = row_start + j
+            if idx >= min(len(items), 9):
+                break
+            n = items[idx]
+            fuente   = n["fuente"]
+            accent   = _ACCENT.get(fuente, _ACCENT_DEFAULT)
+            abg      = _ACCENT_BG.get(fuente, "#EFF6FF")
+            titulo   = _esc(n["titulo"][:115])
+            fecha_h  = (f'<span style="font-size:.63rem;color:#94A3B8;margin-left:auto">'
+                        f'{_esc(n["fecha"])}</span>') if n.get("fecha") else ""
+            with col:
+                st.markdown(f"""
+<div style="background:#fff;border-radius:14px;
+            border:1px solid rgba(226,232,240,.9);border-left:4px solid {accent};
+            box-shadow:0 1px 3px rgba(15,23,42,.05),0 5px 18px rgba(15,23,42,.04);
+            padding:14px 16px 10px;margin-bottom:4px;min-height:90px;">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
+    <span style="width:7px;height:7px;border-radius:50%;background:{accent};
+                 display:inline-block;flex-shrink:0;
+                 box-shadow:0 0 0 2px {accent}30"></span>
+    <span style="font-size:.59rem;font-weight:800;letter-spacing:.7px;
+                 text-transform:uppercase;color:{accent};
+                 background:{abg};padding:2px 9px;border-radius:20px">{_esc(fuente)}</span>
+    {fecha_h}
+  </div>
+  <div style="font-size:.87rem;color:#0F172A;line-height:1.5;font-weight:500">{titulo}</div>
+</div>""", unsafe_allow_html=True)
+                st.link_button("↗ Ver fuente", n["link"], use_container_width=True)
 
 with tab_sat:
     _render_tab("SAT")
@@ -959,95 +991,59 @@ with tab_sat:
 
     sat_items, sat_ts = _fetch_sat_noticias()
 
-    SAT_CARD_CSS = """<style>
-  :root {--r:#B91C1C;--r-soft:#FEE2E2;--r-mid:#FCA5A5;}
-  *, *::before, *::after {box-sizing:border-box;margin:0;padding:0;}
-  body {
-    background:transparent;
-    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
-    -webkit-font-smoothing:antialiased;
-  }
-  .grid {
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:13px;
-    padding:4px 2px 8px;
-  }
-  .card {
+    # CSS inyectado en la página de Streamlit (NO en iframe)
+    st.markdown("""
+<style>
+.sat-card {
     background:#FFFFFF;
     border-radius:14px;
-    border:1px solid rgba(226,232,240,.9);
-    border-left:4px solid var(--r);
-    box-shadow:0 1px 3px rgba(15,23,42,.05),0 6px 20px rgba(15,23,42,.04);
-    display:flex;flex-direction:column;
-    min-height:125px;cursor:pointer;
-    transition:box-shadow .25s,transform .22s;
-    overflow:hidden;
-  }
-  .card:hover {
-    box-shadow:0 4px 10px rgba(185,28,28,.08),0 16px 38px rgba(15,23,42,.1);
-    transform:translateY(-3px);
-  }
-  .card-inner {padding:15px 16px 13px;display:flex;flex-direction:column;gap:7px;flex:1;}
-  .top-row {display:flex;align-items:center;gap:7px;}
-  .dot {
-    width:7px;height:7px;border-radius:50%;
-    background:var(--r);flex-shrink:0;
-    box-shadow:0 0 0 2px rgba(185,28,28,.15);
-  }
-  .fuente {
-    font-size:.6rem;font-weight:800;letter-spacing:.7px;
-    text-transform:uppercase;color:var(--r);
-    background:var(--r-soft);padding:2px 8px;border-radius:20px;
-  }
-  .titulo {
-    font-size:.86rem;color:#0F172A;line-height:1.55;flex:1;
-    text-decoration:none;font-weight:500;
+    border:1px solid rgba(226,232,240,.85);
+    border-left:4px solid #B91C1C;
+    box-shadow:0 1px 3px rgba(15,23,42,.05),0 5px 18px rgba(15,23,42,.04);
+    padding:14px 16px 10px;
+    margin-bottom:4px;
+    min-height:92px;
+}
+.sat-badge {
+    font-size:.59rem;font-weight:800;letter-spacing:.7px;
+    text-transform:uppercase;color:#B91C1C;
+    background:#FEE2E2;padding:2px 9px;border-radius:20px;
+    display:inline-block;margin-bottom:7px;
+}
+.sat-title {
+    font-size:.87rem;color:#0F172A;line-height:1.5;font-weight:500;
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
-  }
-  .titulo:hover {color:var(--r);}
-  .footer {display:flex;justify-content:flex-end;margin-top:auto;padding-top:5px;}
-  .btn {
-    display:inline-flex;align-items:center;gap:5px;
-    color:var(--r);font-size:.7rem;font-weight:600;
-    border:1.5px solid var(--r);border-radius:20px;
-    padding:4px 12px;text-decoration:none;background:transparent;
-    transition:background .15s,color .15s;
-  }
-  .btn:hover {background:var(--r);color:#fff;}
-  .empty {color:#9CA3AF;font-size:.85rem;padding:16px 4px;}
-  @media(max-width:700px) {.grid{grid-template-columns:1fr;}}
-</style>"""
+}
+/* Botones ↗ Ver en SAT */
+div[data-testid="stLinkButton"] a {
+    border-radius:20px !important;
+    font-size:.76rem !important;
+    font-weight:600 !important;
+    padding:5px 14px !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
     n_show = min(len(sat_items), 12) if sat_items else 0
     if n_show:
-        cards_html = ""
-        for it in sat_items[:12]:
-            href  = _esc(it["link"])
-            fecha = f'<span style="font-size:.63rem;color:#94A3B8;margin-left:auto">{_esc(it["fecha"])}</span>' if it.get("fecha") else ""
-            cards_html += f"""
-<div class="card" onclick="window.open('{href}','_blank','noopener,noreferrer')">
-  <div class="card-inner">
-    <div class="top-row">
-      <span class="dot"></span>
-      <span class="fuente">SAT</span>
-      {fecha}
-    </div>
-    <a class="titulo" href="{href}" target="_blank"
-       rel="noreferrer noopener" referrerpolicy="no-referrer">{_esc(it['titulo'])}</a>
-    <div class="footer">
-      <a class="btn" href="{href}" target="_blank"
-         rel="noreferrer noopener" referrerpolicy="no-referrer">↗ Ver en SAT</a>
-    </div>
-  </div>
-</div>"""
-        rows = max(1, (n_show + 2) // 3)
-        h = rows * 150 + 20
-        components.html(
-            f"<!DOCTYPE html><html><head>{SAT_CARD_CSS}</head>"
-            f"<body><div class='grid'>{cards_html}</div></body></html>",
-            height=h, scrolling=False,
-        )
+        for row_start in range(0, n_show, 3):
+            cols = st.columns(3)
+            for j, col in enumerate(cols):
+                idx = row_start + j
+                if idx < n_show:
+                    it = sat_items[idx]
+                    with col:
+                        st.markdown(
+                            f'<div class="sat-card">'
+                            f'<span class="sat-badge">● SAT</span>'
+                            f'<div class="sat-title">{_esc(it["titulo"][:110])}</div>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+                        st.link_button(
+                            "↗ Ver en SAT", it["link"],
+                            use_container_width=True,
+                        )
     else:
         st.info("No se pudieron obtener noticias del SAT en este momento.")
 

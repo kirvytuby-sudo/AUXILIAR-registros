@@ -1053,7 +1053,7 @@ div[data-testid="stLinkButton"] a {
                             unsafe_allow_html=True,
                         )
                         st.link_button(
-                            "🔍 Buscar en Google", it["link"],
+                            "↗ Ver en SAT", it["link"],
                             use_container_width=True,
                         )
     else:
@@ -1064,7 +1064,7 @@ div[data-testid="stLinkButton"] a {
     # ── Botones de acceso rápido (st.link_button — abre sin iframe, sin Referer) ──
     col_b1, col_b2, col_b3 = st.columns(3)
     with col_b1:
-        st.link_button("🔍 Buscar en SAT", _sat_google("SAT México portal trámites servicios"),
+        st.link_button("🏛️ Portal SAT", _sat_google("SAT México portal trámites servicios"),
                        use_container_width=True)
     with col_b2:
         st.link_button("📄 Diario Oficial de la Federación", "https://www.dof.gob.mx",

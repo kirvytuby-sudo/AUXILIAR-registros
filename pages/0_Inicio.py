@@ -21,29 +21,49 @@ st.set_page_config(
 _theme.aplicar_header("🧾 AUXILIAR DE REGISTROS",
                        "Sistema contable de La Sanitaria — Selecciona un módulo")
 
-# ── Estilos de los botones de módulo ─────────────────────────────────────────
+# ── Estilos globales ──────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-div[data-testid="column"] .stButton > button {
-    background: #EFF6FF;
-    border: 2px solid #1E3A8A;
-    border-radius: 10px;
-    padding: 18px 12px;
-    width: 100%;
-    min-height: 175px;
-    text-align: center;
-    white-space: pre-wrap;
-    line-height: 1.6;
-    color: #1E3A8A;
-    font-size: 0.88rem;
-    cursor: pointer;
-    transition: border-color .2s, background .2s, box-shadow .2s;
-    margin-bottom: 4px;
+/* ── Tabs ────────────────────────────────────── */
+button[data-baseweb="tab"] {
+    font-weight: 700 !important;
+    font-size: 0.92rem !important;
+    letter-spacing: .2px;
+    padding: 10px 22px !important;
 }
-div[data-testid="column"] .stButton > button:hover {
-    background: #DBEAFE;
-    border-color: #2563EB;
-    box-shadow: 0 4px 12px rgba(30,58,138,.18);
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #1E3A8A !important;
+}
+div[data-baseweb="tab-highlight"] {
+    background-color: #1E3A8A !important;
+    height: 3px !important;
+    border-radius: 3px 3px 0 0 !important;
+}
+div[data-baseweb="tab-list"] {
+    gap: 4px;
+    background: #F8FAFC;
+    border-radius: 12px 12px 0 0;
+    padding: 4px 4px 0;
+    border-bottom: 2px solid #E2E8F0;
+}
+div[data-baseweb="tab-panel"] {
+    padding-top: 14px !important;
+}
+/* ── Scrollbar ───────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F1F5F9; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+/* ── Refresh button ──────────────────────────── */
+button[data-testid="baseButton-secondary"] {
+    border-radius: 20px !important;
+    font-weight: 600 !important;
+    font-size: .8rem !important;
+}
+/* ── st.caption ──────────────────────────────── */
+div[data-testid="stCaptionContainer"] p {
+    color: #94A3B8;
+    font-size: .72rem;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -482,66 +502,103 @@ for n in noticias:
 
 ticker_html = '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#93C5FD;opacity:.7">◆</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;'.join(ticker_items)
 
-components.html(f"""
-<!DOCTYPE html>
-<html>
-<head>
+components.html(f"""<!DOCTYPE html><html><head>
 <style>
-  *{{box-sizing:border-box;margin:0;padding:0;}}
-  body{{background:transparent;font-family:'Segoe UI',Arial,sans-serif;overflow:hidden;}}
-  .wrap{{
-    background:linear-gradient(135deg,#0F2167 0%,#1E40AF 60%,#2563EB 100%);
-    border-radius:12px;
+  *, *::before, *::after {{box-sizing:border-box;margin:0;padding:0;}}
+  body {{
+    background:transparent;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }}
+  .wrap {{
+    background:linear-gradient(120deg,#0B1D5E 0%,#1E3A8A 45%,#1D4ED8 80%,#3B82F6 100%);
+    border-radius:14px;
     overflow:hidden;
     display:flex;
     align-items:center;
-    height:64px;
-    box-shadow:0 4px 18px rgba(30,58,138,.45);
+    height:86px;
+    box-shadow:0 6px 28px rgba(30,58,138,.5), 0 2px 8px rgba(30,58,138,.3);
+    position:relative;
   }}
-  .badge{{
-    background:rgba(251,207,232,.15);
-    border-right:2px solid rgba(255,255,255,.18);
-    padding:0 20px;
+  /* Subtle shimmer overlay */
+  .wrap::before {{
+    content:'';
+    position:absolute;
+    inset:0;
+    background:linear-gradient(180deg,rgba(255,255,255,.07) 0%,transparent 50%,rgba(0,0,0,.08) 100%);
+    pointer-events:none;
+  }}
+  /* Left badge */
+  .badge {{
+    background:rgba(255,255,255,.08);
+    border-right:1px solid rgba(255,255,255,.14);
+    padding:0 22px;
     height:100%;
     display:flex;
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    gap:2px;
+    gap:3px;
     flex-shrink:0;
-    min-width:90px;
+    min-width:100px;
+    position:relative;
+    z-index:1;
   }}
-  .badge-icon{{font-size:1.3rem;line-height:1;}}
-  .badge-label{{font-size:.6rem;font-weight:800;color:#FBCFE8;letter-spacing:1.5px;text-transform:uppercase;}}
-  .scroll-area{{flex:1;overflow:hidden;height:100%;display:flex;align-items:center;}}
-  .scroll-inner{{
+  .badge-icon {{font-size:1.6rem;line-height:1;filter:drop-shadow(0 1px 3px rgba(0,0,0,.2));}}
+  .badge-label {{font-size:.58rem;font-weight:900;color:#FBCFE8;letter-spacing:2px;text-transform:uppercase;}}
+  .badge-sub {{font-size:.52rem;color:rgba(251,207,232,.55);letter-spacing:.5px;}}
+  /* Scroll zone with fade masks */
+  .scroll-area {{
+    flex:1;overflow:hidden;height:100%;display:flex;align-items:center;
+    -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 5%,#000 95%,transparent 100%);
+    mask-image:linear-gradient(90deg,transparent 0%,#000 5%,#000 95%,transparent 100%);
+    position:relative;z-index:1;
+  }}
+  .scroll-inner {{
     white-space:nowrap;
     display:inline-block;
-    animation:ticker {max(50, len(noticias)*9)}s linear infinite;
-    color:#F0F9FF;
-    font-size:.95rem;
+    animation:ticker {max(60, len(noticias)*10)}s linear infinite;
+    color:#E0F2FE;
+    font-size:1rem;
     font-weight:500;
     padding-left:100%;
-    letter-spacing:.2px;
+    letter-spacing:.15px;
+    line-height:1;
   }}
-  .scroll-inner:hover{{animation-play-state:paused;}}
-  .scroll-inner a{{color:inherit;text-decoration:none;cursor:pointer;}}
-  .scroll-inner a:hover{{text-decoration:underline;text-underline-offset:3px;}}
-  @keyframes ticker{{
-    from{{transform:translateX(0);}}
-    to{{transform:translateX(-100%);}}
+  .scroll-inner:hover {{animation-play-state:paused;cursor:pointer;}}
+  .scroll-inner a {{
+    color:inherit;text-decoration:none;cursor:pointer;
+    transition:color .15s;
   }}
-  .ts-wrap{{
+  .scroll-inner a:hover {{
+    color:#FFFFFF;
+    text-decoration:underline;
+    text-underline-offset:4px;
+    text-decoration-color:rgba(251,207,232,.6);
+  }}
+  @keyframes ticker {{
+    from {{transform:translateX(0);}}
+    to   {{transform:translateX(-100%);}}
+  }}
+  /* Right timestamp */
+  .ts-wrap {{
     display:flex;flex-direction:column;align-items:flex-end;
-    padding:0 14px;flex-shrink:0;gap:3px;
+    padding:0 18px;flex-shrink:0;gap:4px;position:relative;z-index:1;
   }}
-  .ts{{font-size:.62rem;color:rgba(224,242,254,.6);white-space:nowrap;}}
-  .live-dot{{
-    display:inline-block;width:7px;height:7px;border-radius:50%;
-    background:#34D399;box-shadow:0 0 6px #34D399;
-    animation:pulse 1.8s ease-in-out infinite;
+  .live-row {{display:flex;align-items:center;gap:5px;}}
+  .live-dot {{
+    width:8px;height:8px;border-radius:50%;
+    background:#34D399;
+    box-shadow:0 0 0 2px rgba(52,211,153,.3), 0 0 8px #34D399;
+    animation:pulse 2s ease-in-out infinite;
   }}
-  @keyframes pulse{{0%,100%{{opacity:1;transform:scale(1);}}50%{{opacity:.5;transform:scale(.75);}}}}
+  .live-label {{font-size:.58rem;font-weight:700;color:#34D399;letter-spacing:.8px;}}
+  .ts {{font-size:.6rem;color:rgba(224,242,254,.5);white-space:nowrap;}}
+  @keyframes pulse {{
+    0%,100% {{opacity:1;transform:scale(1);box-shadow:0 0 0 2px rgba(52,211,153,.3),0 0 8px #34D399;}}
+    50%      {{opacity:.6;transform:scale(.8);box-shadow:0 0 0 3px rgba(52,211,153,.15),0 0 4px #34D399;}}
+  }}
 </style>
 </head>
 <body>
@@ -549,79 +606,130 @@ components.html(f"""
     <div class="badge">
       <span class="badge-icon">📡</span>
       <span class="badge-label">FISCAL</span>
+      <span class="badge-sub">EN VIVO</span>
     </div>
     <div class="scroll-area">
       <span class="scroll-inner">{ticker_html}</span>
     </div>
     <div class="ts-wrap">
-      <span class="live-dot"></span>
+      <div class="live-row">
+        <span class="live-dot"></span>
+        <span class="live-label">EN VIVO</span>
+      </div>
       <span class="ts">↻ {_esc(ultima_act)}</span>
     </div>
   </div>
-  <script>
-    setTimeout(function(){{ window.parent.location.reload(); }}, 3600000);
-  </script>
-</body>
-</html>
-""", height=72, scrolling=False)
+  <script>setTimeout(function(){{ window.parent.location.reload(); }}, 3600000);</script>
+</body></html>""", height=94, scrolling=False)
 
 # ── Tarjetas por categoría ────────────────────────────────────────────────────
-CARD_CSS = """
-<style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:transparent;font-family:'Segoe UI',Arial,sans-serif;}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:4px 2px 8px;}
-  .card{
-    background:#fff;border:1.5px solid #BFDBFE;border-radius:12px;
-    padding:16px 16px 12px;min-height:130px;
-    box-shadow:0 2px 8px rgba(30,58,138,.08);
-    transition:box-shadow .2s,border-color .2s,transform .15s;
-    display:flex;flex-direction:column;gap:8px;cursor:pointer;
-  }
-  .card:hover{
-    box-shadow:0 6px 20px rgba(30,58,138,.18);
-    border-color:#2563EB;transform:translateY(-2px);
-  }
-  .badge{
-    display:inline-block;background:#DBEAFE;color:#1E40AF;
-    font-size:.63rem;font-weight:800;border-radius:5px;
-    padding:3px 8px;letter-spacing:.5px;width:fit-content;
-  }
-  .titulo{
-    font-size:.86rem;color:#1E293B;line-height:1.5;flex:1;
-    text-decoration:none;
-  }
-  .titulo:hover{color:#1D4ED8;text-decoration:underline;}
-  .footer{display:flex;justify-content:space-between;align-items:center;margin-top:4px;}
-  .fecha{font-size:.67rem;color:#9CA3AF;}
-  .btn{
-    display:inline-flex;align-items:center;gap:4px;
-    background:#EFF6FF;color:#1D4ED8;
-    font-size:.72rem;font-weight:600;
-    border:1.5px solid #BFDBFE;border-radius:6px;
-    padding:4px 10px;text-decoration:none;
-    transition:background .15s,border-color .15s;
-  }
-  .btn:hover{background:#DBEAFE;border-color:#2563EB;}
-  @media(max-width:700px){.grid{grid-template-columns:1fr;}}
-</style>
-"""
+# Paleta de acento por fuente
+_ACCENT = {
+    "DOF": "#B45309",   # ámbar oscuro
+    "SAT": "#B91C1C",   # rojo
+    "ISR": "#1D4ED8",   # azul
+    "IVA": "#047857",   # verde
+}
+_ACCENT_BG = {
+    "DOF": "#FEF3C7",
+    "SAT": "#FEE2E2",
+    "ISR": "#DBEAFE",
+    "IVA": "#D1FAE5",
+}
+_ACCENT_DEFAULT = "#1E3A8A"
 
-def _tarjetas_html(filtro: str) -> str:
+CARD_CSS = """<style>
+  *, *::before, *::after {box-sizing:border-box;margin:0;padding:0;}
+  body {
+    background:transparent;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .grid {
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:14px;
+    padding:4px 2px 10px;
+  }
+  .card {
+    background:#FFFFFF;
+    border-radius:14px;
+    padding:0;
+    min-height:138px;
+    box-shadow:0 1px 3px rgba(15,23,42,.06),0 6px 22px rgba(15,23,42,.05);
+    border:1px solid rgba(226,232,240,.9);
+    border-left:4px solid var(--accent,#1D4ED8);
+    display:flex;
+    flex-direction:column;
+    cursor:pointer;
+    transition:box-shadow .25s,transform .22s;
+    overflow:hidden;
+  }
+  .card:hover {
+    box-shadow:0 4px 10px rgba(15,23,42,.07),0 18px 44px rgba(15,23,42,.11);
+    transform:translateY(-3px);
+  }
+  .card-inner {padding:16px 18px 14px;display:flex;flex-direction:column;gap:8px;flex:1;}
+  .top-row {display:flex;align-items:center;gap:8px;}
+  .dot {
+    width:7px;height:7px;border-radius:50%;
+    background:var(--accent,#1D4ED8);
+    flex-shrink:0;
+    box-shadow:0 0 0 2px color-mix(in srgb,var(--accent,#1D4ED8) 20%,transparent);
+  }
+  .fuente {
+    font-size:.61rem;font-weight:800;letter-spacing:.7px;
+    text-transform:uppercase;color:var(--accent,#1D4ED8);
+    background:var(--accent-bg,#DBEAFE);
+    padding:2px 8px;border-radius:20px;
+  }
+  .fecha {font-size:.64rem;color:#94A3B8;margin-left:auto;white-space:nowrap;}
+  .titulo {
+    font-size:.87rem;color:#0F172A;line-height:1.55;flex:1;
+    text-decoration:none;font-weight:500;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .titulo:hover {color:var(--accent,#1D4ED8);}
+  .footer {
+    display:flex;align-items:center;justify-content:flex-end;
+    margin-top:auto;padding-top:6px;
+  }
+  .btn {
+    display:inline-flex;align-items:center;gap:5px;
+    color:var(--accent,#1D4ED8);font-size:.71rem;font-weight:600;
+    border:1.5px solid var(--accent,#1D4ED8);border-radius:20px;
+    padding:4px 13px;text-decoration:none;background:transparent;
+    transition:background .15s,color .15s;
+  }
+  .btn:hover {background:var(--accent,#1D4ED8);color:#fff;}
+  .empty {color:#9CA3AF;font-size:.85rem;padding:16px 4px;}
+  @media(max-width:700px) {.grid{grid-template-columns:1fr;}}
+</style>"""
+
+def _tarjetas_html(filtro: str):
     items = [n for n in noticias if filtro in n["cats"]]
     if not items:
-        return "<p style='color:#6B7280;font-size:.85rem;padding:12px'>Sin novedades disponibles en este momento.</p>"
+        return "<p class='empty'>Sin novedades disponibles en este momento.</p>"
     cards = ""
     for n in items[:9]:
-        href  = _esc(n["link"]) if n["link"] else "#"
-        fecha = f'<span class="fecha">{_esc(n["fecha"])}</span>' if n["fecha"] else '<span></span>'
+        href       = _esc(n["link"]) if n["link"] else "#"
+        fuente     = n["fuente"]
+        accent     = _ACCENT.get(fuente, _ACCENT_DEFAULT)
+        accent_bg  = _ACCENT_BG.get(fuente, "#EFF6FF")
+        fecha      = f'<span class="fecha">{_esc(n["fecha"])}</span>' if n["fecha"] else ""
         cards += f"""
-<div class="card" onclick="window.open('{href}','_blank')">
-  <span class="badge">{_esc(n["fuente"])}</span>
-  <a class="titulo" href="{href}" target="_blank">{_esc(n["titulo"])}</a>
-  <div class="footer">
-    {fecha}
-    <a class="btn" href="{href}" target="_blank">🔗 Ver fuente</a>
+<div class="card" style="--accent:{accent};--accent-bg:{accent_bg}"
+     onclick="window.open('{href}','_blank')">
+  <div class="card-inner">
+    <div class="top-row">
+      <span class="dot"></span>
+      <span class="fuente">{_esc(fuente)}</span>
+      {fecha}
+    </div>
+    <a class="titulo" href="{href}" target="_blank">{_esc(n["titulo"])}</a>
+    <div class="footer">
+      <a class="btn" href="{href}" target="_blank">↗ Ver fuente</a>
+    </div>
   </div>
 </div>"""
     rows = max(1, (len(items[:9]) + 2) // 3)
@@ -710,13 +818,25 @@ _IVA_ARTS = [
 ]
 
 
-def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str, color: str) -> None:
-    """Renderiza tarjeta de resumen de ley + grid de artículos clave + botón ley completa."""
+def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str,
+                     color: str, stats: list[tuple] | None = None) -> None:
+    """Renderiza resumen de ley + artículos clave + botón ley completa."""
+    # Pills de estadísticas clave
+    stats_html = ""
+    if stats:
+        for label, val in stats:
+            stats_html += (
+                f'<div class="stat">'
+                f'<span class="stat-val">{val}</span>'
+                f'<span class="stat-lbl">{label}</span>'
+                f'</div>'
+            )
+
     arts_html = ""
     for codigo, nombre, desc in articulos:
         arts_html += f"""
 <div class="art-card">
-  <div class="art-header">
+  <div class="art-top">
     <span class="art-num">{codigo}</span>
     <span class="art-name">{nombre}</span>
   </div>
@@ -724,73 +844,117 @@ def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str, c
 </div>"""
 
     rows = (len(articulos) + 2) // 3
-    h = 80 + 100 + rows * 130 + 70  # resumen + grid rows + botón
+    h = (110 if stats else 0) + 130 + rows * 128 + 80
 
     components.html(f"""<!DOCTYPE html><html><head>
 <style>
-  *{{box-sizing:border-box;margin:0;padding:0;}}
-  body{{background:transparent;font-family:'Segoe UI',Arial,sans-serif;padding:6px 2px;}}
-
-  /* ── Resumen ─────────────────────────────── */
-  .resumen{{
-    background:linear-gradient(135deg,{color}18 0%,{color}08 100%);
-    border:1.5px solid {color}55;border-radius:12px;
-    padding:18px 20px;margin-bottom:16px;
-    font-size:.88rem;color:#1E293B;line-height:1.65;
+  :root {{--c:{color};}}
+  *, *::before, *::after {{box-sizing:border-box;margin:0;padding:0;}}
+  body {{
+    background:transparent;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    padding:4px 2px 6px;
+    -webkit-font-smoothing:antialiased;
   }}
-  .resumen strong{{color:{color};}}
-
-  /* ── Subtítulo ───────────────────────────── */
-  .subtitulo{{
-    font-size:.78rem;font-weight:700;color:{color};
-    letter-spacing:.5px;text-transform:uppercase;
-    margin-bottom:10px;padding-left:2px;
+  /* ── Stats pills ──────────────────────── */
+  .stats-row {{
+    display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;
   }}
-
-  /* ── Grid artículos ──────────────────────── */
-  .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}}
-  .art-card{{
-    background:#fff;border:1.5px solid {color}33;border-radius:10px;
-    padding:12px 14px;min-height:115px;
-    box-shadow:0 2px 6px {color}14;
-    transition:box-shadow .2s,transform .15s,border-color .2s;
+  .stat {{
+    background:color-mix(in srgb,var(--c) 10%,white);
+    border:1.5px solid color-mix(in srgb,var(--c) 30%,white);
+    border-radius:12px;padding:10px 18px;text-align:center;
+    flex:1;min-width:110px;
   }}
-  .art-card:hover{{
-    box-shadow:0 5px 16px {color}28;border-color:{color};
+  .stat-val {{
+    display:block;font-size:1.25rem;font-weight:800;color:var(--c);line-height:1.2;
+  }}
+  .stat-lbl {{
+    display:block;font-size:.67rem;color:#64748B;font-weight:600;
+    letter-spacing:.3px;margin-top:3px;text-transform:uppercase;
+  }}
+  /* ── Resumen ──────────────────────────── */
+  .resumen {{
+    background:color-mix(in srgb,var(--c) 7%,white);
+    border-left:5px solid var(--c);
+    border-radius:0 12px 12px 0;
+    padding:16px 20px;
+    margin-bottom:18px;
+    font-size:.88rem;color:#1E293B;line-height:1.7;
+  }}
+  .resumen strong {{color:var(--c);}}
+  /* ── Sección header ───────────────────── */
+  .sec-hdr {{
+    display:flex;align-items:center;gap:8px;
+    margin-bottom:12px;
+  }}
+  .sec-line {{flex:1;height:1.5px;background:color-mix(in srgb,var(--c) 20%,#E2E8F0);}}
+  .sec-label {{
+    font-size:.72rem;font-weight:800;color:var(--c);
+    letter-spacing:.8px;text-transform:uppercase;white-space:nowrap;
+  }}
+  /* ── Grid artículos ───────────────────── */
+  .grid {{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:18px;}}
+  .art-card {{
+    background:#FFFFFF;
+    border-radius:12px;
+    padding:14px 15px;
+    min-height:112px;
+    border-left:3px solid var(--c);
+    border:1px solid rgba(226,232,240,.9);
+    border-left:3px solid var(--c);
+    box-shadow:0 1px 3px rgba(15,23,42,.05),0 4px 12px rgba(15,23,42,.04);
+    display:flex;flex-direction:column;gap:6px;
+    transition:transform .2s,box-shadow .2s;
+  }}
+  .art-card:hover {{
     transform:translateY(-2px);
+    box-shadow:0 4px 8px rgba(15,23,42,.06),0 12px 28px rgba(15,23,42,.09);
   }}
-  .art-header{{display:flex;align-items:center;gap:8px;margin-bottom:6px;}}
-  .art-num{{
-    background:{color};color:#fff;
-    font-size:.63rem;font-weight:800;border-radius:5px;
-    padding:3px 8px;white-space:nowrap;flex-shrink:0;
+  .art-top {{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}}
+  .art-num {{
+    font-family:'Courier New',monospace;
+    background:var(--c);color:#fff;
+    font-size:.65rem;font-weight:700;
+    border-radius:5px;padding:2px 8px;
+    flex-shrink:0;white-space:nowrap;
+    letter-spacing:.3px;
   }}
-  .art-name{{font-size:.82rem;font-weight:700;color:#1E293B;}}
-  .art-desc{{font-size:.76rem;color:#475569;line-height:1.5;}}
-
-  /* ── Botón ───────────────────────────────── */
-  .btn-ley{{
-    display:inline-flex;align-items:center;gap:8px;
-    background:{color};color:#fff;
-    font-size:.85rem;font-weight:700;
-    border:none;border-radius:10px;
-    padding:12px 24px;text-decoration:none;
-    box-shadow:0 4px 14px {color}44;
-    transition:opacity .2s,transform .15s,box-shadow .2s;
-    cursor:pointer;
+  .art-name {{font-size:.82rem;font-weight:700;color:#0F172A;line-height:1.3;}}
+  .art-desc {{font-size:.75rem;color:#475569;line-height:1.55;margin-top:2px;}}
+  /* ── Botón ley completa ───────────────── */
+  .btn-wrap {{display:flex;justify-content:center;padding-top:2px;}}
+  .btn-ley {{
+    display:inline-flex;align-items:center;gap:10px;
+    background:linear-gradient(135deg,var(--c) 0%,color-mix(in srgb,var(--c) 80%,black) 100%);
+    color:#fff;font-size:.88rem;font-weight:700;
+    border-radius:14px;padding:14px 30px;
+    text-decoration:none;
+    box-shadow:0 4px 18px color-mix(in srgb,var(--c) 40%,transparent);
+    transition:transform .18s,box-shadow .18s,opacity .18s;
+    letter-spacing:.2px;
   }}
-  .btn-ley:hover{{opacity:.88;transform:translateY(-1px);box-shadow:0 6px 20px {color}55;}}
-  .btn-wrap{{text-align:center;padding-top:4px;}}
-
-  @media(max-width:700px){{.grid{{grid-template-columns:1fr;}}}}
+  .btn-ley:hover {{
+    transform:translateY(-2px);
+    box-shadow:0 8px 26px color-mix(in srgb,var(--c) 55%,transparent);
+    opacity:.92;
+  }}
+  .btn-icon {{font-size:1rem;}}
+  @media(max-width:700px) {{.grid{{grid-template-columns:1fr;}}.stats-row{{flex-direction:column;}}}}
 </style>
 </head><body>
+  {'<div class="stats-row">' + stats_html + '</div>' if stats_html else ''}
   <div class="resumen">{resumen}</div>
-  <div class="subtitulo">📌 Artículos más importantes</div>
+  <div class="sec-hdr">
+    <span class="sec-line"></span>
+    <span class="sec-label">📌 Artículos más importantes</span>
+    <span class="sec-line"></span>
+  </div>
   <div class="grid">{arts_html}</div>
   <div class="btn-wrap">
     <a class="btn-ley" href="{url_ley}" target="_blank">
-      📄 Ver {titulo} completa en Cámara de Diputados
+      <span class="btn-icon">📄</span>
+      Ver {titulo} completa — Cámara de Diputados
     </a>
   </div>
 </body></html>""", height=h, scrolling=False)
@@ -824,63 +988,90 @@ with tab_sat:
 
     sat_items, sat_ts = _fetch_sat_noticias()
 
-    # CSS compartido con el SAT (mismo que CARD_CSS pero acento rojo SAT)
-    SAT_NEWS_CSS = """
-<style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:transparent;font-family:'Segoe UI',Arial,sans-serif;}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:2px;}
-  .card{
-    background:#fff;border:1.5px solid #FCA5A533;border-radius:11px;
-    padding:14px 15px 11px;min-height:110px;
-    box-shadow:0 2px 7px rgba(220,38,38,.07);
-    display:flex;flex-direction:column;gap:7px;
-    transition:box-shadow .2s,border-color .2s,transform .15s;cursor:pointer;
+    SAT_CARD_CSS = """<style>
+  :root {--r:#B91C1C;--r-soft:#FEE2E2;--r-mid:#FCA5A5;}
+  *, *::before, *::after {box-sizing:border-box;margin:0;padding:0;}
+  body {
+    background:transparent;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
   }
-  .card:hover{
-    box-shadow:0 5px 18px rgba(220,38,38,.17);
-    border-color:#DC2626;transform:translateY(-2px);
+  .grid {
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:13px;
+    padding:4px 2px 8px;
   }
-  .badge{
-    display:inline-block;background:#FEE2E2;color:#B91C1C;
-    font-size:.62rem;font-weight:800;border-radius:5px;
-    padding:2px 8px;letter-spacing:.4px;width:fit-content;
+  .card {
+    background:#FFFFFF;
+    border-radius:14px;
+    border:1px solid rgba(226,232,240,.9);
+    border-left:4px solid var(--r);
+    box-shadow:0 1px 3px rgba(15,23,42,.05),0 6px 20px rgba(15,23,42,.04);
+    display:flex;flex-direction:column;
+    min-height:125px;cursor:pointer;
+    transition:box-shadow .25s,transform .22s;
+    overflow:hidden;
   }
-  .titulo{
-    font-size:.84rem;color:#1E293B;line-height:1.5;flex:1;
-    text-decoration:none;
+  .card:hover {
+    box-shadow:0 4px 10px rgba(185,28,28,.08),0 16px 38px rgba(15,23,42,.1);
+    transform:translateY(-3px);
   }
-  .titulo:hover{color:#DC2626;text-decoration:underline;}
-  .footer{display:flex;justify-content:flex-end;margin-top:4px;}
-  .btn{
-    display:inline-flex;align-items:center;gap:4px;
-    background:#FEF2F2;color:#B91C1C;
-    font-size:.71rem;font-weight:600;
-    border:1.5px solid #FECACA;border-radius:6px;
-    padding:3px 10px;text-decoration:none;
-    transition:background .15s,border-color .15s;
+  .card-inner {padding:15px 16px 13px;display:flex;flex-direction:column;gap:7px;flex:1;}
+  .top-row {display:flex;align-items:center;gap:7px;}
+  .dot {
+    width:7px;height:7px;border-radius:50%;
+    background:var(--r);flex-shrink:0;
+    box-shadow:0 0 0 2px rgba(185,28,28,.15);
   }
-  .btn:hover{background:#FEE2E2;border-color:#DC2626;}
-  .empty{color:#9CA3AF;font-size:.85rem;padding:14px;}
-  @media(max-width:700px){.grid{grid-template-columns:1fr;}}
+  .fuente {
+    font-size:.6rem;font-weight:800;letter-spacing:.7px;
+    text-transform:uppercase;color:var(--r);
+    background:var(--r-soft);padding:2px 8px;border-radius:20px;
+  }
+  .titulo {
+    font-size:.86rem;color:#0F172A;line-height:1.55;flex:1;
+    text-decoration:none;font-weight:500;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .titulo:hover {color:var(--r);}
+  .footer {display:flex;justify-content:flex-end;margin-top:auto;padding-top:5px;}
+  .btn {
+    display:inline-flex;align-items:center;gap:5px;
+    color:var(--r);font-size:.7rem;font-weight:600;
+    border:1.5px solid var(--r);border-radius:20px;
+    padding:4px 12px;text-decoration:none;background:transparent;
+    transition:background .15s,color .15s;
+  }
+  .btn:hover {background:var(--r);color:#fff;}
+  .empty {color:#9CA3AF;font-size:.85rem;padding:16px 4px;}
+  @media(max-width:700px) {.grid{grid-template-columns:1fr;}}
 </style>"""
 
-    if sat_items:
+    n_show = min(len(sat_items), 12) if sat_items else 0
+    if n_show:
         cards_html = ""
         for it in sat_items[:12]:
-            href = _esc(it["link"])
+            href  = _esc(it["link"])
+            fecha = f'<span style="font-size:.63rem;color:#94A3B8;margin-left:auto">{_esc(it["fecha"])}</span>' if it.get("fecha") else ""
             cards_html += f"""
 <div class="card" onclick="window.open('{href}','_blank')">
-  <span class="badge">SAT</span>
-  <a class="titulo" href="{href}" target="_blank">{_esc(it['titulo'])}</a>
-  <div class="footer">
-    <a class="btn" href="{href}" target="_blank">🔗 Ver en SAT</a>
+  <div class="card-inner">
+    <div class="top-row">
+      <span class="dot"></span>
+      <span class="fuente">SAT</span>
+      {fecha}
+    </div>
+    <a class="titulo" href="{href}" target="_blank">{_esc(it['titulo'])}</a>
+    <div class="footer">
+      <a class="btn" href="{href}" target="_blank">↗ Ver en SAT</a>
+    </div>
   </div>
 </div>"""
-        rows = max(1, (min(len(sat_items), 12) + 2) // 3)
-        h = rows * 145 + 24
+        rows = max(1, (n_show + 2) // 3)
+        h = rows * 150 + 20
         components.html(
-            f"<!DOCTYPE html><html><head>{SAT_NEWS_CSS}</head>"
+            f"<!DOCTYPE html><html><head>{SAT_CARD_CSS}</head>"
             f"<body><div class='grid'>{cards_html}</div></body></html>",
             height=h, scrolling=False,
         )
@@ -889,35 +1080,53 @@ with tab_sat:
 
     st.caption(f"Fuente: sat.gob.mx · Última actualización: {sat_ts}")
 
-    # Botón directo al portal SAT
-    components.html("""
+    # ── Botones de acceso rápido ──────────────────────────────────────────────
+    components.html("""<!DOCTYPE html><html><head>
 <style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:transparent;font-family:'Segoe UI',Arial,sans-serif;padding:8px 2px;}
-  .wrap{display:flex;gap:12px;flex-wrap:wrap;}
-  .btn{
-    display:inline-flex;align-items:center;gap:7px;
-    color:#fff;font-size:.83rem;font-weight:700;
-    border:none;border-radius:9px;
-    padding:11px 22px;text-decoration:none;
-    transition:opacity .2s,transform .12s;cursor:pointer;
+  *, *::before, *::after {box-sizing:border-box;margin:0;padding:0;}
+  body {
+    background:transparent;
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    padding:10px 2px 4px;
+    -webkit-font-smoothing:antialiased;
   }
-  .btn:hover{opacity:.85;transform:translateY(-1px);}
-  .b1{background:#DC2626;box-shadow:0 3px 12px rgba(220,38,38,.35);}
-  .b2{background:#7C3AED;box-shadow:0 3px 12px rgba(124,58,237,.35);}
-  .b3{background:#D97706;box-shadow:0 3px 12px rgba(217,119,6,.35);}
+  .row {display:flex;gap:11px;flex-wrap:wrap;}
+  .btn {
+    display:inline-flex;align-items:center;gap:8px;
+    color:#fff;font-size:.82rem;font-weight:700;
+    border-radius:24px;padding:11px 22px;
+    text-decoration:none;letter-spacing:.15px;
+    transition:transform .18s,box-shadow .18s,opacity .15s;
+    flex:1;min-width:160px;justify-content:center;
+  }
+  .btn:hover {transform:translateY(-2px);opacity:.9;}
+  .b1 {
+    background:linear-gradient(135deg,#B91C1C,#DC2626);
+    box-shadow:0 4px 16px rgba(185,28,28,.38);
+  }
+  .b2 {
+    background:linear-gradient(135deg,#5B21B6,#7C3AED);
+    box-shadow:0 4px 16px rgba(124,58,237,.38);
+  }
+  .b3 {
+    background:linear-gradient(135deg,#B45309,#D97706);
+    box-shadow:0 4px 16px rgba(180,83,9,.38);
+  }
+  .icon {font-size:1.05rem;}
 </style>
-<div class="wrap">
+</head><body>
+<div class="row">
   <a class="btn b1" href="https://www.sat.gob.mx/noticias" target="_blank">
-    📰 Todas las noticias SAT
+    <span class="icon">📰</span> Noticias SAT
   </a>
   <a class="btn b2" href="https://www.sat.gob.mx/consultas/comunicados" target="_blank">
-    📢 Comunicados de prensa
+    <span class="icon">📢</span> Comunicados
   </a>
   <a class="btn b3" href="https://www.dof.gob.mx" target="_blank">
-    📄 Diario Oficial de la Federación
+    <span class="icon">📄</span> Diario Oficial
   </a>
-</div>""", height=58, scrolling=False)
+</div>
+</body></html>""", height=62, scrolling=False)
 
 with tab_isr:
     _render_tab("ISR")
@@ -927,7 +1136,13 @@ with tab_isr:
         resumen   = _ISR_RESUMEN,
         articulos = _ISR_ARTS,
         url_ley   = _ISR_URL,
-        color     = "#1D4ED8",   # azul
+        color     = "#1D4ED8",
+        stats     = [
+            ("Tasa PM", "30 %"),
+            ("Tarifa PF", "0–35 %"),
+            ("Dividendos", "+10 %"),
+            ("Arts. clave", str(len(_ISR_ARTS))),
+        ],
     )
 
 with tab_iva:
@@ -938,7 +1153,13 @@ with tab_iva:
         resumen   = _IVA_RESUMEN,
         articulos = _IVA_ARTS,
         url_ley   = _IVA_URL,
-        color     = "#059669",   # verde esmeralda
+        color     = "#059669",
+        stats     = [
+            ("Tasa general", "16 %"),
+            ("Frontera norte", "8 %"),
+            ("Tasa cero", "0 %"),
+            ("Arts. clave", str(len(_IVA_ARTS))),
+        ],
     )
 
 st.markdown("---")

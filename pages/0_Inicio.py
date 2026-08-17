@@ -334,6 +334,175 @@ def _tarjetas_html(filtro: str) -> str:
     rows = max(1, (len(items[:9]) + 2) // 3)
     return cards, rows
 
+# ══════════════════════════════════════════════════════════════════════════════
+# DATOS ESTÁTICOS — LISR y LIVA
+# ══════════════════════════════════════════════════════════════════════════════
+_ISR_RESUMEN = (
+    "La <strong>Ley del Impuesto sobre la Renta (LISR)</strong> regula el gravamen sobre "
+    "ingresos percibidos por personas físicas y morales residentes en México o con fuente "
+    "de riqueza en territorio nacional. Las personas morales aplican una tasa fija del "
+    "<strong>30&nbsp;%</strong> sobre la utilidad fiscal del ejercicio. Las personas físicas "
+    "tributan con tarifa progresiva del <strong>0&nbsp;% al 35&nbsp;%</strong>. "
+    "Los patrones deben retener, calcular y enterar el ISR de sus trabajadores mensual y "
+    "anualmente (arts.&nbsp;96 y&nbsp;97). Las deducciones autorizadas deben ser estrictamente "
+    "indispensables y estar amparadas con CFDI (art.&nbsp;27). Los dividendos distribuidos "
+    "causan una retención adicional del <strong>10&nbsp;%</strong> (art.&nbsp;10)."
+)
+_ISR_URL = "https://www.diputados.gob.mx/LeyesBiblio/pdf/LISR.pdf"
+_ISR_ARTS = [
+    ("Art. 1",   "Sujetos del ISR",
+     "Residentes en México y extranjeros con ingresos de fuente de riqueza nacional están obligados al pago del impuesto."),
+    ("Art. 9",   "Tasa 30 % — Personas Morales",
+     "Las personas morales calcularán el ISR aplicando el 30&nbsp;% sobre su utilidad fiscal; el resultado es el impuesto del ejercicio."),
+    ("Art. 10",  "Dividendos — retención 10 %",
+     "Los dividendos o utilidades distribuidos por personas morales están sujetos a una tasa adicional del 10&nbsp;% a cargo de la empresa pagadora."),
+    ("Art. 27",  "Requisitos de deducciones",
+     "Las deducciones deben ser estrictamente indispensables, estar amparadas con CFDI y cumplir requisitos de pago y registro contable."),
+    ("Art. 28",  "Gastos no deducibles",
+     "Pagos en efectivo mayores a $2,000; el 91.5&nbsp;% de consumos en restaurantes; viáticos sin requisitos; intereses en exceso de mercado, entre otros."),
+    ("Art. 40",  "Tasas de depreciación",
+     "Porcentajes máximos: edificios 5&nbsp;%, mobiliario 10&nbsp;%, equipo de cómputo 30&nbsp;%, automóviles 25&nbsp;%, activo fijo industrial 10–35&nbsp;%."),
+    ("Art. 76",  "Obligaciones de Personas Morales",
+     "Expedir CFDI, llevar contabilidad electrónica, presentar declaraciones anuales y retener ISR a trabajadores y proveedores de servicios profesionales."),
+    ("Art. 86",  "Partes relacionadas",
+     "Las operaciones con partes relacionadas deben pactarse a precios de mercado (arm's length) y documentarse con un estudio de precios de transferencia."),
+    ("Art. 94",  "Salarios y asimilados",
+     "Son ingresos por salarios los derivados de una relación laboral; los asimilados (honorarios a CA, anticipos de SC) se gravan con el mismo tratamiento."),
+    ("Art. 96",  "Retención mensual de trabajadores",
+     "El patrón retiene el ISR mensual aplicando la tabla del art.&nbsp;96 sobre el ingreso gravable de cada trabajador, considerando subsidio al empleo."),
+    ("Art. 150", "Declaración anual — Personas Físicas",
+     "Las PF con ingresos superiores a $400,000 o con dos o más patrones están obligadas a presentar declaración anual en el mes de abril."),
+    ("Art. 152", "Tarifa anual — Personas Físicas",
+     "Tarifa progresiva de 0&nbsp;% a 35&nbsp;%: incluye límite inferior, cuota fija y porcentaje a aplicar sobre el excedente del límite inferior."),
+]
+
+_IVA_RESUMEN = (
+    "La <strong>Ley del Impuesto al Valor Agregado (LIVA)</strong> grava la enajenación de "
+    "bienes, la prestación de servicios independientes, el uso o goce temporal de bienes y "
+    "la importación. La tasa general es del <strong>16&nbsp;%</strong>; en la franja "
+    "fronteriza norte se aplica una tasa reducida del <strong>8&nbsp;%</strong>. "
+    "Existe tasa del <strong>0&nbsp;%</strong> para alimentos básicos sin proceso industrial, "
+    "medicamentos de patente y exportaciones de bienes. "
+    "El impuesto es <strong>trasladable en cadena</strong>: el contribuyente puede acreditar "
+    "el IVA pagado en sus compras contra el causado en sus ventas; si el acreditable excede "
+    "al causado se obtiene un <strong>saldo a favor</strong> solicitado en devolución o "
+    "compensado en períodos siguientes (art.&nbsp;6)."
+)
+_IVA_URL = "https://www.diputados.gob.mx/LeyesBiblio/pdf/LIVA.pdf"
+_IVA_ARTS = [
+    ("Art. 1",   "Tasa general 16 %",
+     "Personas físicas y morales en México que enajenen bienes, presten servicios, otorguen uso temporal de bienes o importen están obligadas al pago del IVA."),
+    ("Art. 2-A", "Tasa 0 %",
+     "Alimentos sin proceso industrial, medicamentos de patente, agua no gaseosa en envases mayores de 10 litros, libros y revistas, y servicios de exportación digital."),
+    ("Art. 4",   "Acreditamiento",
+     "El IVA trasladado al contribuyente y el pagado en importación es acreditable contra el IVA causado del mismo período de declaración."),
+    ("Art. 5",   "Requisitos para acreditamiento",
+     "El bien o servicio debe ser estrictamente indispensable; el IVA debe estar expresamente trasladado en CFDI y haber sido efectivamente pagado."),
+    ("Art. 6",   "Saldo a favor",
+     "Cuando el IVA acreditable excede al causado se obtiene saldo a favor, que puede solicitarse en devolución o compensarse contra obligaciones propias en períodos siguientes."),
+    ("Art. 9",   "Enajenaciones exentas",
+     "Suelo, construcciones destinadas a habitación, libros y revistas con contenido editorial, bienes muebles usados por personas físicas sin actividad empresarial y lingotes de oro."),
+    ("Art. 14",  "Prestación de servicios",
+     "Se considera prestación de servicios independientes toda obligación de hacer que no constituya relación laboral; incluye comisiones, agencia, representación y mandato."),
+    ("Art. 15",  "Servicios exentos",
+     "Comisiones de créditos hipotecarios, seguros de vida y gastos médicos, transporte terrestre de personas, enseñanza (con validez oficial) y espectáculos públicos."),
+    ("Art. 24",  "Importación de bienes",
+     "Se considera importación: introducción de bienes al país, uso temporal de bienes extranjeros y adquisición de servicios de residentes en el extranjero aprovechados en México."),
+    ("Art. 29",  "Exportación — tasa 0 %",
+     "La exportación definitiva de bienes tangibles, servicios aprovechados en el extranjero y el transporte internacional de bienes y personas se grava a tasa 0&nbsp;%."),
+    ("Art. 32",  "Obligaciones generales",
+     "Trasladar el IVA en forma expresa en CFDI, expedir comprobantes por todos los actos gravados y presentar declaraciones mensuales a más tardar el día 17 del mes siguiente."),
+    ("Art. 33",  "Actos accidentales",
+     "Las personas que realicen actos o actividades accidentales por los que deban pagar IVA presentarán declaración dentro de los 15 días hábiles siguientes a la obtención del ingreso."),
+]
+
+
+def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str, color: str) -> None:
+    """Renderiza tarjeta de resumen de ley + grid de artículos clave + botón ley completa."""
+    arts_html = ""
+    for codigo, nombre, desc in articulos:
+        arts_html += f"""
+<div class="art-card">
+  <div class="art-header">
+    <span class="art-num">{codigo}</span>
+    <span class="art-name">{nombre}</span>
+  </div>
+  <p class="art-desc">{desc}</p>
+</div>"""
+
+    rows = (len(articulos) + 2) // 3
+    h = 80 + 100 + rows * 130 + 70  # resumen + grid rows + botón
+
+    components.html(f"""<!DOCTYPE html><html><head>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0;}}
+  body{{background:transparent;font-family:'Segoe UI',Arial,sans-serif;padding:6px 2px;}}
+
+  /* ── Resumen ─────────────────────────────── */
+  .resumen{{
+    background:linear-gradient(135deg,{color}18 0%,{color}08 100%);
+    border:1.5px solid {color}55;border-radius:12px;
+    padding:18px 20px;margin-bottom:16px;
+    font-size:.88rem;color:#1E293B;line-height:1.65;
+  }}
+  .resumen strong{{color:{color};}}
+
+  /* ── Subtítulo ───────────────────────────── */
+  .subtitulo{{
+    font-size:.78rem;font-weight:700;color:{color};
+    letter-spacing:.5px;text-transform:uppercase;
+    margin-bottom:10px;padding-left:2px;
+  }}
+
+  /* ── Grid artículos ──────────────────────── */
+  .grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}}
+  .art-card{{
+    background:#fff;border:1.5px solid {color}33;border-radius:10px;
+    padding:12px 14px;min-height:115px;
+    box-shadow:0 2px 6px {color}14;
+    transition:box-shadow .2s,transform .15s,border-color .2s;
+  }}
+  .art-card:hover{{
+    box-shadow:0 5px 16px {color}28;border-color:{color};
+    transform:translateY(-2px);
+  }}
+  .art-header{{display:flex;align-items:center;gap:8px;margin-bottom:6px;}}
+  .art-num{{
+    background:{color};color:#fff;
+    font-size:.63rem;font-weight:800;border-radius:5px;
+    padding:3px 8px;white-space:nowrap;flex-shrink:0;
+  }}
+  .art-name{{font-size:.82rem;font-weight:700;color:#1E293B;}}
+  .art-desc{{font-size:.76rem;color:#475569;line-height:1.5;}}
+
+  /* ── Botón ───────────────────────────────── */
+  .btn-ley{{
+    display:inline-flex;align-items:center;gap:8px;
+    background:{color};color:#fff;
+    font-size:.85rem;font-weight:700;
+    border:none;border-radius:10px;
+    padding:12px 24px;text-decoration:none;
+    box-shadow:0 4px 14px {color}44;
+    transition:opacity .2s,transform .15s,box-shadow .2s;
+    cursor:pointer;
+  }}
+  .btn-ley:hover{{opacity:.88;transform:translateY(-1px);box-shadow:0 6px 20px {color}55;}}
+  .btn-wrap{{text-align:center;padding-top:4px;}}
+
+  @media(max-width:700px){{.grid{{grid-template-columns:1fr;}}}}
+</style>
+</head><body>
+  <div class="resumen">{resumen}</div>
+  <div class="subtitulo">📌 Artículos más importantes</div>
+  <div class="grid">{arts_html}</div>
+  <div class="btn-wrap">
+    <a class="btn-ley" href="{url_ley}" target="_blank">
+      📄 Ver {titulo} completa en Cámara de Diputados
+    </a>
+  </div>
+</body></html>""", height=h, scrolling=False)
+
+
 tab_sat, tab_isr, tab_iva = st.tabs(["🏛️ SAT", "📊 ISR", "💵 IVA"])
 
 def _render_tab(filtro: str):
@@ -349,10 +518,28 @@ def _render_tab(filtro: str):
 
 with tab_sat:
     _render_tab("SAT")
+
 with tab_isr:
     _render_tab("ISR")
+    st.markdown("---")
+    _render_ley_html(
+        titulo    = "LISR",
+        resumen   = _ISR_RESUMEN,
+        articulos = _ISR_ARTS,
+        url_ley   = _ISR_URL,
+        color     = "#1D4ED8",   # azul
+    )
+
 with tab_iva:
     _render_tab("IVA")
+    st.markdown("---")
+    _render_ley_html(
+        titulo    = "LIVA",
+        resumen   = _IVA_RESUMEN,
+        articulos = _IVA_ARTS,
+        url_ley   = _IVA_URL,
+        color     = "#059669",   # verde esmeralda
+    )
 
 st.markdown("---")
 st.caption("AUXILIAR DE REGISTROS · La Sanitaria · v2.0")

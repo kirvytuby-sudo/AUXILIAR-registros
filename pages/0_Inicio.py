@@ -164,10 +164,12 @@ def _fetch_novedades():
         if any(k in upper for k in KEYWORDS_ISR): cats.append("ISR")
         if any(k in upper for k in KEYWORDS_IVA): cats.append("IVA")
         cats.append("SAT")
+        # SAT bloquea cualquier acceso desde dominio externo → Google como puente
+        safe_link = link if (link and "sat.gob.mx" not in link) else _sat_google(t)
         noticias.append({
             "fuente": "SAT",
             "titulo": t,
-            "link":   link or "https://www.sat.gob.mx/noticias",
+            "link":   safe_link,
             "fecha":  fecha,
             "cats":   list(dict.fromkeys(cats)),
         })
@@ -266,13 +268,13 @@ def _fetch_novedades():
     if not noticias:
         noticias = [
             {"fuente": "SAT", "titulo": "Consulta sat.gob.mx para las últimas disposiciones fiscales",
-             "link": "https://www.sat.gob.mx/noticias", "fecha": "", "cats": ["SAT"]},
+             "link": _sat_google("SAT México noticias disposiciones fiscales"), "fecha": "", "cats": ["SAT"]},
             {"fuente": "ISR", "titulo": "Tarifa del ISR 2025 — verifica retenciones y límites de deducción personal",
-             "link": "https://www.sat.gob.mx", "fecha": "", "cats": ["ISR"]},
+             "link": _sat_google("tarifa ISR 2025 retenciones subsidio empleo"), "fecha": "", "cats": ["ISR"]},
             {"fuente": "IVA", "titulo": "IVA general 16% · zona fronteriza 8% — revisa exenciones aplicables",
-             "link": "https://www.sat.gob.mx", "fecha": "", "cats": ["IVA"]},
+             "link": _sat_google("IVA 16% zona fronteriza 8% exenciones acreditamiento"), "fecha": "", "cats": ["IVA"]},
             {"fuente": "CFDI", "titulo": "CFDI v4.0 obligatorio — valida complementos de nómina 1.2 vigentes",
-             "link": "https://www.sat.gob.mx", "fecha": "", "cats": ["SAT"]},
+             "link": _sat_google("CFDI 4.0 complemento nómina 1.2 validación"), "fecha": "", "cats": ["SAT"]},
             {"fuente": "DOF",  "titulo": "Revisa el Diario Oficial para cambios en leyes fiscales 2025",
              "link": "https://www.dof.gob.mx", "fecha": "", "cats": ["SAT", "ISR", "IVA"]},
         ]
@@ -288,29 +290,29 @@ def _fetch_novedades():
 # Items estáticos con links directos a secciones clave del SAT (siempre disponibles)
 _SAT_FALLBACK = [
     {"titulo": "Resolución Miscelánea Fiscal 2025 — última versión vigente",
-     "link": "https://www.sat.gob.mx/consultas/miscelanea-fiscal", "fecha": ""},
+     "link": _sat_google("Resolución Miscelánea Fiscal 2025"), "fecha": ""},
     {"titulo": "CFDI 4.0 — Complementos, esquemas XSD y guías de llenado",
-     "link": "https://www.sat.gob.mx/consultas/cfdi", "fecha": ""},
+     "link": _sat_google("CFDI 4.0 complementos esquemas XSD"), "fecha": ""},
     {"titulo": "Declaración Anual 2024 — Personas físicas y morales",
-     "link": "https://www.sat.gob.mx/declaracion", "fecha": ""},
+     "link": _sat_google("Declaración Anual 2024 personas físicas morales"), "fecha": ""},
     {"titulo": "Catálogos SAT — c_ClaveProdServ, c_Impuesto, c_RegimenFiscal",
-     "link": "https://www.sat.gob.mx/consultas/76263", "fecha": ""},
+     "link": _sat_google("catálogos SAT CFDI ClaveProdServ"), "fecha": ""},
     {"titulo": "Buzón Tributario — notificaciones y trámites electrónicos",
-     "link": "https://www.sat.gob.mx/tramites/operacion/27679", "fecha": ""},
+     "link": _sat_google("Buzón Tributario SAT notificaciones trámites"), "fecha": ""},
     {"titulo": "Constancia de Situación Fiscal — descarga con RFC y e.firma",
-     "link": "https://www.sat.gob.mx/aplicacion/53027", "fecha": ""},
+     "link": _sat_google("Constancia de Situación Fiscal descarga"), "fecha": ""},
     {"titulo": "Opinión de Cumplimiento 32-D — verifica obligaciones fiscales",
-     "link": "https://www.sat.gob.mx/consultas/44338", "fecha": ""},
+     "link": _sat_google("Opinión de Cumplimiento 32-D SAT"), "fecha": ""},
     {"titulo": "Declaraciones y Pagos (DyP) — presentación mensual de impuestos",
-     "link": "https://www.sat.gob.mx/declaracion", "fecha": ""},
+     "link": _sat_google("Declaraciones y Pagos DyP SAT mensual"), "fecha": ""},
     {"titulo": "e.firma — renovación y obtención en línea o en módulo SAT",
-     "link": "https://www.sat.gob.mx/tramites/efirma", "fecha": ""},
+     "link": _sat_google("e.firma SAT renovación obtención"), "fecha": ""},
     {"titulo": "Lista 69-B LISC — contribuyentes con operaciones inexistentes",
-     "link": "https://www.sat.gob.mx/consultas/76453", "fecha": ""},
+     "link": _sat_google("lista 69-B LISC EFOS operaciones inexistentes"), "fecha": ""},
     {"titulo": "Tarifas y tablas ISR 2025 — subsidio al empleo",
-     "link": "https://www.sat.gob.mx/consultas/17974", "fecha": ""},
+     "link": _sat_google("tarifas tablas ISR 2025 subsidio empleo"), "fecha": ""},
     {"titulo": "Pagos provisionales ISR — personas morales y físicas con actividad empresarial",
-     "link": "https://www.sat.gob.mx/declaracion", "fecha": ""},
+     "link": _sat_google("pagos provisionales ISR personas morales"), "fecha": ""},
 ]
 
 
@@ -327,7 +329,8 @@ def _fetch_sat_noticias():
         if len(t) < 15 or t.lower() in vistos:
             return
         vistos.add(t.lower())
-        items.append({"titulo": t, "link": link or "https://www.sat.gob.mx/noticias", "fecha": fecha})
+        safe_link = link if (link and "sat.gob.mx" not in link) else _sat_google(t)
+        items.append({"titulo": t, "link": safe_link, "fecha": fecha})
 
     def _fetch_html(url: str) -> str:
         try:
@@ -467,6 +470,8 @@ for n in noticias:
     icon = "📌" if n["fuente"] == "DOF" else "🏛️"
     etiq = " · ".join(n["cats"]) if n["cats"] else n["fuente"]
     href = n["link"] if n["link"] else "#"
+    if "sat.gob.mx" in href:
+        href = _sat_google(n["titulo"])
     href_esc = href.replace("&", "&amp;").replace("'", "%27").replace('"', "%22")
     ticker_items.append(
         f'<a href="{href_esc}" target="_blank" style="color:inherit;text-decoration:none;">'
@@ -1048,7 +1053,7 @@ div[data-testid="stLinkButton"] a {
                             unsafe_allow_html=True,
                         )
                         st.link_button(
-                            "↗ Ver en SAT", it["link"],
+                            "🔍 Buscar en Google", it["link"],
                             use_container_width=True,
                         )
     else:
@@ -1059,7 +1064,7 @@ div[data-testid="stLinkButton"] a {
     # ── Botones de acceso rápido (st.link_button — abre sin iframe, sin Referer) ──
     col_b1, col_b2, col_b3 = st.columns(3)
     with col_b1:
-        st.link_button("🏛️ Portal SAT", "https://www.sat.gob.mx",
+        st.link_button("🔍 Buscar en SAT", _sat_google("SAT México portal trámites servicios"),
                        use_container_width=True)
     with col_b2:
         st.link_button("📄 Diario Oficial de la Federación", "https://www.dof.gob.mx",

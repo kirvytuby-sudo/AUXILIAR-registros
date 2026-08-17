@@ -275,67 +275,35 @@ def _fetch_novedades():
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Items estáticos con links directos a secciones clave del SAT (siempre disponibles)
+_SAT_URL   = "https://www.sat.gob.mx"
+_DOF_URL   = "https://www.dof.gob.mx"
+_DIPU_URL  = "https://www.diputados.gob.mx/LeyesBiblio/"
+
 _SAT_FALLBACK = [
-    {
-        "titulo": "Resolución Miscelánea Fiscal — última versión vigente en el DOF",
-        "link":   "https://www.dof.gob.mx/",
-        "fecha":  "",
-    },
-    {
-        "titulo": "CFDI 4.0 — Complementos, esquemas XSD y guías de llenado",
-        "link":   "https://www.sat.gob.mx/personas",
-        "fecha":  "",
-    },
-    {
-        "titulo": "Declaración Anual — Personas físicas y morales (portal SAT)",
-        "link":   "https://www.sat.gob.mx/personas",
-        "fecha":  "",
-    },
-    {
-        "titulo": "Catálogos SAT para CFDI — c_ClaveProdServ, c_Impuesto, c_RegimenFiscal",
-        "link":   "https://www.sat.gob.mx/consultas",
-        "fecha":  "",
-    },
-    {
-        "titulo": "Buzón Tributario — notificaciones y trámites electrónicos",
-        "link":   "https://www.sat.gob.mx/tramites",
-        "fecha":  "",
-    },
-    {
-        "titulo": "Constancia de Situación Fiscal — descarga gratuita con RFC y e.firma",
-        "link":   "https://www.sat.gob.mx/tramites",
-        "fecha":  "",
-    },
-    {
-        "titulo": "Opinión de Cumplimiento 32-D — verifica tus obligaciones fiscales",
-        "link":   "https://www.sat.gob.mx/tramites",
-        "fecha":  "",
-    },
-    {
-        "titulo": "Declaraciones y Pagos (DyP) — presentación mensual de impuestos",
-        "link":   "https://www.sat.gob.mx/personas",
-        "fecha":  "",
-    },
-    {
-        "titulo": "e.firma — renovación y obtención en línea o en módulo SAT",
-        "link":   "https://www.sat.gob.mx/tramites",
-        "fecha":  "",
-    },
-    {
-        "titulo": "Lista 69-B LISC — contribuyentes con operaciones inexistentes (EFOS)",
-        "link":   "https://www.sat.gob.mx/consultas",
-        "fecha":  "",
-    },
-    {
-        "titulo": "Tarifas y tablas ISR vigentes — subsidio al empleo 2025",
-        "link":   "https://www.sat.gob.mx/personas",
-        "fecha":  "",
-    },
-    {
-        "titulo": "Pagos provisionales ISR — cálculo y presentación mensual de personas morales",
-        "link":   "https://www.sat.gob.mx/empresas",
-        "fecha":  "",
-    },
+    {"titulo": "Resolución Miscelánea Fiscal — última versión vigente",
+     "link": _DOF_URL, "fecha": ""},
+    {"titulo": "CFDI 4.0 — Complementos, esquemas XSD y guías de llenado",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "Declaración Anual — Personas físicas y morales",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "Catálogos SAT para CFDI — c_ClaveProdServ, c_Impuesto, c_RegimenFiscal",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "Buzón Tributario — notificaciones y trámites electrónicos",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "Constancia de Situación Fiscal — descarga con RFC y e.firma",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "Opinión de Cumplimiento 32-D — verifica obligaciones fiscales",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "Declaraciones y Pagos (DyP) — presentación mensual de impuestos",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "e.firma — renovación y obtención en línea o en módulo SAT",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "Lista 69-B LISC — contribuyentes con operaciones inexistentes (EFOS)",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "Tarifas y tablas ISR vigentes — subsidio al empleo 2025",
+     "link": _SAT_URL, "fecha": ""},
+    {"titulo": "Pagos provisionales ISR — personas morales y físicas con actividad empresarial",
+     "link": _SAT_URL, "fecha": ""},
 ]
 
 
@@ -719,16 +687,18 @@ def _tarjetas_html(filtro: str):
         fecha      = f'<span class="fecha">{_esc(n["fecha"])}</span>' if n["fecha"] else ""
         cards += f"""
 <div class="card" style="--accent:{accent};--accent-bg:{accent_bg}"
-     onclick="window.open('{href}','_blank')">
+     onclick="window.open('{href}','_blank','noopener,noreferrer')">
   <div class="card-inner">
     <div class="top-row">
       <span class="dot"></span>
       <span class="fuente">{_esc(fuente)}</span>
       {fecha}
     </div>
-    <a class="titulo" href="{href}" target="_blank">{_esc(n["titulo"])}</a>
+    <a class="titulo" href="{href}" target="_blank"
+       rel="noreferrer noopener" referrerpolicy="no-referrer">{_esc(n["titulo"])}</a>
     <div class="footer">
-      <a class="btn" href="{href}" target="_blank">↗ Ver fuente</a>
+      <a class="btn" href="{href}" target="_blank"
+         rel="noreferrer noopener" referrerpolicy="no-referrer">↗ Ver fuente</a>
     </div>
   </div>
 </div>"""
@@ -952,7 +922,8 @@ def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str,
   </div>
   <div class="grid">{arts_html}</div>
   <div class="btn-wrap">
-    <a class="btn-ley" href="{url_ley}" target="_blank">
+    <a class="btn-ley" href="{url_ley}" target="_blank"
+       rel="noreferrer noopener" referrerpolicy="no-referrer">
       <span class="btn-icon">📄</span>
       Ver {titulo} completa — Cámara de Diputados
     </a>
@@ -1055,16 +1026,18 @@ with tab_sat:
             href  = _esc(it["link"])
             fecha = f'<span style="font-size:.63rem;color:#94A3B8;margin-left:auto">{_esc(it["fecha"])}</span>' if it.get("fecha") else ""
             cards_html += f"""
-<div class="card" onclick="window.open('{href}','_blank')">
+<div class="card" onclick="window.open('{href}','_blank','noopener,noreferrer')">
   <div class="card-inner">
     <div class="top-row">
       <span class="dot"></span>
       <span class="fuente">SAT</span>
       {fecha}
     </div>
-    <a class="titulo" href="{href}" target="_blank">{_esc(it['titulo'])}</a>
+    <a class="titulo" href="{href}" target="_blank"
+       rel="noreferrer noopener" referrerpolicy="no-referrer">{_esc(it['titulo'])}</a>
     <div class="footer">
-      <a class="btn" href="{href}" target="_blank">↗ Ver en SAT</a>
+      <a class="btn" href="{href}" target="_blank"
+         rel="noreferrer noopener" referrerpolicy="no-referrer">↗ Ver en SAT</a>
     </div>
   </div>
 </div>"""
@@ -1080,53 +1053,18 @@ with tab_sat:
 
     st.caption(f"Fuente: sat.gob.mx · Última actualización: {sat_ts}")
 
-    # ── Botones de acceso rápido ──────────────────────────────────────────────
-    components.html("""<!DOCTYPE html><html><head>
-<style>
-  *, *::before, *::after {box-sizing:border-box;margin:0;padding:0;}
-  body {
-    background:transparent;
-    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
-    padding:10px 2px 4px;
-    -webkit-font-smoothing:antialiased;
-  }
-  .row {display:flex;gap:11px;flex-wrap:wrap;}
-  .btn {
-    display:inline-flex;align-items:center;gap:8px;
-    color:#fff;font-size:.82rem;font-weight:700;
-    border-radius:24px;padding:11px 22px;
-    text-decoration:none;letter-spacing:.15px;
-    transition:transform .18s,box-shadow .18s,opacity .15s;
-    flex:1;min-width:160px;justify-content:center;
-  }
-  .btn:hover {transform:translateY(-2px);opacity:.9;}
-  .b1 {
-    background:linear-gradient(135deg,#B91C1C,#DC2626);
-    box-shadow:0 4px 16px rgba(185,28,28,.38);
-  }
-  .b2 {
-    background:linear-gradient(135deg,#5B21B6,#7C3AED);
-    box-shadow:0 4px 16px rgba(124,58,237,.38);
-  }
-  .b3 {
-    background:linear-gradient(135deg,#B45309,#D97706);
-    box-shadow:0 4px 16px rgba(180,83,9,.38);
-  }
-  .icon {font-size:1.05rem;}
-</style>
-</head><body>
-<div class="row">
-  <a class="btn b1" href="https://www.sat.gob.mx/noticias" target="_blank">
-    <span class="icon">📰</span> Noticias SAT
-  </a>
-  <a class="btn b2" href="https://www.sat.gob.mx/consultas/comunicados" target="_blank">
-    <span class="icon">📢</span> Comunicados
-  </a>
-  <a class="btn b3" href="https://www.dof.gob.mx" target="_blank">
-    <span class="icon">📄</span> Diario Oficial
-  </a>
-</div>
-</body></html>""", height=62, scrolling=False)
+    # ── Botones de acceso rápido (st.link_button — abre sin iframe, sin Referer) ──
+    col_b1, col_b2, col_b3 = st.columns(3)
+    with col_b1:
+        st.link_button("🏛️ Portal SAT", "https://www.sat.gob.mx",
+                       use_container_width=True)
+    with col_b2:
+        st.link_button("📄 Diario Oficial de la Federación", "https://www.dof.gob.mx",
+                       use_container_width=True)
+    with col_b3:
+        st.link_button("📚 Leyes — Cámara de Diputados",
+                       "https://www.diputados.gob.mx/LeyesBiblio/",
+                       use_container_width=True)
 
 with tab_isr:
     _render_tab("ISR")

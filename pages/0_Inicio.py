@@ -76,6 +76,31 @@ div[data-testid="stCaptionContainer"] p {
     color: #94A3B8;
     font-size: .72rem;
 }
+/* ── Animaciones ─────────────────────────────── */
+@keyframes _fiu {
+  from { opacity:0; transform:translateY(16px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes _fi {
+  from { opacity:0; }
+  to   { opacity:1; }
+}
+/* Fade-in al cargar la página */
+section[data-testid="stMain"] > div:first-child {
+  animation: _fi .45s ease both;
+}
+/* Slide-up al cambiar de tab */
+div[data-baseweb="tab-panel"] {
+  animation: _fiu .32s ease both;
+}
+/* Hover lift para botones de enlace */
+div[data-testid="stLinkButton"] a {
+  transition: transform .18s ease, box-shadow .18s ease !important;
+}
+div[data-testid="stLinkButton"] a:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 14px rgba(30,58,138,.20) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -496,14 +521,17 @@ def _vencimientos_widget():
         unsafe_allow_html=True,
     )
     cols = st.columns(len(venc))
-    for col, (nombre, fecha, desc) in zip(cols, venc):
+    for i, (col, (nombre, fecha, desc)) in enumerate(zip(cols, venc)):
         dias = (fecha - hoy).days
         color, bg, semaforo = _dias_color(dias)
         label = f"{dias}d" if dias > 0 else "¡HOY!"
+        delay = f"{i * 0.09:.2f}s"
         with col:
             st.markdown(f"""
 <div style="background:{bg};border-radius:12px;border:1px solid {color}33;
-            border-left:4px solid {color};padding:10px 14px;text-align:center;">
+            border-left:4px solid {color};padding:10px 14px;text-align:center;
+            animation:_fiu .45s ease both;animation-delay:{delay};
+            transition:transform .2s,box-shadow .2s;">
   <div style="font-size:1.4rem;font-weight:900;color:{color};line-height:1">{label}</div>
   <div style="font-size:.58rem;font-weight:800;color:{color};letter-spacing:.3px;
               text-transform:uppercase;margin:3px 0 4px">{semaforo} {nombre}</div>
@@ -555,8 +583,18 @@ components.html(f"""<!DOCTYPE html><html><head>
     overflow:hidden;
     -webkit-font-smoothing:antialiased;
   }}
+  @keyframes tickerIn {{
+    from {{ opacity:0; transform:translateY(-10px) scale(.98); }}
+    to   {{ opacity:1; transform:translateY(0)     scale(1); }}
+  }}
+  @keyframes gradMove {{
+    0%   {{ background-position:0% 50%; }}
+    50%  {{ background-position:100% 50%; }}
+    100% {{ background-position:0% 50%; }}
+  }}
   .wrap {{
-    background:linear-gradient(120deg,#0B1D5E 0%,#1E3A8A 45%,#1D4ED8 80%,#3B82F6 100%);
+    background:linear-gradient(120deg,#0B1D5E 0%,#1E3A8A 25%,#1D4ED8 55%,#2563EB 75%,#3B82F6 100%);
+    background-size:280% 100%;
     border-radius:14px;
     overflow:hidden;
     display:flex;
@@ -564,6 +602,7 @@ components.html(f"""<!DOCTYPE html><html><head>
     height:86px;
     box-shadow:0 6px 28px rgba(30,58,138,.5), 0 2px 8px rgba(30,58,138,.3);
     position:relative;
+    animation:tickerIn .55s cubic-bezier(.22,.61,.36,1) both, gradMove 16s ease 1s infinite;
   }}
   /* Subtle shimmer overlay */
   .wrap::before {{
@@ -870,18 +909,18 @@ def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str,
     # Pills de estadísticas clave
     stats_html = ""
     if stats:
-        for label, val in stats:
+        for si, (label, val) in enumerate(stats):
             stats_html += (
-                f'<div class="stat">'
+                f'<div class="stat" style="animation-delay:{si*0.08:.2f}s">'
                 f'<span class="stat-val">{val}</span>'
                 f'<span class="stat-lbl">{label}</span>'
                 f'</div>'
             )
 
     arts_html = ""
-    for codigo, nombre, desc in articulos:
+    for ai, (codigo, nombre, desc) in enumerate(articulos):
         arts_html += f"""
-<div class="art-card">
+<div class="art-card" style="animation-delay:{ai*0.04:.2f}s">
   <div class="art-top">
     <span class="art-num">{codigo}</span>
     <span class="art-name">{nombre}</span>
@@ -902,6 +941,10 @@ def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str,
     padding:4px 2px 6px;
     -webkit-font-smoothing:antialiased;
   }}
+  @keyframes _fiu {{
+    from {{ opacity:0; transform:translateY(14px); }}
+    to   {{ opacity:1; transform:translateY(0); }}
+  }}
   /* ── Stats pills ──────────────────────── */
   .stats-row {{
     display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;
@@ -911,6 +954,12 @@ def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str,
     border:1.5px solid color-mix(in srgb,var(--c) 30%,white);
     border-radius:12px;padding:10px 18px;text-align:center;
     flex:1;min-width:110px;
+    animation:_fiu .4s ease both;
+    transition:transform .18s,box-shadow .18s;
+  }}
+  .stat:hover {{
+    transform:translateY(-3px);
+    box-shadow:0 6px 18px color-mix(in srgb,var(--c) 20%,transparent);
   }}
   .stat-val {{
     display:block;font-size:1.25rem;font-weight:800;color:var(--c);line-height:1.2;
@@ -951,11 +1000,12 @@ def _render_ley_html(titulo: str, resumen: str, articulos: list, url_ley: str,
     border-left:3px solid var(--c);
     box-shadow:0 1px 3px rgba(15,23,42,.05),0 4px 12px rgba(15,23,42,.04);
     display:flex;flex-direction:column;gap:6px;
+    animation:_fiu .38s ease both;
     transition:transform .2s,box-shadow .2s;
   }}
   .art-card:hover {{
-    transform:translateY(-2px);
-    box-shadow:0 4px 8px rgba(15,23,42,.06),0 12px 28px rgba(15,23,42,.09);
+    transform:translateY(-3px);
+    box-shadow:0 6px 12px rgba(15,23,42,.07),0 16px 36px rgba(15,23,42,.11);
   }}
   .art-top {{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}}
   .art-num {{
@@ -1033,12 +1083,15 @@ def _render_tab(filtro: str):
             titulo   = _esc(n["titulo"][:115])
             fecha_h  = (f'<span style="font-size:.63rem;color:#94A3B8;margin-left:auto">'
                         f'{_esc(n["fecha"])}</span>') if n.get("fecha") else ""
+            delay = f"{idx * 0.07:.2f}s"
             with col:
                 st.markdown(f"""
 <div style="background:#fff;border-radius:14px;
             border:1px solid rgba(226,232,240,.9);border-left:4px solid {accent};
             box-shadow:0 1px 3px rgba(15,23,42,.05),0 5px 18px rgba(15,23,42,.04);
-            padding:14px 16px 10px;margin-bottom:4px;min-height:90px;">
+            padding:14px 16px 10px;margin-bottom:4px;min-height:90px;
+            animation:_fiu .42s ease both;animation-delay:{delay};
+            transition:transform .2s,box-shadow .2s;">
   <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">
     <span style="width:7px;height:7px;border-radius:50%;background:{accent};
                  display:inline-block;flex-shrink:0;
@@ -1079,6 +1132,12 @@ with tab_sat:
     padding:14px 16px 10px;
     margin-bottom:4px;
     min-height:92px;
+    animation: _fiu .42s ease both;
+    transition: transform .2s, box-shadow .2s;
+}
+.sat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(15,23,42,.07), 0 12px 28px rgba(15,23,42,.09);
 }
 .sat-badge {
     font-size:.59rem;font-weight:800;letter-spacing:.7px;
@@ -1108,9 +1167,10 @@ div[data-testid="stLinkButton"] a {
                 idx = row_start + j
                 if idx < n_show:
                     it = sat_items[idx]
+                    sat_delay = f"{idx * 0.06:.2f}s"
                     with col:
                         st.markdown(
-                            f'<div class="sat-card">'
+                            f'<div class="sat-card" style="animation-delay:{sat_delay}">'
                             f'<span class="sat-badge">● SAT</span>'
                             f'<div class="sat-title">{_esc(it["titulo"][:110])}</div>'
                             f'</div>',

@@ -13,8 +13,6 @@ import streamlit as st
 import re
 import base64
 import zipfile
-import hashlib
-import hmac
 import secrets as _secrets_mod
 from io import BytesIO
 from datetime import datetime
@@ -28,6 +26,7 @@ st.set_page_config(
 
 # ─── Estilos (tema azul corporativo) ──────────────────────────────────────────
 import _theme
+import _auth as _auth_mod
 _theme.aplicar_header("🏛️ Constancia y Opinión SAT", "Genera Constancia Fiscal y Opinión 32-D con e.firma")
 # ─── Dependencia satcfdi ──────────────────────────────────────────────────────
 try:
@@ -186,199 +185,102 @@ if _correos_aut:
 #
 # Si no existe la sección [sat_users], el candado se omite (modo desarrollo).
 
-def _pw_hash(password: str, salt: str) -> str:
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
-                              salt.encode("utf-8"), 260_000)
-    return dk.hex()
+# ── Autenticación unificada ───────────────────────────────────────────────────
+_auth_user, _auth_name, _es_admin = _auth_mod.require_login("Constancia SAT")
+_sat_users = _auth_mod._get_sat_users()
 
-def _pw_verify(password: str, stored: str) -> bool:
-    """stored = '<salt>:<hash_hex>'"""
-    try:
-        salt, expected = stored.split(":", 1)
-        return hmac.compare_digest(_pw_hash(password, salt), expected)
-    except Exception:
-        return False
-
-@st.cache_resource
-def _get_pendientes():
-    """Solicitudes de acceso pendientes — singleton compartido entre sesiones."""
-    return {"lista": []}
-
-_sat_users = None
-try:
-    _raw = st.secrets.get("sat_users")
-    if _raw:
-        _sat_users = dict(_raw)
-except Exception:
-    pass
-
-if _sat_users:
-    if not st.session_state.get("sat_auth_user"):
-        col_l, col_c, col_r = st.columns([1, 1.2, 1])
-        with col_c:
-            st.markdown("#### 🔐 Acceso al módulo SAT")
-            _usr_input = st.text_input("Usuario", key="sat_login_user",
-                                       placeholder="tu usuario")
-            _pwd_input = st.text_input("Contraseña", type="password",
-                                       key="sat_login_pwd",
-                                       placeholder="••••••••")
-            if st.button("Entrar →", type="primary", use_container_width=True,
-                         key="sat_login_btn"):
-                _datos = _sat_users.get(_usr_input.strip().lower())
-                if _datos and _pw_verify(
-                        _pwd_input, _datos.get("password_hash", "")):
-                    st.session_state["sat_auth_user"] = _usr_input.strip().lower()
-                    st.session_state["sat_auth_name"] = _datos.get(
-                        "name", _usr_input.upper())
-                    st.rerun()
-                else:
-                    st.markdown('<div class="err-box">❌ Usuario o contraseña incorrectos.</div>',
-                                unsafe_allow_html=True)
-            st.markdown("---")
-            with st.expander("📝 ¿No tienes cuenta? — Solicitar acceso"):
-                with st.form("form_solicitud"):
-                    sol_nombre  = st.text_input("Nombre completo")
-                    sol_usuario = st.text_input("Usuario deseado",
-                                                placeholder="sin espacios, minúsculas")
-                    sol_pwd1 = st.text_input("Contraseña", type="password")
-                    sol_pwd2 = st.text_input("Confirmar contraseña", type="password")
-                    _sol_submit = st.form_submit_button("📨 Enviar solicitud",
-                                                        use_container_width=True)
-                if _sol_submit:
-                    _u = sol_usuario.strip().lower().replace(" ", "_")
-                    if not all([sol_nombre.strip(), _u, sol_pwd1]):
-                        st.error("Completa todos los campos.")
-                    elif sol_pwd1 != sol_pwd2:
-                        st.error("Las contraseñas no coinciden.")
-                    elif any(r["usuario"] == _u for r in _get_pendientes()["lista"]):
-                        st.warning("Ya hay una solicitud pendiente para ese usuario.")
-                    else:
-                        _s2 = _secrets_mod.token_hex(16)
-                        _get_pendientes()["lista"].append({
-                            "nombre": sol_nombre.strip(),
-                            "usuario": _u,
-                            "password_hash": f"{_s2}:{_pw_hash(sol_pwd1, _s2)}",
-                            "fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                        })
-                        st.success("✅ Solicitud enviada. El administrador la revisará.")
-        st.stop()
-
-    # Usuario autenticado — sidebar con logout y panel admin
-    _auth_display = st.session_state.get("sat_auth_name", "")
-    _auth_user    = st.session_state.get("sat_auth_user", "")
-    _es_admin     = (_auth_user == "kirvy")
+if _es_admin:
     with st.sidebar:
-        st.markdown(f"👤 **{_auth_display}**")
-        st.caption("Módulo SAT")
-        if st.button("🚪 Cerrar sesión", key="sat_logout"):
-            st.session_state.pop("sat_auth_user", None)
-            st.session_state.pop("sat_auth_name", None)
-            st.rerun()
+        st.markdown("---")
+        st.markdown("**⚙️ Administración**")
 
-        if _es_admin:
-            st.markdown("---")
-            st.markdown("**⚙️ Administración**")
+        with st.expander("👥 Usuarios con acceso"):
+            if _sat_users:
+                for _uname, _udata in _sat_users.items():
+                    _udisp = (_udata.get("name", _uname.upper())
+                              if isinstance(_udata, dict) else _uname.upper())
+                    st.markdown(f"• **{_udisp}** — `{_uname}`")
+            else:
+                st.caption("Sin usuarios registrados.")
 
-            # ── Ver usuarios con acceso ──────────────────────────────────
-            with st.expander("👥 Usuarios con acceso"):
-                if _sat_users:
-                    for _uname, _udata in _sat_users.items():
-                        _udisp = (_udata.get("name", _uname.upper())
-                                  if isinstance(_udata, dict) else _uname.upper())
-                        st.markdown(f"• **{_udisp}** — `{_uname}`")
+        with st.expander("🗑️ Quitar usuario"):
+            if _sat_users:
+                _unames = [u for u in _sat_users if u != "kirvy"]
+                if _unames:
+                    _usel = st.selectbox("Usuario a quitar", _unames, key="adm_quitar_sel")
+                    if st.button("Generar Secrets sin este usuario",
+                                 key="btn_quitar", type="primary"):
+                        _restantes = {k: v for k, v in _sat_users.items() if k != _usel}
+                        _lineas = []
+                        for _un, _ud in _restantes.items():
+                            _lineas.append(f"[sat_users.{_un}]")
+                            if isinstance(_ud, dict):
+                                for _k, _v in _ud.items():
+                                    _lineas.append(f'{_k} = "{_v}"')
+                            _lineas.append("")
+                        st.session_state["adm_quitar_toml"] = "\n".join(_lineas).strip()
+                        st.session_state["adm_quitar_nombre"] = _usel
+                    if st.session_state.get("adm_quitar_toml"):
+                        _qn = st.session_state["adm_quitar_nombre"]
+                        st.warning(f"Reemplaza la sección `sat_users` en Secrets para quitar a **{_qn}**:")
+                        st.code(st.session_state["adm_quitar_toml"], language="toml")
+                        if st.button("✔ Listo, ya lo actualicé", key="btn_quitar_done"):
+                            del st.session_state["adm_quitar_toml"]
+                            del st.session_state["adm_quitar_nombre"]
+                            st.rerun()
                 else:
-                    st.caption("Sin usuarios registrados.")
+                    st.caption("No hay otros usuarios que quitar.")
+            else:
+                st.caption("Sin usuarios registrados.")
 
-            # ── Quitar usuario ───────────────────────────────────────────
-            with st.expander("🗑️ Quitar usuario"):
-                if _sat_users:
-                    _unames = [u for u in _sat_users if u != "kirvy"]
-                    if _unames:
-                        _usel = st.selectbox("Usuario a quitar", _unames,
-                                             key="adm_quitar_sel")
-                        if st.button("Generar Secrets sin este usuario",
-                                     key="btn_quitar", type="primary"):
-                            _restantes = {k: v for k, v in _sat_users.items()
-                                          if k != _usel}
-                            _lineas = []
-                            for _un, _ud in _restantes.items():
-                                _lineas.append(f"[sat_users.{_un}]")
-                                if isinstance(_ud, dict):
-                                    for _k, _v in _ud.items():
-                                        _lineas.append(f'{_k} = "{_v}"')
-                                _lineas.append("")
-                            st.session_state["adm_quitar_toml"] = "\n".join(_lineas).strip()
-                            st.session_state["adm_quitar_nombre"] = _usel
-                        if st.session_state.get("adm_quitar_toml"):
-                            _qn = st.session_state["adm_quitar_nombre"]
-                            st.warning(
-                                f"Reemplaza **toda** la sección `sat_users` en "
-                                f"Settings → Secrets con este bloque para quitar a **{_qn}**:")
-                            st.code(st.session_state["adm_quitar_toml"], language="toml")
-                            if st.button("✔ Listo, ya lo actualicé",
-                                         key="btn_quitar_done"):
-                                del st.session_state["adm_quitar_toml"]
-                                del st.session_state["adm_quitar_nombre"]
-                                st.rerun()
-                    else:
-                        st.caption("No hay otros usuarios que quitar.")
-                else:
-                    st.caption("Sin usuarios registrados.")
-
-            # ── Crear usuario ────────────────────────────────────────────
-            with st.expander("➕ Crear usuario"):
-                adm_nombre  = st.text_input("Nombre", key="adm_nombre")
-                adm_usuario = st.text_input("Usuario", key="adm_usuario")
-                adm_pwd     = st.text_input("Contraseña", type="password", key="adm_pwd")
-                if st.button("Generar acceso", key="adm_gen", type="primary"):
-                    if all([adm_nombre.strip(), adm_usuario.strip(), adm_pwd]):
-                        _sa = _secrets_mod.token_hex(16)
-                        _ha = f"{_sa}:{_pw_hash(adm_pwd, _sa)}"
-                        st.session_state["adm_toml"] = (
-                            f"[sat_users.{adm_usuario.strip().lower()}]\n"
-                            f'name = "{adm_nombre.strip()}"\n'
-                            f'password_hash = "{_ha}"'
-                        )
-                    else:
-                        st.error("Completa todos los campos.")
-            if st.session_state.get("adm_toml"):
-                st.markdown("**Copia en Secrets de Streamlit Cloud:**")
-                st.code(st.session_state["adm_toml"], language="toml")
-                if st.button("✔ Listo, ya lo agregué", key="adm_done"):
-                    del st.session_state["adm_toml"]
-                    st.rerun()
-
-    # Solicitudes pendientes — solo admin ve esto
-    if _es_admin:
-        _pendientes = _get_pendientes()["lista"]
-        if _pendientes:
-            st.warning(f"📬 **{len(_pendientes)} solicitud(es) de acceso pendiente(s)**")
-            for _i, _req in enumerate(list(_pendientes)):
-                with st.expander(
-                        f"👤 {_req['nombre']} — @{_req['usuario']} — {_req['fecha']}"):
-                    st.code(
-                        f"[sat_users.{_req['usuario']}]\n"
-                        f"name = \"{_req['nombre']}\"\n"
-                        f"password_hash = \"{_req['password_hash']}\"",
-                        language="toml",
+        with st.expander("➕ Crear usuario"):
+            adm_nombre  = st.text_input("Nombre", key="adm_nombre")
+            adm_usuario = st.text_input("Usuario", key="adm_usuario")
+            adm_pwd     = st.text_input("Contraseña", type="password", key="adm_pwd")
+            if st.button("Generar acceso", key="adm_gen", type="primary"):
+                if all([adm_nombre.strip(), adm_usuario.strip(), adm_pwd]):
+                    _sa = _secrets_mod.token_hex(16)
+                    _ha = f"{_sa}:{_auth_mod._pw_hash(adm_pwd, _sa)}"
+                    st.session_state["adm_toml"] = (
+                        f"[sat_users.{adm_usuario.strip().lower()}]\n"
+                        f'name = "{adm_nombre.strip()}"\n'
+                        f'password_hash = "{_ha}"'
                     )
-                    st.caption(
-                        "Copia el bloque de arriba y agrégalo a "
-                        "Settings → Secrets en Streamlit Cloud, luego aprueba.")
-                    _ca, _cb = st.columns(2)
-                    with _ca:
-                        if st.button("✅ Aprobar — ya lo agregué",
-                                     key=f"apr_{_i}", type="primary",
-                                     use_container_width=True):
-                            _get_pendientes()["lista"].remove(_req)
-                            st.success(f"✅ Usuario '{_req['usuario']}' aprobado.")
-                            st.rerun()
-                    with _cb:
-                        if st.button("❌ Rechazar", key=f"rec_{_i}",
-                                     use_container_width=True):
-                            _get_pendientes()["lista"].remove(_req)
-                            st.info(f"Solicitud de {_req['nombre']} rechazada.")
-                            st.rerun()
+                else:
+                    st.error("Completa todos los campos.")
+        if st.session_state.get("adm_toml"):
+            st.markdown("**Copia en Secrets de Streamlit Cloud:**")
+            st.code(st.session_state["adm_toml"], language="toml")
+            if st.button("✔ Listo, ya lo agregué", key="adm_done"):
+                del st.session_state["adm_toml"]
+                st.rerun()
+
+# Solicitudes pendientes — solo admin
+if _es_admin:
+    _pendientes = _auth_mod._get_pendientes()["lista"]
+    if _pendientes:
+        st.warning(f"📬 **{len(_pendientes)} solicitud(es) de acceso pendiente(s)**")
+        for _i, _req in enumerate(list(_pendientes)):
+            with st.expander(f"👤 {_req['nombre']} — @{_req['usuario']} — {_req['fecha']}"):
+                st.code(
+                    f"[sat_users.{_req['usuario']}]\n"
+                    f"name = \"{_req['nombre']}\"\n"
+                    f"password_hash = \"{_req['password_hash']}\"",
+                    language="toml",
+                )
+                st.caption("Copia el bloque y agrégalo a Settings → Secrets, luego aprueba.")
+                _ca, _cb = st.columns(2)
+                with _ca:
+                    if st.button("✅ Aprobar — ya lo agregué", key=f"apr_{_i}",
+                                 type="primary", use_container_width=True):
+                        _auth_mod._get_pendientes()["lista"].remove(_req)
+                        st.success(f"✅ Usuario '{_req['usuario']}' aprobado.")
+                        st.rerun()
+                with _cb:
+                    if st.button("❌ Rechazar", key=f"rec_{_i}", use_container_width=True):
+                        _auth_mod._get_pendientes()["lista"].remove(_req)
+                        st.info(f"Solicitud de {_req['nombre']} rechazada.")
+                        st.rerun()
 
 st.markdown("""
 <div class="priv-note">🔒 <b>Privacidad:</b> las e.firmas guardadas viven cifradas en los

@@ -450,6 +450,70 @@ def _fetch_sat_noticias():
     return items, ts
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# WIDGET: VENCIMIENTOS FISCALES
+# ══════════════════════════════════════════════════════════════════════════════
+def _vencimientos_widget():
+    """Muestra tarjetas de próximos vencimientos fiscales con semáforo de días."""
+    from datetime import date, timedelta
+    import calendar
+
+    hoy = date.today()
+
+    def _proximo_dia17(ref: date) -> date:
+        """Siguiente día 17 en curso o el del mes siguiente."""
+        d17 = ref.replace(day=17)
+        return d17 if d17 >= ref else (ref.replace(day=1) + timedelta(days=32)).replace(day=17)
+
+    def _ultimo_habil_mes(ref: date) -> date:
+        """Último día hábil del mes actual."""
+        ultimo = ref.replace(day=calendar.monthrange(ref.year, ref.month)[1])
+        while ultimo.weekday() >= 5:  # sábado=5, domingo=6
+            ultimo -= timedelta(days=1)
+        return ultimo
+
+    def _proximo_abril() -> date:
+        """Próximo 30 de abril (declaración anual PF)."""
+        cand = date(hoy.year, 4, 30)
+        return cand if cand >= hoy else date(hoy.year + 1, 4, 30)
+
+    def _dias_color(dias: int):
+        if dias <= 3:   return "#DC2626", "#FEF2F2", "🔴"
+        if dias <= 10:  return "#D97706", "#FFFBEB", "🟡"
+        return "#059669", "#F0FDF4", "🟢"
+
+    venc = [
+        ("DyP — ISR/IVA/IEPS",    _proximo_dia17(hoy),    "Declaración mensual ante el SAT"),
+        ("IMSS cuota obrero-patronal", _proximo_dia17(hoy), "Entero bimestral / mensual IMSS"),
+        ("INFONAVIT aportaciones", _proximo_dia17(hoy),    "Pago bimestral INFONAVIT"),
+        ("Cierre contable",        _ultimo_habil_mes(hoy), "Último día hábil del mes"),
+        ("Declaración Anual PF",   _proximo_abril(),       "ISR personas físicas — abril"),
+    ]
+
+    st.markdown(
+        "<p style='font-size:.75rem;font-weight:700;color:#64748B;letter-spacing:.6px;"
+        "text-transform:uppercase;margin-bottom:8px'>📅 Próximos vencimientos fiscales</p>",
+        unsafe_allow_html=True,
+    )
+    cols = st.columns(len(venc))
+    for col, (nombre, fecha, desc) in zip(cols, venc):
+        dias = (fecha - hoy).days
+        color, bg, semaforo = _dias_color(dias)
+        label = f"{dias}d" if dias > 0 else "¡HOY!"
+        with col:
+            st.markdown(f"""
+<div style="background:{bg};border-radius:12px;border:1px solid {color}33;
+            border-left:4px solid {color};padding:10px 14px;text-align:center;">
+  <div style="font-size:1.4rem;font-weight:900;color:{color};line-height:1">{label}</div>
+  <div style="font-size:.58rem;font-weight:800;color:{color};letter-spacing:.3px;
+              text-transform:uppercase;margin:3px 0 4px">{semaforo} {nombre}</div>
+  <div style="font-size:.6rem;color:#64748B">{fecha.strftime('%d/%m/%Y')}</div>
+  <div style="font-size:.58rem;color:#94A3B8;margin-top:2px">{desc}</div>
+</div>""", unsafe_allow_html=True)
+
+_vencimientos_widget()
+st.markdown("<div style='margin:10px 0 4px'></div>", unsafe_allow_html=True)
+
 # ── Fetch data ────────────────────────────────────────────────────────────────
 col_hdr, col_btn = st.columns([6, 1])
 with col_hdr:

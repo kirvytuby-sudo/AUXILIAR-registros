@@ -195,10 +195,12 @@ _sel_vac   = _render_lista(_col3, "vacaciones",   "Vacaciones",       "🌴")
 _sel_prest = _render_lista(_col4, "prestamos",    "Préstamos",        "💳", es_prestamo=True)
 
 # ── Catálogo ───────────────────────────────────────────────────────────────────
-def _cargar_catalogo():
+@st.cache_data(show_spinner=False)
+def _cargar_catalogo(path: str):
+    """Lee el catálogo de cuentas. Cacheado por ruta — se re-lee solo si cambia el archivo."""
     catalogo = {"empleados": {}, "prestamos": {}}
-    if catalogo_path and os.path.isfile(catalogo_path):
-        mapa = cn.load_poliza(catalogo_path)
+    if path and os.path.isfile(path):
+        mapa = cn.load_poliza(path)
         for k in ("empleados", "prestamos"):
             df = mapa.get(k)
             if df is not None and not df.empty:
@@ -214,7 +216,7 @@ def _procesar(pdfs_lista, etiqueta, out_nombre):
         st.session_state.pb_log.append("⚠ Carga el catálogo de cuentas primero.")
         return
     try:
-        catalogo = _cargar_catalogo()
+        catalogo = _cargar_catalogo(catalogo_path or "")
         out_path = os.path.join(TMP, out_nombre)
         cn.escribir_pagos_bancarios_todo(pdfs_lista, catalogo, out_path)
         with open(out_path, "rb") as f:

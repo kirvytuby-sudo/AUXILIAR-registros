@@ -8,8 +8,6 @@ Sin captcha manual — automatización headless con Playwright.
 """
 import streamlit as st
 import base64
-import hashlib
-import hmac
 import re
 import secrets as _secrets_mod
 import zipfile
@@ -24,6 +22,7 @@ st.set_page_config(
 )
 
 import _theme
+import _auth as _auth_mod
 _theme.aplicar_header("🏥 Opinión de Cumplimiento IMSS",
                       "Genera la Opinión 32-D del IMSS con e.firma • Buzón IMSS")
 
@@ -129,131 +128,59 @@ def _sb_delete_empresa(rfc):
 
 _USE_SUPABASE = bool(_sb_client() and _sb_fernet())
 
-# ── Autenticación con contraseña (igual que SAT) ──────────────────────────────
-def _pw_hash(password, salt):
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
-                              salt.encode("utf-8"), 260_000)
-    return dk.hex()
+# ── Autenticación unificada ───────────────────────────────────────────────────
+_auth_user, _auth_name, _es_admin = _auth_mod.require_login("IMSS")
+_sat_users = _auth_mod._get_sat_users()
 
-def _pw_verify(password, stored):
-    try:
-        salt, expected = stored.split(":", 1)
-        return hmac.compare_digest(_pw_hash(password, salt), expected)
-    except Exception:
-        return False
-
-@st.cache_resource
-def _get_pendientes():
-    return {"lista": []}
-
-# ── Seguridad unificada con módulos SAT (sat_users en Secrets) ───────────────
-# Comparte el mismo login que 12_Constancia_y_Opinion_SAT.py y 16_Buzon_SAT.py.
-# Un solo usuario/contraseña da acceso a los tres módulos.
-_sat_users = None
-try:
-    _raw = st.secrets.get("sat_users")
-    if _raw: _sat_users = dict(_raw)
-except Exception:
-    pass
-
-if _sat_users:
-    if not st.session_state.get("sat_auth_user"):
-        col_l, col_c, col_r = st.columns([1, 1.2, 1])
-        with col_c:
-            st.markdown("#### 🔐 Acceso al módulo SAT")
-            _usr = st.text_input("Usuario", key="imss_login_user", placeholder="tu usuario")
-            _pwd = st.text_input("Contraseña", type="password", key="imss_login_pwd",
-                                 placeholder="••••••••")
-            if st.button("Entrar →", type="primary", use_container_width=True,
-                         key="imss_login_btn"):
-                _datos = _sat_users.get(_usr.strip().lower())
-                if _datos and _pw_verify(_pwd, _datos.get("password_hash", "")):
-                    st.session_state["sat_auth_user"] = _usr.strip().lower()
-                    st.session_state["sat_auth_name"] = _datos.get("name", _usr.upper())
-                    st.rerun()
-                else:
-                    st.error("❌ Usuario o contraseña incorrectos.")
-            st.markdown("---")
-            with st.expander("📝 Solicitar acceso"):
-                with st.form("form_solicitud_imss"):
-                    s_nombre  = st.text_input("Nombre completo")
-                    s_usuario = st.text_input("Usuario deseado")
-                    s_pwd1    = st.text_input("Contraseña", type="password")
-                    s_pwd2    = st.text_input("Confirmar contraseña", type="password")
-                    if st.form_submit_button("📨 Enviar", use_container_width=True):
-                        _u = s_usuario.strip().lower().replace(" ", "_")
-                        if not all([s_nombre.strip(), _u, s_pwd1]):
-                            st.error("Completa todos los campos.")
-                        elif s_pwd1 != s_pwd2:
-                            st.error("Las contraseñas no coinciden.")
-                        else:
-                            _s2 = _secrets_mod.token_hex(16)
-                            _get_pendientes()["lista"].append({
-                                "nombre": s_nombre.strip(), "usuario": _u,
-                                "password_hash": f"{_s2}:{_pw_hash(s_pwd1, _s2)}",
-                                "fecha": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                            })
-                            st.success("✅ Solicitud enviada.")
-        st.stop()
-
-    _auth_name = st.session_state.get("sat_auth_name", "")
-    _auth_user = st.session_state.get("sat_auth_user", "")
-    _es_admin  = (_auth_user == "kirvy")
+if _es_admin:
     with st.sidebar:
-        st.markdown(f"👤 **{_auth_name}**")
-        st.caption("Módulo IMSS")
-        if st.button("🚪 Cerrar sesión", key="imss_logout"):
-            st.session_state.pop("sat_auth_user", None)
-            st.session_state.pop("sat_auth_name", None)
-            st.rerun()
-        if _es_admin:
-            st.markdown("---")
-            st.markdown("**⚙️ Administración**")
-            with st.expander("👥 Usuarios con acceso"):
-                for _un, _ud in (_sat_users or {}).items():
-                    _ud2 = _ud.get("name", _un.upper()) if isinstance(_ud, dict) else _un.upper()
-                    st.markdown(f"• **{_ud2}** — `{_un}`")
-            with st.expander("➕ Agregar usuario"):
-                _na = st.text_input("Nombre", key="adm_i_nombre")
-                _ua = st.text_input("Usuario", key="adm_i_user")
-                _pa = st.text_input("Contraseña", type="password", key="adm_i_pwd")
-                if st.button("Generar Secrets", key="adm_i_gen"):
-                    if _na and _ua and _pa:
-                        _sa = _secrets_mod.token_hex(16)
-                        _ha = f"{_sa}:{_pw_hash(_pa, _sa)}"
-                        st.session_state["adm_i_toml"] = (
-                            f"[sat_users.{_ua.lower()}]\n"
-                            f'name = "{_na}"\n'
-                            f'password_hash = "{_ha}"'
-                        )
-                    else:
-                        st.error("Completa todos los campos.")
-                if st.session_state.get("adm_i_toml"):
-                    st.code(st.session_state["adm_i_toml"], language="toml")
-                    if st.button("✔ Listo", key="adm_i_done"):
-                        del st.session_state["adm_i_toml"]
-                        st.rerun()
-            _pend = _get_pendientes()["lista"]
-            if _pend:
-                st.warning(f"📬 {len(_pend)} solicitud(es) pendiente(s)")
-                for _i, _req in enumerate(_pend):
-                    with st.expander(f"👤 {_req['nombre']} — @{_req['usuario']}"):
-                        st.code(
-                            f"[sat_users.{_req['usuario']}]\n"
-                            f"name = \"{_req['nombre']}\"\n"
-                            f"password_hash = \"{_req['password_hash']}\"",
-                            language="toml")
-                        _ca, _cb = st.columns(2)
-                        with _ca:
-                            if st.button("✅ Aprobar", key=f"apr_i_{_i}",
-                                         type="primary", use_container_width=True):
-                                _get_pendientes()["lista"].remove(_req)
-                                st.rerun()
-                        with _cb:
-                            if st.button("❌ Rechazar", key=f"rec_i_{_i}",
-                                         use_container_width=True):
-                                _get_pendientes()["lista"].remove(_req)
-                                st.rerun()
+        st.markdown("---")
+        st.markdown("**⚙️ Administración**")
+        with st.expander("👥 Usuarios con acceso"):
+            for _un, _ud in (_sat_users or {}).items():
+                _ud2 = _ud.get("name", _un.upper()) if isinstance(_ud, dict) else _un.upper()
+                st.markdown(f"• **{_ud2}** — `{_un}`")
+        with st.expander("➕ Agregar usuario"):
+            _na = st.text_input("Nombre", key="adm_i_nombre")
+            _ua = st.text_input("Usuario", key="adm_i_user")
+            _pa = st.text_input("Contraseña", type="password", key="adm_i_pwd")
+            if st.button("Generar Secrets", key="adm_i_gen"):
+                if _na and _ua and _pa:
+                    _sa = _secrets_mod.token_hex(16)
+                    _ha = f"{_sa}:{_auth_mod._pw_hash(_pa, _sa)}"
+                    st.session_state["adm_i_toml"] = (
+                        f"[sat_users.{_ua.lower()}]\n"
+                        f'name = "{_na}"\n'
+                        f'password_hash = "{_ha}"'
+                    )
+                else:
+                    st.error("Completa todos los campos.")
+            if st.session_state.get("adm_i_toml"):
+                st.code(st.session_state["adm_i_toml"], language="toml")
+                if st.button("✔ Listo", key="adm_i_done"):
+                    del st.session_state["adm_i_toml"]
+                    st.rerun()
+        _pend = _auth_mod._get_pendientes()["lista"]
+        if _pend:
+            st.warning(f"📬 {len(_pend)} solicitud(es) pendiente(s)")
+            for _i, _req in enumerate(_pend):
+                with st.expander(f"👤 {_req['nombre']} — @{_req['usuario']}"):
+                    st.code(
+                        f"[sat_users.{_req['usuario']}]\n"
+                        f"name = \"{_req['nombre']}\"\n"
+                        f"password_hash = \"{_req['password_hash']}\"",
+                        language="toml")
+                    _ca, _cb = st.columns(2)
+                    with _ca:
+                        if st.button("✅ Aprobar", key=f"apr_i_{_i}",
+                                     type="primary", use_container_width=True):
+                            _auth_mod._get_pendientes()["lista"].remove(_req)
+                            st.rerun()
+                    with _cb:
+                        if st.button("❌ Rechazar", key=f"rec_i_{_i}",
+                                     use_container_width=True):
+                            _auth_mod._get_pendientes()["lista"].remove(_req)
+                            st.rerun()
 
 # ── Utilidades e.firma ────────────────────────────────────────────────────────
 def _stem(nombre):

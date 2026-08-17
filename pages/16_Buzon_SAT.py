@@ -7,8 +7,6 @@ Sin captcha — login criptográfico con e.firma.
 """
 import streamlit as st
 import base64
-import hashlib
-import hmac
 import json
 import secrets as _secrets_mod
 import os
@@ -27,6 +25,7 @@ st.set_page_config(
 )
 
 import _theme
+import _auth as _auth_mod
 _theme.aplicar_header("🗂 Buzón Tributario SAT",
                       "Notificaciones y Comunicados oficiales del SAT con e.firma")
 
@@ -83,111 +82,59 @@ def _get_secret(key, default=None):
     except Exception:
         return default
 
-# ── Auth (mismo sistema que Constancia y Opinión SAT — sat_users en Secrets) ──
-def _pw_hash(password: str, salt: str) -> str:
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"),
-                              salt.encode("utf-8"), 260_000)
-    return dk.hex()
+# ── Autenticación unificada ───────────────────────────────────────────────────
+_auth_user, _auth_name, _es_admin = _auth_mod.require_login("Buzón SAT")
+_sat_users = _auth_mod._get_sat_users()
 
-def _pw_verify(password: str, stored: str) -> bool:
-    try:
-        salt, expected = stored.split(":", 1)
-        return hmac.compare_digest(_pw_hash(password, salt), expected)
-    except Exception:
-        return False
-
-_sat_users = None
-try:
-    _raw = st.secrets.get("sat_users")
-    if _raw:
-        _sat_users = dict(_raw)
-except Exception:
-    pass
-
-@st.cache_resource
-def _get_pendientes_buzon():
-    return {"lista": []}
-
-if _sat_users:
-    if not st.session_state.get("sat_auth_user"):
-        col_l, col_c, col_r = st.columns([1, 1.2, 1])
-        with col_c:
-            st.markdown("#### 🔐 Acceso al módulo SAT")
-            _usr_input = st.text_input("Usuario", key="buzon_login_user",
-                                       placeholder="tu usuario")
-            _pwd_input = st.text_input("Contraseña", type="password",
-                                       key="buzon_login_pwd",
-                                       placeholder="••••••••")
-            if st.button("Entrar →", type="primary", use_container_width=True,
-                         key="buzon_login_btn"):
-                _datos = _sat_users.get(_usr_input.strip().lower())
-                if _datos and _pw_verify(_pwd_input, _datos.get("password_hash", "")):
-                    st.session_state["sat_auth_user"] = _usr_input.strip().lower()
-                    st.session_state["sat_auth_name"] = _datos.get("name", _usr_input.upper())
-                    st.rerun()
-                else:
-                    st.error("❌ Usuario o contraseña incorrectos.")
-        st.stop()
-
-    # Sidebar — usuario autenticado
-    _auth_display = st.session_state.get("sat_auth_name", "")
-    _auth_user_b  = st.session_state.get("sat_auth_user", "")
-    _es_admin_b   = (_auth_user_b == "kirvy")
+if _es_admin:
     with st.sidebar:
-        st.markdown(f"👤 **{_auth_display}**")
-        st.caption("Buzón SAT")
-        if st.button("🚪 Cerrar sesión", key="buzon_logout"):
-            st.session_state.pop("sat_auth_user", None)
-            st.session_state.pop("sat_auth_name", None)
-            st.rerun()
-        if _es_admin_b:
-            st.markdown("---")
-            st.markdown("**⚙️ Administración**")
-            with st.expander("👥 Usuarios con acceso"):
-                for _un, _ud in (_sat_users or {}).items():
-                    _ud2 = _ud.get("name", _un.upper()) if isinstance(_ud, dict) else _un.upper()
-                    st.markdown(f"• **{_ud2}** — `{_un}`")
-            with st.expander("➕ Agregar usuario"):
-                _bna = st.text_input("Nombre", key="adm_b_nombre")
-                _bua = st.text_input("Usuario", key="adm_b_user")
-                _bpa = st.text_input("Contraseña", type="password", key="adm_b_pwd")
-                if st.button("Generar Secrets", key="adm_b_gen"):
-                    if _bna and _bua and _bpa:
-                        _bsa = _secrets_mod.token_hex(16)
-                        _bha = f"{_bsa}:{_pw_hash(_bpa, _bsa)}"
-                        st.session_state["adm_b_toml"] = (
-                            f"[sat_users.{_bua.lower()}]\n"
-                            f'name = "{_bna}"\n'
-                            f'password_hash = "{_bha}"'
-                        )
-                    else:
-                        st.error("Completa todos los campos.")
-                if st.session_state.get("adm_b_toml"):
-                    st.code(st.session_state["adm_b_toml"], language="toml")
-                    if st.button("✔ Listo", key="adm_b_done"):
-                        del st.session_state["adm_b_toml"]
-                        st.rerun()
-            _pend_b = _get_pendientes_buzon()["lista"]
-            if _pend_b:
-                st.warning(f"📬 {len(_pend_b)} solicitud(es) pendiente(s)")
-                for _bi, _breq in enumerate(_pend_b):
-                    with st.expander(f"👤 {_breq['nombre']} — @{_breq['usuario']}"):
-                        st.code(
-                            f"[sat_users.{_breq['usuario']}]\n"
-                            f"name = \"{_breq['nombre']}\"\n"
-                            f"password_hash = \"{_breq['password_hash']}\"",
-                            language="toml")
-                        _bca, _bcb = st.columns(2)
-                        with _bca:
-                            if st.button("✅ Aprobar", key=f"apr_b_{_bi}",
-                                         type="primary", use_container_width=True):
-                                _get_pendientes_buzon()["lista"].remove(_breq)
-                                st.rerun()
-                        with _bcb:
-                            if st.button("❌ Rechazar", key=f"rec_b_{_bi}",
-                                         use_container_width=True):
-                                _get_pendientes_buzon()["lista"].remove(_breq)
-                                st.rerun()
+        st.markdown("---")
+        st.markdown("**⚙️ Administración**")
+        with st.expander("👥 Usuarios con acceso"):
+            for _un, _ud in (_sat_users or {}).items():
+                _ud2 = _ud.get("name", _un.upper()) if isinstance(_ud, dict) else _un.upper()
+                st.markdown(f"• **{_ud2}** — `{_un}`")
+        with st.expander("➕ Agregar usuario"):
+            _bna = st.text_input("Nombre", key="adm_b_nombre")
+            _bua = st.text_input("Usuario", key="adm_b_user")
+            _bpa = st.text_input("Contraseña", type="password", key="adm_b_pwd")
+            if st.button("Generar Secrets", key="adm_b_gen"):
+                if _bna and _bua and _bpa:
+                    _bsa = _secrets_mod.token_hex(16)
+                    _bha = f"{_bsa}:{_auth_mod._pw_hash(_bpa, _bsa)}"
+                    st.session_state["adm_b_toml"] = (
+                        f"[sat_users.{_bua.lower()}]\n"
+                        f'name = "{_bna}"\n'
+                        f'password_hash = "{_bha}"'
+                    )
+                else:
+                    st.error("Completa todos los campos.")
+            if st.session_state.get("adm_b_toml"):
+                st.code(st.session_state["adm_b_toml"], language="toml")
+                if st.button("✔ Listo", key="adm_b_done"):
+                    del st.session_state["adm_b_toml"]
+                    st.rerun()
+        _pend_b = _auth_mod._get_pendientes()["lista"]
+        if _pend_b:
+            st.warning(f"📬 {len(_pend_b)} solicitud(es) pendiente(s)")
+            for _bi, _breq in enumerate(_pend_b):
+                with st.expander(f"👤 {_breq['nombre']} — @{_breq['usuario']}"):
+                    st.code(
+                        f"[sat_users.{_breq['usuario']}]\n"
+                        f"name = \"{_breq['nombre']}\"\n"
+                        f"password_hash = \"{_breq['password_hash']}\"",
+                        language="toml")
+                    _bca, _bcb = st.columns(2)
+                    with _bca:
+                        if st.button("✅ Aprobar", key=f"apr_b_{_bi}",
+                                     type="primary", use_container_width=True):
+                            _auth_mod._get_pendientes()["lista"].remove(_breq)
+                            st.rerun()
+                    with _bcb:
+                        if st.button("❌ Rechazar", key=f"rec_b_{_bi}",
+                                     use_container_width=True):
+                            _auth_mod._get_pendientes()["lista"].remove(_breq)
+                            st.rerun()
 
 # ── Supabase helpers (empresas) ───────────────────────────────────────────────
 @st.cache_resource(ttl=60)

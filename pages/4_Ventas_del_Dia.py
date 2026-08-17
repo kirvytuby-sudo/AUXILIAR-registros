@@ -47,6 +47,7 @@ CTAS_PROD = [
 ]
 
 
+@st.cache_data(show_spinner=False)
 def _leer_cuentas_plantilla(plantilla_bytes):
     """Lee la hoja CUENTAS de la plantilla; retorna (cuentas_map, dyn_clientes, dyn_prods)."""
     cuentas_map = {

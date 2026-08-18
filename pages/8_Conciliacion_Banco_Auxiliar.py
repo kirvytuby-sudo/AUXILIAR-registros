@@ -91,9 +91,11 @@ def _to_float(v):
 
 
 def _detect_header(rows, keywords):
+    """Detecta la fila de encabezado que contiene todas las keywords (substring, case-insensitive)."""
     for i, row in enumerate(rows):
         vals = [str(v).strip().lower() if v is not None else "" for v in row]
-        if all(kw in vals for kw in keywords):
+        # Verificar que cada keyword aparezca como substring en al menos una celda
+        if all(any(kw in v for v in vals) for kw in keywords):
             return i, {v: j for j, v in enumerate(vals) if v}
     return None, {}
 
@@ -141,9 +143,25 @@ def _read_banco(wb):
 def _read_auxiliar(wb):
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
-    hdr_idx, mapping = _detect_header(rows, ["cargo", "fecha"])
+    # Intentar distintas combinaciones de keywords para el encabezado
+    hdr_idx, mapping = None, {}
+    for _kws in [
+        ["cargo", "fecha"],
+        ["cargos", "fecha"],
+        ["débito", "fecha"],
+        ["debito", "fecha"],
+        ["retiro", "fecha"],
+        ["egreso", "fecha"],
+        ["fecha"],   # fallback: solo fecha
+    ]:
+        hdr_idx, mapping = _detect_header(rows, _kws)
+        if hdr_idx is not None:
+            break
     if hdr_idx is None:
-        raise ValueError("No se encontró encabezado con columnas 'Fecha' y 'Cargo' en el auxiliar.")
+        raise ValueError(
+            "No se encontró encabezado con columna 'Fecha' en el auxiliar. "
+            "Verifica que el archivo tenga una fila de encabezado con al menos la columna Fecha."
+        )
     col_f = _col(mapping, "fecha")
     col_pol = None
     for c in ("núm. póliza", "num. póliza", "número póliza", "num poliza", "num. póliza"):

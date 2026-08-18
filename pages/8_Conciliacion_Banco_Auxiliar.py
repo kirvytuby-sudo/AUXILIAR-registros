@@ -910,11 +910,24 @@ if generar:
             movs_banco = []; archivos_leidos = []
             for bf in banco_files:
                 _fn = bf.name.upper()
+                _raw_bytes = bf.read()
                 if "BBVA" in _fn:                           _btag = "BBVA"
                 elif "BANORTE" in _fn or "BNRT" in _fn:   _btag = "BANORTE"
                 elif "INBURSA" in _fn or "INBU" in _fn:   _btag = "INBURSA"
-                else:                                        _btag = bf.name.rsplit(".", 1)[0][:12].upper()
-                wb_b = load_workbook(filename=io.BytesIO(bf.read()), read_only=True, data_only=True)
+                else:
+                    # Nombre de archivo no identifica el banco — escanear primeras filas del contenido
+                    _wb_sc = load_workbook(filename=io.BytesIO(_raw_bytes), read_only=True, data_only=True)
+                    _smpl = " ".join(
+                        str(c.value).upper()
+                        for _r in _wb_sc.active.iter_rows(max_row=20, max_col=12)
+                        for c in _r if c.value
+                    )
+                    _wb_sc.close()
+                    if "BBVA" in _smpl or "BANCOMER" in _smpl:   _btag = "BBVA"
+                    elif "BANORTE" in _smpl:                       _btag = "BANORTE"
+                    elif "INBURSA" in _smpl:                       _btag = "INBURSA"
+                    else:                                           _btag = bf.name.rsplit(".", 1)[0][:12].upper()
+                wb_b = load_workbook(filename=io.BytesIO(_raw_bytes), read_only=True, data_only=True)
                 movs_bf = _read_banco(wb_b); wb_b.close()
                 for _m in movs_bf: _m["banco_tag"] = _btag
                 movs_banco.extend(movs_bf)

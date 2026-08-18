@@ -820,6 +820,22 @@ for key in ("cba_resultado_bytes", "cba_resumen", "cba_sugerencias"):
     if key not in st.session_state:
         st.session_state[key] = None
 
+# ── Defaults de parámetros (se aplican aunque la sesión ya tenga valores viejos) ──
+_PARAM_DEFAULTS = {
+    "p_tol1":    2.0,   # tolerancia monto exacto $
+    "p_toln":    2.0,   # tolerancia suma combo  $
+    "p_dias":    15,    # días de tolerancia fecha
+    "p_tolt":    2.0,   # tolerancia monto texto $
+    "p_cminpct": 1,
+    "p_csim":    10,
+    "p_sim":     0.45,
+    "p_maxc":    6,
+}
+for _pk, _pv in _PARAM_DEFAULTS.items():
+    if _pk not in st.session_state or st.session_state.get(f"_pdef_{_pk}") != _pv:
+        st.session_state[_pk] = _pv
+        st.session_state[f"_pdef_{_pk}"] = _pv   # marca que este default ya fue aplicado
+
 # ── UI — Parámetros ───────────────────────────────────────────────────────────
 with st.expander("⚙️ Parámetros de conciliación", expanded=False):
     st.caption("Ajusta las tolerancias manualmente o usa las sugerencias automáticas abajo.")

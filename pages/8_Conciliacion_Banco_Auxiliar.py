@@ -1037,13 +1037,16 @@ if st.session_state.cba_resultado_bytes and st.session_state.cba_resumen:
                   delta_color="inverse")
 
     st.download_button(
-        label="⬇️  Descargar Excel de conciliación",
+        label="⬇️  Descargar Excel de conciliación (original)",
         data=st.session_state.cba_resultado_bytes,
         file_name="Conciliacion_Banco_Auxiliar.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         type="primary",
         use_container_width=True,
     )
+    import _viewer as _vwr
+    _vwr.show(st.session_state.cba_resultado_bytes,
+              filename="Conciliacion_Banco_Auxiliar.xlsx", key="cba_vwr")
     _n_com = res.get("n_com", 0); _n_mora = res.get("n_mora", 0)
     _cap = "4 hojas: 💰 Depósitos · 💳 Cargos · ⚠ Sin conciliar · 🏦 Comisiones Bancarias"
     if _n_com or _n_mora:

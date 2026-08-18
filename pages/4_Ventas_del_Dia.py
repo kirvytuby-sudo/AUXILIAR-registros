@@ -556,24 +556,26 @@ if generar and despachos_file is not None:
             st.success(f"✅ Póliza generada — {len(resumen)} fecha(s)")
 
             st.download_button(
-                label="💾  Descargar póliza Excel",
+                label="💾  Descargar póliza Excel (original)",
                 data=excel_bytes,
                 file_name=nombre_salida,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
 
+            # ── Visor editable ─────────────────────────────────────────────
+            import _viewer as _vwr
+            _vwr.show(excel_bytes, filename=nombre_salida, key="vd_vwr")
+
             # ── Tabla resumen ──────────────────────────────────────────────
             if resumen:
                 st.markdown("### 📊 Resumen por fecha")
                 import pandas as pd
                 df = pd.DataFrame(resumen)
-                # Color diferencia
                 def _color_diff(v):
                     if abs(v) < 0.02:
                         return "background-color:#D1FAE5; color:#065F46"
                     return "background-color:#FEF3C7; color:#92400E"
-
                 styled = (
                     df.style
                     .format({

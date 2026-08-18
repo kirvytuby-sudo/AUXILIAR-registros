@@ -969,12 +969,14 @@ if st.session_state.dep_result:
 
     st.subheader("💾 Descargar")
     st.download_button(
-        label="📥 Descargar Póliza Excel",
+        label="📥 Descargar Póliza Excel (original)",
         data=res["excel_bytes"],
         file_name=res["nombre_archivo"],
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         type="primary",
     )
+    import _viewer as _vwr
+    _vwr.show(res["excel_bytes"], filename=res["nombre_archivo"], key="dep_vwr")
 
     if res["marked"]:
         st.subheader("🗙️ Estados de cuenta marcados")

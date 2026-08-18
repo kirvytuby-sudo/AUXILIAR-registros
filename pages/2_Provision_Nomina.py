@@ -579,16 +579,18 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
             for e in errores:
                 st.warning(e)
 
-# ── Descarga ───────────────────────────────────────────────────────────────────
+# ── Descarga y visor ───────────────────────────────────────────────────────────
 if st.session_state.pn_resultado_bytes:
     nombre_dl = st.session_state.get("pn_nombre", "Provision_Nomina.xlsx")
     st.download_button(
-        label="⬇️  Descargar Excel de Provisión",
+        label="⬇️  Descargar Excel de Provisión (original)",
         data=st.session_state.pn_resultado_bytes,
         file_name=nombre_dl,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         type="secondary",
     )
+    import _viewer as _vwr
+    _vwr.show(st.session_state.pn_resultado_bytes, filename=nombre_dl, key="pn_vwr")
 
 st.markdown("---")
 st.caption("Módulo Provisión de Nómina · v2.1")

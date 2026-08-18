@@ -301,39 +301,13 @@ if st.button("🔄 Generar Póliza de Nómina", type="primary",
                     xlsx_bytes = f.read()
 
                 st.download_button(
-                    label="⬇️ Descargar Excel",
+                    label="⬇️ Descargar Excel (original)",
                     data=xlsx_bytes,
                     file_name="PolizaNomina.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
-
-                st.subheader("Vista previa — Póliza IA")
-                try:
-                    import pandas as pd
-                    df = pd.read_excel(
-                        io.BytesIO(xlsx_bytes),
-                        sheet_name=0,
-                        header=2,
-                        nrows=30,
-                        dtype=str,
-                    ).fillna("")
-                    st.dataframe(df, use_container_width=True, height=320)
-                except Exception as _pe:
-                    st.warning(f"Vista previa no disponible: {_pe}")
-
-                st.subheader("Vista previa — Conciliación")
-                try:
-                    import pandas as pd
-                    df2 = pd.read_excel(
-                        io.BytesIO(xlsx_bytes),
-                        sheet_name="Conciliación",
-                        header=0,
-                        nrows=40,
-                        dtype=str,
-                    ).fillna("")
-                    st.dataframe(df2, use_container_width=True, height=250)
-                except Exception as _ce:
-                    st.info(f"Hoja Conciliación: {_ce}")
+                import _viewer as _vwr
+                _vwr.show(xlsx_bytes, filename="PolizaNomina.xlsx", key="pn14_vwr")
 
             except Exception as exc:
                 import traceback

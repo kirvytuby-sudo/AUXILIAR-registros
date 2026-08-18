@@ -491,11 +491,13 @@ if csv_files:
             st.success(f"✅ {len(resultados)} día(s) procesado(s) — {ok_count} OK, {warn_count} con diferencia")
 
             st.download_button(
-                label="⬇ Descargar Excel Reconciliado",
+                label="⬇ Descargar Excel Reconciliado (original)",
                 data=_buf,
                 file_name=_nombre,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
+            import _viewer as _vwr
+            _vwr.show(_buf, filename=_nombre, key="rec_vwr")
 
             if resultados:
                 st.markdown("### 📊 Reporte de Reconciliación")

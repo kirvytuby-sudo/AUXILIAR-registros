@@ -174,13 +174,15 @@ if generar:
             nombre_ec  = (f_estado.name if f_estado else "ec").replace(".xlsx", "")
             nombre_sal = f"DEPOSITOS_FORTEZ_{banco_sel}_{nombre_ec}.xlsx"
             st.download_button(
-                label="💾 Descargar póliza Excel",
+                label="💾 Descargar póliza Excel (original)",
                 data=datos_excel,
                 file_name=nombre_sal,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
                 use_container_width=True,
             )
+            import _viewer as _vwr
+            _vwr.show(datos_excel, filename=nombre_sal, key="fortez_vwr")
 
         except Exception as ex:
             st.error(f"Error al generar: {ex}")

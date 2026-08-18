@@ -278,21 +278,15 @@ st.markdown(f'<div class="reporte-bar">📋 Reporte: {_nombre_rep}</div>', unsaf
 
 _r_bytes = st.session_state.get("pb_resultado_bytes")
 if _r_bytes:
-    _rc1, _rc2 = st.columns([1, 1])
-    with _rc1:
-        st.download_button(
-            "📂 Abrir / Descargar Excel",
-            data=_r_bytes,
-            file_name=_nombre_rep,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True, key="dl_rep",
-        )
-    try:
-        import pandas as pd, io
-        _df_prev = pd.read_excel(io.BytesIO(_r_bytes), nrows=50)
-        st.dataframe(_df_prev, use_container_width=True, height=200)
-    except Exception:
-        st.info("Vista previa no disponible.")
+    st.download_button(
+        "📂 Descargar Excel (original)",
+        data=_r_bytes,
+        file_name=_nombre_rep,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True, key="dl_rep",
+    )
+    import _viewer as _vwr
+    _vwr.show(_r_bytes, filename=_nombre_rep, key="pb_vwr")
 else:
     st.markdown(
         '<div style="text-align:center;padding:30px;color:#94a3b8;">'

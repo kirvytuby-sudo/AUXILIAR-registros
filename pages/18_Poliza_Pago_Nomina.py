@@ -383,7 +383,7 @@ if st.button("🔄 Generar Póliza", type="primary", disabled=not listo):
             )
 
             st.download_button(
-                label="⬇️ Descargar Excel",
+                label="⬇️ Descargar Excel (original)",
                 data=xlsx_bytes,
                 file_name="Poliza_Pago_Nomina.xlsx",
                 mime=(
@@ -391,36 +391,8 @@ if st.button("🔄 Generar Póliza", type="primary", disabled=not listo):
                     "officedocument.spreadsheetml.sheet"
                 ),
             )
-
-            # vista previa — póliza
-            st.subheader("Vista previa — póliza IA")
-            try:
-                import pandas as pd
-                df = pd.read_excel(
-                    io.BytesIO(xlsx_bytes),
-                    sheet_name="poliza IA",
-                    header=2,
-                    nrows=30,
-                    dtype=str,
-                ).fillna("")
-                st.dataframe(df, use_container_width=True, height=300)
-            except Exception as _e:
-                st.warning(f"Vista previa no disponible: {_e}")
-
-            # vista previa — conciliación
-            st.subheader("Vista previa — Conciliacion")
-            try:
-                import pandas as pd
-                df2 = pd.read_excel(
-                    io.BytesIO(xlsx_bytes),
-                    sheet_name="Conciliacion",
-                    header=1,
-                    nrows=40,
-                    dtype=str,
-                ).fillna("")
-                st.dataframe(df2, use_container_width=True, height=250)
-            except Exception as _e2:
-                st.info(f"Hoja Conciliacion: {_e2}")
+            import _viewer as _vwr
+            _vwr.show(xlsx_bytes, filename="Poliza_Pago_Nomina.xlsx", key="ppn_vwr")
 
         except Exception as exc:
             import traceback

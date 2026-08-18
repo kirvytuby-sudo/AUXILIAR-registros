@@ -731,18 +731,14 @@ if generar and excel_file and xml_files:
                     nombre_salida = f"Conciliacion_DespachoVsSAT_{excel_file.name.rsplit('.',1)[0]}.xlsx"
 
                     st.download_button(
-
-                        label="📥  Descargar Excel de Conciliación",
-
+                        label="📥  Descargar Excel de Conciliación (original)",
                         data=excel_out,
-
                         file_name=nombre_salida,
-
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-
                         use_container_width=True,
-
                     )
+                    import _viewer as _vwr
+                    _vwr.show(excel_out, filename=nombre_salida, key="sat_vwr")
 
 
 

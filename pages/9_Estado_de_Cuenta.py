@@ -417,7 +417,7 @@ with col_res:
 
         nombre_out = f"{nombre_base}_estado_de_cuenta.xlsx"
         st.download_button(
-            label="⬇️ Descargar Excel (Movimientos + Conciliación)",
+            label="⬇️ Descargar Excel (original)",
             data=excel_bytes,
             file_name=nombre_out,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -425,6 +425,8 @@ with col_res:
             use_container_width=True,
         )
         st.success(f"✅ Listo — {n} movimientos exportados a **{nombre_out}**")
+        import _viewer as _vwr
+        _vwr.show(excel_bytes, filename=nombre_out, key="ec_vwr")
 
     else:
         st.markdown("""

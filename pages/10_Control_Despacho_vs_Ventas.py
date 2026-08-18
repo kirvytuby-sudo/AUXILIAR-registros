@@ -499,12 +499,14 @@ if generar and desp_file is not None and vd_file is not None:
             st.success(f"✅ Conciliación generada — {len(resumen_dias)} día(s)")
 
             st.download_button(
-                label="💾  Descargar Excel",
+                label="💾  Descargar Excel (original)",
                 data=excel_bytes,
                 file_name=nombre_salida,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
+            import _viewer as _vwr
+            _vwr.show(excel_bytes, filename=nombre_salida, key="cdv_vwr")
 
             # ── Tabla resumen por día ──────────────────────────────────────
             if resumen_dias:

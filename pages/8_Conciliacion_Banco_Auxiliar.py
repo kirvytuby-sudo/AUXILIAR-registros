@@ -825,13 +825,13 @@ with st.expander("⚙️ Parámetros de conciliación", expanded=False):
     st.caption("Ajusta las tolerancias manualmente o usa las sugerencias automáticas abajo.")
     c1, c2, c3 = st.columns(3)
     with c1:
-        p_tol1          = st.slider("Exacto — tolerancia monto ($)",        0.01, 5.0,  0.05, 0.01, key="p_tol1")
+        p_tol1          = st.slider("Exacto — tolerancia monto ($)",        0.01, 5.0,  2.0,  0.01, key="p_tol1")
         p_tol_n         = st.slider("Combo  — tolerancia suma ($)",          0.5,  20.0, 2.0,  0.5,  key="p_toln")
         p_combo_min_pct = st.slider("Combo  — monto mínimo por entrada (%)", 0,    10,   1,    1,    key="p_cminpct",
                                     help="Cada entrada del combo debe ser al menos este % del total del banco. Evita combinar centavos con pagos grandes.")
     with c2:
-        p_dias          = st.slider("Días de tolerancia fecha",              0,    15,   3,    1,    key="p_dias")
-        p_tol_text      = st.slider("Texto  — tolerancia monto ($)",         1.0,  50.0, 5.0,  1.0,  key="p_tolt")
+        p_dias          = st.slider("Días de tolerancia fecha",              0,    15,   15,   1,    key="p_dias")
+        p_tol_text      = st.slider("Texto  — tolerancia monto ($)",         1.0,  50.0, 2.0,  1.0,  key="p_tolt")
         p_combo_sim_min = st.slider("Combo  — similitud mínima descripción", 0,    50,   10,   5,    key="p_csim",
                                     format="%d%%",
                                     help="Al menos una entrada del combo debe parecerse en descripción al banco. 10% es muy permisivo; sube si hay falsos positivos.")

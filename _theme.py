@@ -21,17 +21,29 @@ _BASE_CSS = """
    FONDO Y SUPERFICIE
    ══════════════════════════════════════════════════ */
 [data-testid="stAppViewContainer"] { background: #ECFEFF; }
-[data-testid="stSidebar"]          { background: #06B6D4; }
-[data-testid="stSidebar"] * { color: #CFFAFE !important; }
-[data-testid="stSidebar"] [data-testid="stNavLink"]:hover {
-    background: rgba(255,255,255,.12) !important;
+[data-testid="stSidebar"]          { background: #E0F7FA; }
+[data-testid="stSidebar"] * { color: #0E7490 !important; }
+[data-testid="stSidebar"] [data-testid="stNavLink"] {
     border-radius: 8px !important;
+    font-weight: 500 !important;
+}
+[data-testid="stSidebar"] [data-testid="stNavLink"]:hover {
+    background: rgba(6,182,212,.15) !important;
+    border-radius: 8px !important;
+    color: #0E7490 !important;
 }
 [data-testid="stSidebar"] [data-testid="stNavLink"][aria-current="page"] {
-    background: rgba(255,255,255,.20) !important;
+    background: #0891B2 !important;
     border-radius: 8px !important;
     color: #FFFFFF !important;
     font-weight: 700 !important;
+}
+[data-testid="stSidebar"] [data-testid="stNavLink"][aria-current="page"] * {
+    color: #FFFFFF !important;
+}
+[data-testid="stNavSectionHeader"] p,
+[data-testid="stNavSectionHeader"] span {
+    color: #0891B2 !important;
 }
 
 /* ══════════════════════════════════════════════════
@@ -226,21 +238,21 @@ div[data-testid="stAlert"][data-baseweb="notification"] {
 }
 
 /* ══════════════════════════════════════════════════
-   SIDEBAR — NAV ITEMS
+   SIDEBAR — NAV SECTION HEADERS
    ══════════════════════════════════════════════════ */
 [data-testid="stNavSectionHeader"] {
-    border-top: 1px solid rgba(191,219,254,.30) !important;
+    border-top: 1px solid rgba(8,145,178,.20) !important;
     margin-top: 10px !important;
     padding-top: 8px !important;
 }
 [data-testid="stNavSectionHeader"] p,
 [data-testid="stNavSectionHeader"] span {
     font-size: .64rem !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     text-transform: uppercase !important;
-    letter-spacing: .6px !important;
-    color: #67E8F9 !important;
-    opacity: .90 !important;
+    letter-spacing: .7px !important;
+    color: #0891B2 !important;
+    opacity: 1 !important;
 }
 
 /* ══════════════════════════════════════════════════

@@ -824,7 +824,7 @@ for key in ("cba_resultado_bytes", "cba_resumen", "cba_sugerencias"):
 _PARAM_DEFAULTS = {
     "p_tol1":    2.0,   # tolerancia monto exacto $
     "p_toln":    2.0,   # tolerancia suma combo  $
-    "p_dias":    15,    # días de tolerancia fecha
+    "p_dias":    7,     # días de tolerancia fecha
     "p_tolt":    2.0,   # tolerancia monto texto $
     "p_cminpct": 1,
     "p_csim":    10,
@@ -846,7 +846,7 @@ with st.expander("⚙️ Parámetros de conciliación", expanded=False):
         p_combo_min_pct = st.slider("Combo  — monto mínimo por entrada (%)", 0,    10,   1,    1,    key="p_cminpct",
                                     help="Cada entrada del combo debe ser al menos este % del total del banco. Evita combinar centavos con pagos grandes.")
     with c2:
-        p_dias          = st.slider("Días de tolerancia fecha",              0,    15,   15,   1,    key="p_dias")
+        p_dias          = st.slider("Días de tolerancia fecha",              0,    15,   7,    1,    key="p_dias")
         p_tol_text      = st.slider("Texto  — tolerancia monto ($)",         1.0,  50.0, 2.0,  1.0,  key="p_tolt")
         p_combo_sim_min = st.slider("Combo  — similitud mínima descripción", 0,    50,   10,   5,    key="p_csim",
                                     format="%d%%",

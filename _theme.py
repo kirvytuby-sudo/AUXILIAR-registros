@@ -1,5 +1,14 @@
 """
 _theme.py — Tema compartido para todas las páginas del Auxiliar de Registros.
+
+Paleta unificada:
+  Primary:       #2563EB  (blue-600)
+  Primary dark:  #1D4ED8  (blue-700)  — headers, status bars
+  Primary mid:   #3B82F6  (blue-500)  — elementos secundarios, hover
+  Light border:  #BFDBFE  (blue-200)  — bordes, separadores
+  Pale bg:       #EFF6FF  (blue-50)   — fondos de campos
+  Page bg:       #F0F6FF              — fondo de página
+
 Uso:
     import _theme
     _theme.aplicar_header("💼 Pagos Bancarios", "PDF → Excel consolidado")
@@ -8,169 +17,263 @@ import streamlit as st
 
 _BASE_CSS = """
 <style>
-[data-testid="stAppViewContainer"] { background: #dbeafe; }
+/* ══════════════════════════════════════════════════
+   FONDO Y SUPERFICIE
+   ══════════════════════════════════════════════════ */
+[data-testid="stAppViewContainer"] { background: #EFF6FF; }
+[data-testid="stSidebar"]          { background: #1D4ED8; }
+[data-testid="stSidebar"] * { color: #DBEAFE !important; }
+[data-testid="stSidebar"] [data-testid="stNavLink"]:hover {
+    background: rgba(255,255,255,.12) !important;
+    border-radius: 8px !important;
+}
+[data-testid="stSidebar"] [data-testid="stNavLink"][aria-current="page"] {
+    background: rgba(255,255,255,.20) !important;
+    border-radius: 8px !important;
+    color: #FFFFFF !important;
+    font-weight: 700 !important;
+}
 
 /* ══════════════════════════════════════════════════
    ANIMACIONES GLOBALES
    ══════════════════════════════════════════════════ */
-@keyframes _fi {
-  from { opacity:0; }
-  to   { opacity:1; }
-}
-@keyframes _fiu {
-  from { opacity:0; transform:translateY(14px); }
-  to   { opacity:1; transform:translateY(0); }
-}
-@keyframes _hdr {
-  from { opacity:0; transform:translateY(-10px) scale(.985); }
-  to   { opacity:1; transform:translateY(0)     scale(1); }
-}
-@keyframes _sid {
-  from { opacity:0; transform:translateX(-10px); }
-  to   { opacity:1; transform:translateX(0); }
-}
+@keyframes _fi  { from{opacity:0}                              to{opacity:1} }
+@keyframes _fiu { from{opacity:0;transform:translateY(14px)}  to{opacity:1;transform:translateY(0)} }
+@keyframes _hdr { from{opacity:0;transform:translateY(-8px) scale(.99)} to{opacity:1;transform:translateY(0) scale(1)} }
+@keyframes _sid { from{opacity:0;transform:translateX(-8px)}  to{opacity:1;transform:translateX(0)} }
 
-/* Fade-in general de la página */
-section[data-testid="stMain"] > div:first-child {
-  animation: _fi .4s ease both;
-}
+section[data-testid="stMain"] > div:first-child { animation: _fi .4s ease both; }
+div[data-baseweb="tab-panel"]                    { animation: _fiu .30s ease both; }
+div[data-testid="stAlert"]                       { animation: _sid .32s ease both; }
 
-/* Slide-up al cambiar de tab */
-div[data-baseweb="tab-panel"] {
-  animation: _fiu .32s ease both;
-}
-
-/* Alertas (info, success, warning, error) */
-div[data-testid="stAlert"] {
-  animation: _sid .35s ease both;
-}
-
-/* ── Header de módulo ── */
+/* ══════════════════════════════════════════════════
+   HEADER DE MÓDULO
+   ══════════════════════════════════════════════════ */
 .page-header {
-    background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
-    padding: 18px 28px;
+    background: linear-gradient(135deg, #1D4ED8 0%, #3B82F6 100%);
+    padding: 16px 26px;
     border-radius: 10px;
-    margin-bottom: 20px;
-    animation: _hdr .45s cubic-bezier(.22,.61,.36,1) both;
-    transition: box-shadow .25s;
+    margin-bottom: 18px;
+    box-shadow: 0 4px 16px rgba(29,78,216,.18);
+    animation: _hdr .40s cubic-bezier(.22,.61,.36,1) both;
+    transition: box-shadow .22s;
 }
-.page-header:hover {
-    box-shadow: 0 8px 32px rgba(30,58,138,.35);
+.page-header:hover { box-shadow: 0 8px 28px rgba(29,78,216,.28); }
+.page-header h1 {
+    margin: 0;
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: #FFFFFF;
+    letter-spacing: .2px;
 }
-.page-header h1 { margin: 0; font-size: 1.5rem; font-weight: 700; color: #FBCFE8; letter-spacing: .3px; }
-.page-header p  { margin: 4px 0 0; font-size: .9rem; color: #93C5FD; }
+.page-header p {
+    margin: 4px 0 0;
+    font-size: .88rem;
+    color: #BFDBFE;
+}
 
-/* ── Botones ── */
-button[data-testid="baseButton-primary"],
-button[data-testid="baseButton-secondary"],
-button[data-testid="baseButton-secondaryFormSubmit"] {
-    transition: transform .15s ease, box-shadow .15s ease !important;
+/* ══════════════════════════════════════════════════
+   BOTONES
+   ══════════════════════════════════════════════════ */
+button[data-testid="baseButton-primary"] {
+    background: #2563EB !important;
+    border: none !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+    transition: background .15s, transform .15s, box-shadow .15s !important;
 }
 button[data-testid="baseButton-primary"]:hover {
+    background: #1D4ED8 !important;
     transform: translateY(-2px) !important;
-    box-shadow: 0 4px 14px rgba(30,58,138,.30) !important;
+    box-shadow: 0 4px 14px rgba(29,78,216,.32) !important;
+}
+button[data-testid="baseButton-secondary"],
+button[data-testid="baseButton-secondaryFormSubmit"] {
+    border: 1.5px solid #BFDBFE !important;
+    color: #1D4ED8 !important;
+    background: #EFF6FF !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    transition: background .15s, border-color .15s, transform .15s, box-shadow .15s !important;
 }
 button[data-testid="baseButton-secondary"]:hover,
 button[data-testid="baseButton-secondaryFormSubmit"]:hover {
+    background: #DBEAFE !important;
+    border-color: #3B82F6 !important;
     transform: translateY(-1px) !important;
-    box-shadow: 0 3px 10px rgba(30,58,138,.18) !important;
+    box-shadow: 0 3px 10px rgba(59,130,246,.20) !important;
 }
 
-/* ── Link buttons ── */
-div[data-testid="stLinkButton"] a {
-    transition: transform .18s ease, box-shadow .18s ease !important;
-}
-div[data-testid="stLinkButton"] a:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 4px 14px rgba(30,58,138,.22) !important;
-}
-
-/* ── File uploader ── */
+/* ══════════════════════════════════════════════════
+   FILE UPLOADER
+   ══════════════════════════════════════════════════ */
 section[data-testid="stFileUploadDropzone"] {
-    transition: border-color .22s, background .22s, box-shadow .22s !important;
+    border: 2px dashed #BFDBFE !important;
     border-radius: 10px !important;
+    background: #F8FCFF !important;
+    transition: border-color .20s, background .20s, box-shadow .20s !important;
 }
 section[data-testid="stFileUploadDropzone"]:hover {
-    border-color: #1E3A8A !important;
-    background: rgba(30,58,138,.04) !important;
-    box-shadow: 0 0 0 3px rgba(30,58,138,.12) !important;
+    border-color: #3B82F6 !important;
+    background: #EFF6FF !important;
+    box-shadow: 0 0 0 3px rgba(59,130,246,.12) !important;
 }
 
-/* ── Métricas ── */
+/* ══════════════════════════════════════════════════
+   MÉTRICAS
+   ══════════════════════════════════════════════════ */
 div[data-testid="metric-container"] {
-    transition: transform .2s ease, box-shadow .2s ease !important;
+    background: #FFFFFF;
+    border: 1px solid #BFDBFE;
     border-radius: 10px;
+    padding: 10px 14px !important;
+    transition: transform .18s, box-shadow .18s !important;
 }
 div[data-testid="metric-container"]:hover {
     transform: translateY(-2px) !important;
-    box-shadow: 0 4px 16px rgba(30,58,138,.12) !important;
+    box-shadow: 0 4px 16px rgba(59,130,246,.14) !important;
+}
+div[data-testid="metric-container"] [data-testid="stMetricLabel"] {
+    color: #3B82F6 !important;
+    font-weight: 700 !important;
+    font-size: .80rem !important;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+}
+div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    color: #1D4ED8 !important;
+    font-weight: 800 !important;
 }
 
-/* ── Expanders ── */
+/* ══════════════════════════════════════════════════
+   EXPANDERS
+   ══════════════════════════════════════════════════ */
+details[data-testid="stExpander"] {
+    border: 1px solid #BFDBFE !important;
+    border-radius: 10px !important;
+    background: #FAFCFF !important;
+}
 details[data-testid="stExpander"] > summary {
-    transition: background .18s !important;
-    border-radius: 8px;
+    color: #1D4ED8 !important;
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+    transition: background .16s !important;
 }
 details[data-testid="stExpander"] > summary:hover {
-    background: rgba(30,58,138,.07) !important;
+    background: rgba(59,130,246,.07) !important;
 }
 
-/* ── Tabs ── */
+/* ══════════════════════════════════════════════════
+   TABS
+   ══════════════════════════════════════════════════ */
 button[data-baseweb="tab"] {
     font-weight: 700 !important;
-    font-size: 0.92rem !important;
-    letter-spacing: .2px;
-    padding: 10px 22px !important;
-    transition: color .18s !important;
+    font-size: .90rem !important;
+    letter-spacing: .15px;
+    padding: 10px 20px !important;
+    color: #64748B !important;
+    transition: color .16s !important;
 }
 button[data-baseweb="tab"][aria-selected="true"] {
-    color: #1E3A8A !important;
+    color: #1D4ED8 !important;
 }
 div[data-baseweb="tab-highlight"] {
-    background-color: #1E3A8A !important;
+    background-color: #2563EB !important;
     height: 3px !important;
     border-radius: 3px 3px 0 0 !important;
 }
+div[data-baseweb="tab-border"] {
+    background-color: #BFDBFE !important;
+}
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #F1F5F9; }
-::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+/* ══════════════════════════════════════════════════
+   INPUTS / SELECTBOX / SLIDER
+   ══════════════════════════════════════════════════ */
+div[data-testid="stTextInput"] input,
+div[data-testid="stNumberInput"] input,
+div[data-testid="stSelectbox"] > div > div {
+    border-color: #BFDBFE !important;
+    border-radius: 8px !important;
+    transition: border-color .16s, box-shadow .16s !important;
+}
+div[data-testid="stTextInput"] input:focus,
+div[data-testid="stNumberInput"] input:focus {
+    border-color: #3B82F6 !important;
+    box-shadow: 0 0 0 3px rgba(59,130,246,.15) !important;
+}
+div[data-testid="stSlider"] [data-testid="stThumbValue"],
+div[data-testid="stSlider"] > div > div > div > div {
+    background: #2563EB !important;
+}
 
-#MainMenu { visibility: hidden; }
-footer    { visibility: hidden; }
+/* ══════════════════════════════════════════════════
+   DATAFRAMES Y TABLAS
+   ══════════════════════════════════════════════════ */
+[data-testid="stDataFrame"] { border: 1px solid #BFDBFE !important; border-radius: 8px; }
+[data-testid="stDataEditor"] { border: 1.5px solid #BFDBFE !important; border-radius: 0 0 8px 8px !important; }
+[data-testid="stDataEditor"] td:focus-within {
+    outline: 2px solid #3B82F6 !important;
+    background: #EFF6FF !important;
+}
 
-/* ── Divisores de sección en el sidebar ── */
+/* ══════════════════════════════════════════════════
+   ALERTAS
+   ══════════════════════════════════════════════════ */
+div[data-testid="stAlert"][data-baseweb="notification"] {
+    border-radius: 8px !important;
+    border-left-width: 4px !important;
+}
+
+/* ══════════════════════════════════════════════════
+   SIDEBAR — NAV ITEMS
+   ══════════════════════════════════════════════════ */
 [data-testid="stNavSectionHeader"] {
-    border-top: 1.5px solid rgba(30, 58, 138, 0.30) !important;
+    border-top: 1px solid rgba(191,219,254,.30) !important;
     margin-top: 10px !important;
     padding-top: 8px !important;
 }
 [data-testid="stNavSectionHeader"] p,
 [data-testid="stNavSectionHeader"] span {
-    font-size: 0.65rem !important;
+    font-size: .64rem !important;
     font-weight: 700 !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.6px !important;
-    color: #1E3A8A !important;
-    opacity: 0.85 !important;
+    letter-spacing: .6px !important;
+    color: #93C5FD !important;
+    opacity: .90 !important;
 }
 
-/* ── Sidebar nav items ── */
-[data-testid="stNavLink"] {
-    transition: padding-left .18s ease !important;
+/* ══════════════════════════════════════════════════
+   LINK BUTTONS
+   ══════════════════════════════════════════════════ */
+div[data-testid="stLinkButton"] a {
+    transition: transform .16s, box-shadow .16s !important;
     border-radius: 8px !important;
 }
-[data-testid="stNavLink"]:hover {
-    padding-left: 16px !important;
+div[data-testid="stLinkButton"] a:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 14px rgba(37,99,235,.22) !important;
 }
+
+/* ══════════════════════════════════════════════════
+   SCROLLBAR
+   ══════════════════════════════════════════════════ */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #EFF6FF; }
+::-webkit-scrollbar-thumb { background: #BFDBFE; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #93C5FD; }
+
+/* ══════════════════════════════════════════════════
+   OCULTAR MENÚ / FOOTER
+   ══════════════════════════════════════════════════ */
+#MainMenu { visibility: hidden; }
+footer    { visibility: hidden; }
 </style>
 """
 
 
 def aplicar_header(titulo: str, subtitulo: str = "") -> None:
-    """Renderiza el header estándar azul con fondo #dbeafe."""
+    """Renderiza el header estándar con la paleta unificada."""
     sub = f"<p>{subtitulo}</p>" if subtitulo else ""
     st.markdown(
         f"{_BASE_CSS}<div class='page-header'><h1>{titulo}</h1>{sub}</div>",
@@ -179,5 +282,5 @@ def aplicar_header(titulo: str, subtitulo: str = "") -> None:
 
 
 def solo_css() -> None:
-    """Aplica solo el fondo y oculta menú/footer, sin header (para páginas con diseño propio)."""
+    """Aplica solo el CSS base sin header (para páginas con diseño propio)."""
     st.markdown(_BASE_CSS, unsafe_allow_html=True)

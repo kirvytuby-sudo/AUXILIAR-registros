@@ -17,13 +17,13 @@ _CSS = """
 /* ── Tabs de la cinta ─────────────── */
 .vwr-tabs {
     display: flex;
-    background: #4A6FA5;
+    background: #1D4ED8;
     border-radius: 8px 8px 0 0;
     padding: 0 8px;
     gap: 2px;
 }
 .vwr-tab {
-    color: #DBEAFE;
+    color: #BFDBFE;
     font-size: .75rem;
     font-weight: 700;
     padding: 6px 16px;
@@ -38,7 +38,7 @@ _CSS = """
 }
 /* ── Barra de grupos de herramientas ─ */
 .vwr-bar {
-    background: #F8FAFF;
+    background: #F8FCFF;
     border: 1.5px solid #BFDBFE;
     border-top: none;
     padding: 6px 8px 3px 8px;
@@ -48,7 +48,7 @@ _CSS = """
 }
 .vwr-grp-lbl {
     font-size: .60rem;
-    color: #4A6FA5;
+    color: #2563EB;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: .5px;
@@ -68,46 +68,46 @@ _CSS = """
 .vwr-bar [data-testid="stBaseButton-secondary"] > button,
 .vwr-bar [data-testid="stButton"] > button {
     background: #EFF6FF !important;
-    border: 1.5px solid #93C5FD !important;
+    border: 1.5px solid #BFDBFE !important;
     color: #1D4ED8 !important;
     font-weight: 700 !important;
     border-radius: 6px !important;
-    box-shadow: 0 1px 3px rgba(37,99,235,.15) !important;
+    box-shadow: 0 1px 3px rgba(29,78,216,.12) !important;
     transition: all .15s !important;
 }
 .vwr-bar [data-testid="stBaseButton-secondary"] > button:hover,
 .vwr-bar [data-testid="stButton"] > button:hover {
     background: #DBEAFE !important;
     border-color: #3B82F6 !important;
-    box-shadow: 0 2px 6px rgba(37,99,235,.25) !important;
+    box-shadow: 0 2px 6px rgba(59,130,246,.22) !important;
 }
 /* ── Encabezado de hoja ─────────────── */
 .vwr-hdr {
-    background: linear-gradient(135deg, #4A6FA5 0%, #6B93C9 100%);
+    background: linear-gradient(135deg, #1D4ED8 0%, #3B82F6 100%);
     padding: 6px 14px;
     display: flex;
     align-items: center;
     gap: 10px;
 }
-.vwr-hdr-title { color: #FFF; font-weight: 700; font-size: .90rem; letter-spacing: .2px; }
+.vwr-hdr-title { color: #FFFFFF; font-weight: 700; font-size: .90rem; letter-spacing: .2px; }
 .vwr-badge {
-    background: rgba(255,255,255,.25);
+    background: rgba(255,255,255,.22);
     color: #fff;
     border-radius: 4px;
     padding: 2px 9px;
     font-size: .73rem;
     font-weight: 600;
 }
-.vwr-hint { color: #DBEAFE; font-size: .72rem; margin-left: auto; }
+.vwr-hint { color: #BFDBFE; font-size: .72rem; margin-left: auto; }
 /* ── Barra de estado ────────────────── */
 .vwr-status {
-    background: #4A6FA5;
+    background: #1D4ED8;
     border-radius: 0 0 6px 6px;
     padding: 4px 14px;
     display: flex;
     gap: 18px;
     font-size: .70rem;
-    color: #DBEAFE;
+    color: #BFDBFE;
     font-weight: 500;
 }
 /* ── Celda activa ───────────────────── */

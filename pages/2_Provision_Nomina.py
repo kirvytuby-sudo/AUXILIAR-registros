@@ -186,7 +186,20 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                             if 'PRESTAMO' in c and v:
                                 otro_prest += v
 
-                    es_asimilado = 'ASIMILABLES A SALARIOS' in perc
+                    # Detectar asimilados a salarios:
+                    #  1° prioridad: concepto contiene "ASIMILAD" (texto libre en el XML)
+                    #  2° fallback: TipoPercepcion SAT para asimilados (022-028)
+                    #  033=AYUDA RENTA, 034=ÚTILES, 035=HORAS EXTRA, 036=TRANSPORTE
+                    #  → NO son asimilados; solo 022-028 corresponden a asimilados a salarios
+                    _TIPOS_ASIM = {'022', '023', '024', '025', '026', '027', '028'}
+                    es_asimilado = (
+                        any('ASIMILAD' in c for c in perc) or
+                        any(
+                            _el.tag.split('}')[-1] == 'Percepcion' and
+                            _el.get('TipoPercepcion', '') in _TIPOS_ASIM
+                            for _el in root.iter()
+                        )
+                    )
 
                     filas.append({
                         'fecha':      fecha,
@@ -216,6 +229,20 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
             perc_map = {nombre: cta for cta, nombre in perc_cat}
             ded_map  = {nombre: cta for cta, nombre in ded_cat}
 
+            # Buscar cuentas ISR por tipo en CUENTAS (sin depender del texto exacto)
+            _isr_sueldos_cta = ''
+            _isr_asim_cta    = ''
+            for _cta, _nom in ded_cat:
+                if 'ISR' in _nom:
+                    if 'ASIMILAD' in _nom:
+                        _isr_asim_cta = _cta
+                    else:
+                        _isr_sueldos_cta = _cta
+            if _isr_sueldos_cta:
+                logs.append(f"  ISR Sueldos → {_isr_sueldos_cta}")
+            if _isr_asim_cta:
+                logs.append(f"  ISR Asimilados → {_isr_asim_cta}")
+
             # ── Recolectar conceptos únicos de percepciones en los XMLs ───────
             perc_vistos = []
             for f in filas:
@@ -237,26 +264,36 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
             col_tot2 += len(perc_vistos)
 
             # ── Recolectar conceptos únicos de deducciones en los XMLs ────────
+            # ISR se separa en dos columnas: 'ISR SUELDOS' y 'ISR ASIMILADOS'
             ded_vistos = []
             for f in filas:
                 for c_name in f['ded']:
                     if 'PRESTAMO' in c_name:
                         continue
-                    col_key = c_name
-                    if f.get('asimilado') and c_name == 'ISR':
-                        col_key = 'ISR ASIMILADOS'
+                    if c_name == 'ISR':
+                        col_key = 'ISR ASIMILADOS' if f.get('asimilado') else 'ISR SUELDOS'
+                    else:
+                        col_key = c_name
                     if col_key not in ded_vistos:
                         ded_vistos.append(col_key)
 
             # ── Insertar columnas de deducciones (solo las que aparecen en XMLs)
+            _ISR_DISPLAY = {
+                'ISR SUELDOS':    ('ISR SUELDOS Y SALARIOS',    _isr_sueldos_cta),
+                'ISR ASIMILADOS': ('ISR ASIMILADOS A SALARIO',  _isr_asim_cta),
+            }
             ded_cols = {}
             for i, c_name in enumerate(ded_vistos):
                 col_ins = col_tot1 + 1 + i
                 ws.insert_cols(col_ins)
-                cta = ded_map.get(c_name, '')
+                if c_name in _ISR_DISPLAY:
+                    display, cta = _ISR_DISPLAY[c_name]
+                else:
+                    display = c_name
+                    cta = ded_map.get(c_name, '')
                 if cta:
                     ws.cell(2, col_ins, value=cta)
-                ws.cell(3, col_ins, value=c_name)
+                ws.cell(3, col_ins, value=display)
                 ded_cols[c_name] = col_ins
             col_tot2 += len(ded_vistos)
 
@@ -390,9 +427,10 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                     if 'PRESTAMO' in c_name:
                         _prest_acum += c_val
                         continue
-                    col_key = c_name
-                    if fila.get('asimilado') and c_name == 'ISR':
-                        col_key = 'ISR ASIMILADOS'
+                    if c_name == 'ISR':
+                        col_key = 'ISR ASIMILADOS' if fila.get('asimilado') else 'ISR SUELDOS'
+                    else:
+                        col_key = c_name
                     _c = ded_cols.get(col_key)
                     if _c and c_val:
                         ws.cell(nf, _c, value=c_val).number_format = '#,##0.00'

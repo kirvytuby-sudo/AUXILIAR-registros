@@ -117,6 +117,28 @@ _CSS = """
 }
 [data-testid="stDataEditor"] { border: 1.5px solid #BFDBFE !important; border-top: none !important; }
 </style>
+<script>
+(function traducir() {
+    const MAP = {
+        "Fullscreen":    "Pantalla completa",
+        "Exit fullscreen": "Salir de pantalla completa",
+        "Download":      "Descargar",
+        "Search":        "Buscar",
+        "Zoom in":       "Acercar",
+        "Zoom out":      "Alejar",
+    };
+    function parchear() {
+        document.querySelectorAll('[title], [aria-label]').forEach(el => {
+            const t = el.getAttribute('title');
+            const a = el.getAttribute('aria-label');
+            if (t && MAP[t])  el.setAttribute('title', MAP[t]);
+            if (a && MAP[a])  el.setAttribute('aria-label', MAP[a]);
+        });
+    }
+    parchear();
+    new MutationObserver(parchear).observe(document.body, { subtree: true, childList: true, attributes: true });
+})();
+</script>
 """
 
 
@@ -124,7 +146,7 @@ def show(
     file_bytes: bytes,
     filename: str = "reporte.xlsx",
     key: str = "vwr",
-    height: int = 430,
+    height: int = 620,
     show_download: bool = True,
 ) -> bytes:
     """

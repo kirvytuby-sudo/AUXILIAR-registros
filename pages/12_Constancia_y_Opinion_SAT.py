@@ -52,8 +52,24 @@ def _get_secret(clave, default=None):
 
 
 # ─── Supabase helpers ─────────────────────────────────────────────────────────
+def _sb_url() -> str:
+    """Devuelve el URL de Supabase o cadena vacía si no está configurado."""
+    try:
+        return st.secrets["supabase"]["url"] or ""
+    except Exception:
+        return ""
+
+
+def _sb_configurado() -> bool:
+    """True solo si todos los secrets de Supabase están presentes y el URL parece válido."""
+    url = _sb_url()
+    return bool(url and url.startswith("https://") and ".supabase." in url)
+
+
 @st.cache_resource(ttl=60)
 def _sb_client():
+    if not _sb_configurado():
+        return None
     try:
         from supabase import create_client
         return create_client(
@@ -75,6 +91,8 @@ def _sb_fernet():
 @st.cache_data(ttl=30)
 def _sb_load_empresas():
     """Carga todas las empresas de Supabase y las devuelve como dict."""
+    if not _sb_configurado():
+        return {}
     sb = _sb_client()
     f  = _sb_fernet()
     if not sb or not f:
@@ -103,10 +121,17 @@ def _sb_load_empresas():
 
 
 def _sb_save_empresa(rfc, nombre, cer_bytes, key_bytes, pwd, vigencia, tipo):
+    if not _sb_configurado():
+        st.error(
+            "⚙️ **Supabase no está configurado correctamente.** "
+            "Verifica que en Secrets exista `[supabase]` con `url`, `key` y `enc_key`. "
+            f"URL actual: `{_sb_url() or '(vacío)'}`"
+        )
+        return False
     sb = _sb_client()
     f  = _sb_fernet()
     if not sb or not f:
-        st.error("Supabase no está configurado en Secrets.")
+        st.error("No se pudo crear el cliente de Supabase. Revisa `url` y `key` en Secrets.")
         return False
     try:
         _pwd_b = pwd.encode() if isinstance(pwd, str) else (pwd or b"")
@@ -121,7 +146,23 @@ def _sb_save_empresa(rfc, nombre, cer_bytes, key_bytes, pwd, vigencia, tipo):
         }).execute()
         return True
     except Exception as _e:
-        st.error(f"Error guardando en Supabase: {_e}")
+        _msg = str(_e)
+        if "Name or service not known" in _msg or "getaddrinfo" in _msg or "Errno -2" in _msg:
+            st.error(
+                "🌐 **No se puede conectar a Supabase** — fallo de DNS. "
+                "El URL configurado en Secrets no existe o es incorrecto. "
+                f"URL actual: `{_sb_url()}` — "
+                "Verifica en **Supabase → Project Settings → API → Project URL**."
+            )
+        elif "invalid_api_key" in _msg or "401" in _msg:
+            st.error("🔑 **API key de Supabase inválida.** Copia la `anon public key` "
+                     "desde Supabase → Project Settings → API.")
+        elif "relation" in _msg and "does not exist" in _msg:
+            st.error("🗄️ **La tabla `empresas` no existe en Supabase.** "
+                     "Créala con: `rfc text, nombre text, cer_enc text, key_enc text, "
+                     "pwd_enc text, vigencia text, tipo text` (rfc como primary key).")
+        else:
+            st.error(f"❌ Error guardando en Supabase: {_e}")
         return False
 
 
@@ -139,7 +180,22 @@ def _sb_delete_empresa(rfc):
         return False
 
 
-_USE_SUPABASE = bool(_sb_client() and _sb_fernet())
+@st.cache_resource(ttl=300)
+def _sb_reachable() -> bool:
+    """Prueba resolución DNS del host de Supabase. Cachea 5 min para no bloquear en cada rerun."""
+    if not _sb_configurado():
+        return False
+    try:
+        import socket
+        from urllib.parse import urlparse
+        host = urlparse(_sb_url()).hostname or ""
+        socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+        return True
+    except Exception:
+        return False
+
+
+_USE_SUPABASE = bool(_sb_reachable() and _sb_fernet())
 
 def _correo_actual():
     """Correo del usuario que inició sesión en la app (si la app es privada)."""

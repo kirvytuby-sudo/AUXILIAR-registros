@@ -187,13 +187,15 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                                 otro_prest += v
 
                     # Detectar asimilados a salarios:
-                    #  1° prioridad: concepto contiene "ASIMILAD" (texto libre en el XML)
+                    #  1° prioridad: concepto contiene "ASIMIL" — cubre tanto
+                    #    "ASIMILADOS A SALARIOS" como "ASIMILABLES A SALARIOS"
+                    #    ('ASIMILAD' ≠ 'ASIMILABL' → error previo corregido aquí)
                     #  2° fallback: TipoPercepcion SAT para asimilados (022-028)
                     #  033=AYUDA RENTA, 034=ÚTILES, 035=HORAS EXTRA, 036=TRANSPORTE
                     #  → NO son asimilados; solo 022-028 corresponden a asimilados a salarios
                     _TIPOS_ASIM = {'022', '023', '024', '025', '026', '027', '028'}
                     es_asimilado = (
-                        any('ASIMILAD' in c for c in perc) or
+                        any('ASIMIL' in c for c in perc) or
                         any(
                             _el.tag.split('}')[-1] == 'Percepcion' and
                             _el.get('TipoPercepcion', '') in _TIPOS_ASIM

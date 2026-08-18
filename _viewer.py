@@ -17,13 +17,13 @@ _CSS = """
 /* ── Tabs de la cinta ─────────────── */
 .vwr-tabs {
     display: flex;
-    background: #1D4ED8;
+    background: #0E7490;
     border-radius: 8px 8px 0 0;
     padding: 0 8px;
     gap: 2px;
 }
 .vwr-tab {
-    color: #BFDBFE;
+    color: #A5F3FC;
     font-size: .75rem;
     font-weight: 700;
     padding: 6px 16px;
@@ -34,12 +34,12 @@ _CSS = """
 }
 .vwr-tab.active {
     background: #FFFFFF;
-    color: #2563EB;
+    color: #0891B2;
 }
 /* ── Barra de grupos de herramientas ─ */
 .vwr-bar {
     background: #F8FCFF;
-    border: 1.5px solid #BFDBFE;
+    border: 1.5px solid #A5F3FC;
     border-top: none;
     padding: 6px 8px 3px 8px;
     display: flex;
@@ -48,28 +48,28 @@ _CSS = """
 }
 .vwr-grp-lbl {
     font-size: .60rem;
-    color: #2563EB;
+    color: #0891B2;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: .5px;
     text-align: center;
     padding: 3px 4px 0;
-    border-top: 2px solid #BFDBFE;
+    border-top: 2px solid #A5F3FC;
     margin-top: 5px;
     width: 100%;
 }
 .vwr-sep {
     width: 1px;
-    background: #BFDBFE;
+    background: #A5F3FC;
     align-self: stretch;
     margin: 3px 8px;
 }
 /* ── Botones Streamlit en la cinta ── */
 .vwr-bar [data-testid="stBaseButton-secondary"] > button,
 .vwr-bar [data-testid="stButton"] > button {
-    background: #EFF6FF !important;
-    border: 1.5px solid #BFDBFE !important;
-    color: #1D4ED8 !important;
+    background: #ECFEFF !important;
+    border: 1.5px solid #A5F3FC !important;
+    color: #0E7490 !important;
     font-weight: 700 !important;
     border-radius: 6px !important;
     box-shadow: 0 1px 3px rgba(29,78,216,.12) !important;
@@ -77,13 +77,13 @@ _CSS = """
 }
 .vwr-bar [data-testid="stBaseButton-secondary"] > button:hover,
 .vwr-bar [data-testid="stButton"] > button:hover {
-    background: #DBEAFE !important;
-    border-color: #3B82F6 !important;
+    background: #CFFAFE !important;
+    border-color: #06B6D4 !important;
     box-shadow: 0 2px 6px rgba(59,130,246,.22) !important;
 }
 /* ── Encabezado de hoja ─────────────── */
 .vwr-hdr {
-    background: linear-gradient(135deg, #1D4ED8 0%, #3B82F6 100%);
+    background: linear-gradient(135deg, #0E7490 0%, #06B6D4 100%);
     padding: 6px 14px;
     display: flex;
     align-items: center;
@@ -98,24 +98,24 @@ _CSS = """
     font-size: .73rem;
     font-weight: 600;
 }
-.vwr-hint { color: #BFDBFE; font-size: .72rem; margin-left: auto; }
+.vwr-hint { color: #A5F3FC; font-size: .72rem; margin-left: auto; }
 /* ── Barra de estado ────────────────── */
 .vwr-status {
-    background: #1D4ED8;
+    background: #0E7490;
     border-radius: 0 0 6px 6px;
     padding: 4px 14px;
     display: flex;
     gap: 18px;
     font-size: .70rem;
-    color: #BFDBFE;
+    color: #A5F3FC;
     font-weight: 500;
 }
 /* ── Celda activa ───────────────────── */
 [data-testid="stDataEditor"] td:focus-within {
-    outline: 2px solid #3B82F6 !important;
-    background: #EFF6FF !important;
+    outline: 2px solid #06B6D4 !important;
+    background: #ECFEFF !important;
 }
-[data-testid="stDataEditor"] { border: 1.5px solid #BFDBFE !important; border-top: none !important; }
+[data-testid="stDataEditor"] { border: 1.5px solid #A5F3FC !important; border-top: none !important; }
 </style>
 <script>
 (function traducir() {

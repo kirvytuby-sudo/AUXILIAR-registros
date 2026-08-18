@@ -21,7 +21,7 @@ _BASE_CSS = """
    FONDO Y SUPERFICIE
    ══════════════════════════════════════════════════ */
 [data-testid="stAppViewContainer"] { background: #ECFEFF; }
-[data-testid="stSidebar"]          { background: #0E7490; }
+[data-testid="stSidebar"]          { background: #06B6D4; }
 [data-testid="stSidebar"] * { color: #CFFAFE !important; }
 [data-testid="stSidebar"] [data-testid="stNavLink"]:hover {
     background: rgba(255,255,255,.12) !important;

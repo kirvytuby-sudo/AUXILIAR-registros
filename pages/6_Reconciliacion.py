@@ -497,7 +497,7 @@ if csv_files:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
             import _viewer as _vwr
-            _vwr.show(_buf, filename=_nombre, key="rec_vwr")
+            _vwr.show(_buf.getvalue(), filename=_nombre, key="rec_vwr")
 
             if resultados:
                 st.markdown("### 📊 Reporte de Reconciliación")

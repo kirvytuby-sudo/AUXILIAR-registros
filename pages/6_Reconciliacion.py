@@ -1,6 +1,6 @@
 """AUXILIAR DE REGISTROS — Reconciliación CSV → Excel (SINUBE)"""
 import streamlit as st
-import io, csv as _csv_mod, re as _re, unicodedata as _ud
+import io, csv as _csv_mod, re as _re, unicodedata as _ud, zipfile
 from datetime import datetime
 
 st.set_page_config(page_title="Reconciliación · Auxiliar", page_icon="📑", layout="wide")
@@ -449,6 +449,9 @@ def procesar_reconciliacion(plantilla_bytes, csv_dict):
 
 
 # ─── UI ────────────────────────────────────────────────────────────────────────
+if "csv_key" not in st.session_state:
+    st.session_state.csv_key = 0
+
 col1, col2 = st.columns([1, 2])
 with col1:
     plantilla_file = st.file_uploader(
@@ -457,17 +460,46 @@ with col1:
         help="Plantilla SINUBE con hojas POLIZA y CUENTAS. Sin plantilla se genera estructura automática."
     )
 with col2:
-    csv_files = st.file_uploader(
-        "📂 CSV(s) de ventas",
-        type=["csv"],
+    _col_lbl, _col_btn = st.columns([5, 1])
+    with _col_lbl:
+        st.markdown("**📂 CSV(s) de ventas** &nbsp; <span style='font-size:.8rem;color:#0E7490'>— también acepta .zip con carpetas</span>", unsafe_allow_html=True)
+    with _col_btn:
+        if st.button("🗑 Limpiar", key="btn_limpiar_csv", help="Quitar todos los CSV cargados"):
+            st.session_state.csv_key += 1
+            st.rerun()
+    csv_files_raw = st.file_uploader(
+        "CSV(s) o ZIP(s)",
+        type=["csv", "zip"],
         accept_multiple_files=True,
-        help="Uno o más archivos CSV exportados del sistema de islas."
+        label_visibility="collapsed",
+        key=f"csv_uploader_{st.session_state.csv_key}",
+        help="CSV individuales o un ZIP con carpetas de CSV."
     )
+
+# Extraer CSVs de ZIPs y mezclar con los directos
+def _extraer_csvs(archivos):
+    resultado = {}
+    for f in (archivos or []):
+        if f.name.lower().endswith(".zip"):
+            try:
+                with zipfile.ZipFile(io.BytesIO(f.read())) as zf:
+                    for nombre in zf.namelist():
+                        if nombre.lower().endswith(".csv") and not nombre.startswith("__MACOSX"):
+                            base = nombre.rsplit("/", 1)[-1]  # solo el nombre de archivo
+                            resultado[base] = zf.read(nombre)
+            except Exception as _ze:
+                st.warning(f"No se pudo leer ZIP {f.name}: {_ze}")
+        else:
+            resultado[f.name] = f.read()
+    return resultado
+
+csv_files = csv_files_raw or []
 
 st.markdown("---")
 
 if csv_files:
-    n_csv = len(csv_files)
+    csv_dict_pre = _extraer_csvs(csv_files)
+    n_csv = len(csv_dict_pre)
     plantilla_nombre = plantilla_file.name if plantilla_file else "Sin plantilla (modo automático)"
     col_a, col_b = st.columns([3, 1])
     with col_a:
@@ -477,7 +509,7 @@ if csv_files:
 
     if generar:
         plantilla_bytes = plantilla_file.read() if plantilla_file else None
-        csv_dict = {f.name: f.read() for f in csv_files}
+        csv_dict = csv_dict_pre
 
         with st.spinner("Procesando reconciliación..."):
             try:

@@ -462,38 +462,68 @@ with col1:
 with col2:
     _col_lbl, _col_btn = st.columns([5, 1])
     with _col_lbl:
-        st.markdown("**📂 CSV(s) de ventas** &nbsp; <span style='font-size:.8rem;color:#0E7490'>— también acepta .zip con carpetas</span>", unsafe_allow_html=True)
+        st.markdown("**📂 CSV(s) de ventas**", unsafe_allow_html=True)
     with _col_btn:
         if st.button("🗑 Limpiar", key="btn_limpiar_csv", help="Quitar todos los CSV cargados"):
             st.session_state.csv_key += 1
             st.rerun()
-    csv_files_raw = st.file_uploader(
-        "CSV(s) o ZIP(s)",
-        type=["csv", "zip"],
-        accept_multiple_files=True,
-        label_visibility="collapsed",
-        key=f"csv_uploader_{st.session_state.csv_key}",
-        help="CSV individuales o un ZIP con carpetas de CSV."
-    )
+    _tab_arch, _tab_carp = st.tabs(["📄 Archivos / ZIP", "📁 Carpeta"])
+    with _tab_arch:
+        csv_files_arch = st.file_uploader(
+            "CSV individuales o ZIP",
+            type=["csv", "zip"],
+            accept_multiple_files=True,
+            label_visibility="collapsed",
+            key=f"csv_uploader_arch_{st.session_state.csv_key}",
+        )
+    with _tab_carp:
+        st.caption("Selecciona la carpeta — se leerán todos los CSV dentro, incluyendo subcarpetas.")
+        csv_files_carp = st.file_uploader(
+            "Carpeta de CSV",
+            type=None,
+            accept_multiple_files=True,
+            label_visibility="collapsed",
+            key=f"csv_uploader_carp_{st.session_state.csv_key}",
+        )
 
-# Extraer CSVs de ZIPs y mezclar con los directos
+# Inyectar webkitdirectory al uploader de carpeta (segundo input[multiple] del DOM)
+st.markdown("""
+<script>
+(function(){
+  function patch(){
+    var ms = document.querySelectorAll('input[type="file"][multiple]');
+    if(ms.length>=2 && !ms[1].hasAttribute('webkitdirectory')){
+      ms[1].setAttribute('webkitdirectory','');
+    }
+  }
+  patch();
+  new MutationObserver(patch).observe(document.body,{subtree:true,childList:true});
+})();
+</script>""", unsafe_allow_html=True)
+
+# Extraer CSVs de ZIPs y carpetas
 def _extraer_csvs(archivos):
     resultado = {}
     for f in (archivos or []):
+        raw = f.read()
         if f.name.lower().endswith(".zip"):
             try:
-                with zipfile.ZipFile(io.BytesIO(f.read())) as zf:
+                with zipfile.ZipFile(io.BytesIO(raw)) as zf:
                     for nombre in zf.namelist():
                         if nombre.lower().endswith(".csv") and not nombre.startswith("__MACOSX"):
-                            base = nombre.rsplit("/", 1)[-1]  # solo el nombre de archivo
+                            base = nombre.rsplit("/", 1)[-1]
                             resultado[base] = zf.read(nombre)
             except Exception as _ze:
                 st.warning(f"No se pudo leer ZIP {f.name}: {_ze}")
-        else:
-            resultado[f.name] = f.read()
+        elif f.name.lower().endswith(".csv"):
+            resultado[f.name] = raw
+        # archivos de carpeta sin extensión .csv se ignoran
     return resultado
 
-csv_files = csv_files_raw or []
+_all_uploads = list(csv_files_arch or []) + [
+    f for f in (csv_files_carp or []) if f.name.lower().endswith(".csv")
+]
+csv_files = _all_uploads
 
 st.markdown("---")
 

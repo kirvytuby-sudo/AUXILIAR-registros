@@ -324,7 +324,19 @@ def procesar_reconciliacion(plantilla_bytes, csv_dict):
     resultados = []
     data_row = next_empty
 
-    for csv_name, csv_bytes in sorted(csv_dict.items()):
+    # Pre-ordenar CSVs por fecha interna (DD/MM/YYYY) para salida cronológica
+    def _fecha_csv(nb):
+        try:
+            for _r in _csv_mod.reader(io.StringIO(nb[1].decode("latin-1"))):
+                if not _r: continue
+                _m = _re.search(r"(\d{2}/\d{2}/\d{4})", _r[0])
+                if _m:
+                    _d, _mo, _y = _m.group(1).split("/")
+                    return datetime(int(_y), int(_mo), int(_d))
+        except: pass
+        return datetime.max
+
+    for csv_name, csv_bytes in sorted(csv_dict.items(), key=_fecha_csv):
         csv_vals = {}; ing_vals = {}; vta_vals = {}
         fecha_str = None; _seccion = None
         try:

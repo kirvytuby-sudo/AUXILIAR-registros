@@ -202,6 +202,29 @@ def _leer_despachos(file_bytes, filename, logs):
                 "El archivo está en formato antiguo .xls y la librería 'xlrd' no está instalada.\n"
                 "Solución: Abre el archivo en Excel y guárdalo como .xlsx."
             )
+        except Exception as _xlrd_err:
+            # El .xls es en realidad un CSV/TSV con extensión renombrada (ej. exportación de sistema)
+            logs.append(f"  ⚠ xlrd no pudo leer el .xls ({_xlrd_err}); intentando como CSV/TSV...")
+            import csv as _csv
+            for enc in ("latin-1", "utf-8-sig", "utf-8"):
+                try:
+                    text = file_bytes.decode(enc)
+                    break
+                except Exception:
+                    text = None
+            if text is None:
+                raise RuntimeError("No se pudo decodificar el archivo .xls como texto CSV/TSV.")
+            # Detectar delimitador: si hay más tabuladores que comas en la primera línea, usar TSV
+            first_line = text.split("\n", 1)[0]
+            delim = "\t" if first_line.count("\t") >= first_line.count(",") else ","
+            reader = _csv.reader(text.splitlines(), delimiter=delim)
+            all_rows = [tuple(r) for r in reader if any(c.strip() for c in r)]
+            if len(all_rows) < 2:
+                raise RuntimeError("El archivo CSV/TSV no tiene suficientes filas.")
+            col_map = _detectar_columnas(all_rows[0], logs)
+            data = all_rows[1:]
+            logs.append(f"  {len(data):,} registros leídos (.xls como CSV/TSV, delim={repr(delim)}).")
+            return data, col_map
     else:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
         all_rows = list(wb.active.iter_rows(values_only=True))

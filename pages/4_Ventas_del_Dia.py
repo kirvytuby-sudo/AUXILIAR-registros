@@ -347,11 +347,11 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     N_CLI     = len(_clientes_tpl)
     N_PROD    = len(_prods)
     OFF       = N_META            # 8  → inicio clientes
-    COL_ADJ   = OFF + N_CLI       # columna ajuste 101-01-0002 (antes de TOTAL B2)
-    COL_TOT1  = OFF + N_CLI + 1   # TOTAL B2 clientes
-    COL_PROD0 = OFF + N_CLI + 2   # inicio productos
-    COL_TOT2  = OFF + N_CLI + 2 + N_PROD  # TOTAL B2 productos
-    COL_CONC  = OFF + N_CLI + 2 + N_PROD + 1  # CONCILIACION
+    COL_TOT1  = OFF + N_CLI       # TOTAL B2 clientes (solo clientes)
+    COL_PROD0 = OFF + N_CLI + 1   # inicio productos
+    COL_ADJ   = OFF + N_CLI + 1 + N_PROD   # ajuste 101-01-0002 (lado abonos)
+    COL_TOT2  = OFF + N_CLI + 1 + N_PROD + 1  # TOTAL B2 productos (incluye ajuste)
+    COL_CONC  = OFF + N_CLI + 1 + N_PROD + 2  # CONCILIACION
     TOTAL_COLS = COL_CONC + 1
 
     # ── Generar Excel con xlsxwriter ───────────────────────────────────────
@@ -412,19 +412,19 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     # ── Fila 1: número de cuenta (solo cuentas contables, sin numeración) ─
     for i, acct in enumerate(_cuentas_tpl): ws.write(1, OFF + i, acct, f_acct)
-    ws.write(1, COL_ADJ,  _CTA_ADJ, f_acct)
     for i, acct in enumerate(_ctas_prod): ws.write(1, COL_PROD0 + i, acct, f_acct)
+    ws.write(1, COL_ADJ, _CTA_ADJ, f_acct)
 
     # ── Fila 2: encabezados ────────────────────────────────────────────────
     for i, h in enumerate(META_HDRS):
         ws.write(2, i, h, f_hdr_m)
     for i, nom in enumerate(NOMBRES_TPL):
         ws.write(2, OFF + i, nom, f_hdr_c)
-    ws.write(2, COL_ADJ,  _NOM_ADJ,      f_hdr_adj)
-    ws.write(2, COL_TOT1, "TOTAL B2",    f_hdr_tot)
+    ws.write(2, COL_TOT1, "TOTAL B2",     f_hdr_tot)
     for i, nom in enumerate(NOMS_PROD):
         ws.write(2, COL_PROD0 + i, nom, f_hdr_p)
-    ws.write(2, COL_TOT2, "TOTAL B2",    f_hdr_tot)
+    ws.write(2, COL_ADJ,  _NOM_ADJ,       f_hdr_adj)
+    ws.write(2, COL_TOT2, "TOTAL B2",     f_hdr_tot)
     ws.write(2, COL_CONC, "CONCILIACION", f_hdr_con)
 
     # ── Anchos de columna ──────────────────────────────────────────────────
@@ -434,7 +434,6 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.set_column(c, c, 20)
     for i in range(N_CLI):
         ws.set_column(OFF + i, OFF + i, 14)
-    ws.set_column(COL_ADJ,  COL_ADJ,  14)
     ws.set_column(COL_TOT1, COL_TOT1, 13)
     for i in range(N_PROD):
         ws.set_column(COL_PROD0 + i, COL_PROD0 + i, 13)
@@ -444,11 +443,11 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     # ── Letras de columna para fórmulas ───────────────────────────────────
     _L_cli_s  = _xcn(OFF)           # primera col clientes
-    _L_adj    = _xcn(COL_ADJ)       # col ajuste
+    _L_cli_e  = _xcn(OFF + N_CLI - 1)  # última col clientes
     _L_tot1   = _xcn(COL_TOT1)      # TOTAL B2 clientes
     _L_prod_s = _xcn(COL_PROD0)     # primera col productos
-    _L_prod_e = _xcn(COL_PROD0 + N_PROD - 1)  # última col productos
-    _L_tot2   = _xcn(COL_TOT2)      # TOTAL B2 productos
+    _L_adj    = _xcn(COL_ADJ)       # col ajuste (lado abonos)
+    _L_tot2   = _xcn(COL_TOT2)      # TOTAL B2 productos (incluye ajuste)
     _L_conc   = _xcn(COL_CONC)      # CONCILIACION
 
     # ── Filas de datos ─────────────────────────────────────────────────────
@@ -502,30 +501,31 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ]
         total_prod = round(sum(prod_vals), 2)
 
-        # Columna ajuste 101-01-0002: absorbe la diferencia
-        adj = round(total_prod - total_b2, 2)
-        ws.write(row, COL_ADJ, adj if adj else None, fa)
-        gran_adj += adj
-
-        # TOTAL B2 clientes — fórmula SUM(clientes..ajuste)
         er = row + 1  # fila Excel (1-indexed)
+
+        # TOTAL B2 clientes — fórmula SUM(solo clientes)
         ws.write_formula(row, COL_TOT1,
-            f"=SUM({_L_cli_s}{er}:{_L_adj}{er})", ft, round(total_b2 + adj, 2))
-        gran_tot1 += total_prod
+            f"=SUM({_L_cli_s}{er}:{_L_cli_e}{er})", ft, round(total_b2, 2))
+        gran_tot1 += total_b2
 
         for i, v in enumerate(prod_vals):
             ws.write(row, COL_PROD0 + i, round(v, 2) if v else None, fn)
             gran_prod[i] += v
 
-        # TOTAL B2 productos — fórmula SUM(productos)
-        ws.write_formula(row, COL_TOT2,
-            f"=SUM({_L_prod_s}{er}:{_L_prod_e}{er})", ft, total_prod)
-        gran_tot2 += total_prod
+        # Ajuste 101-01-0002 en lado abonos: TOTAL_CLI - SUM(productos)
+        adj = round(total_b2 - total_prod, 2)
+        ws.write(row, COL_ADJ, adj if adj else None, fa)
+        gran_adj += adj
 
-        # CONCILIACION — fórmula TOTAL B2 cli - TOTAL B2 prod
+        # TOTAL B2 productos — fórmula SUM(productos + ajuste) = TOTAL B2 cli
+        ws.write_formula(row, COL_TOT2,
+            f"=SUM({_L_prod_s}{er}:{_L_adj}{er})", ft, round(total_prod + adj, 2))
+        gran_tot2 += total_b2  # = total_prod + adj
+
+        # CONCILIACION — fórmula TOTAL B2 cli - TOTAL B2 prod = 0
         ws.write_formula(row, COL_CONC,
             f"={_L_tot1}{er}-{_L_tot2}{er}", fc, 0)
-        gran_conc += round(total_b2 + adj - total_prod, 2)
+        gran_conc += 0
 
     # ── Fila totales generales ─────────────────────────────────────────────
     tr  = len(fechas) + 3          # 0-indexed xlsxwriter
@@ -536,11 +536,12 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.write(tr, OFF + i, round(gran_cli[i], 2), f_grand)
     ws.write(tr, COL_ADJ,  round(gran_adj,  2), f_grand_adj)
     ws.write_formula(tr, COL_TOT1,
-        f"=SUM({_L_cli_s}{tr1}:{_L_adj}{tr2})", f_grand, round(gran_tot1, 2))
+        f"=SUM({_L_cli_s}{tr1}:{_L_cli_e}{tr2})", f_grand, round(gran_tot1, 2))
     for i in range(N_PROD):
         ws.write(tr, COL_PROD0 + i, round(gran_prod[i], 2), f_grand)
+    ws.write(tr, COL_ADJ, round(gran_adj, 2), f_grand_adj)
     ws.write_formula(tr, COL_TOT2,
-        f"=SUM({_L_prod_s}{tr1}:{_L_prod_e}{tr2})", f_grand, round(gran_tot2, 2))
+        f"=SUM({_L_prod_s}{tr1}:{_L_adj}{tr2})", f_grand, round(gran_tot2, 2))
     ws.write_formula(tr, COL_CONC,
         f"={_L_tot1}{tr+1}-{_L_tot2}{tr+1}", f_grand_c, round(gran_conc, 2))
 

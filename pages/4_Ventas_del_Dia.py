@@ -470,6 +470,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     _L_tot1   = _xcn(COL_TOT1)      # TOTAL B2 clientes
     _L_prod_s = _xcn(COL_PROD0)     # primera col productos
     _L_adj    = _xcn(COL_ADJ)       # col ajuste (lado abonos)
+    _L_prod_e = _xcn(COL_ADJ - 1)  # última col productos (justo antes del ajuste)
     _L_tot2   = _xcn(COL_TOT2)      # TOTAL B2 productos (incluye ajuste)
     _L_conc   = _xcn(COL_CONC)      # CONCILIACION
 
@@ -537,7 +538,10 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
         # Ajuste 101-01-0002 en lado abonos: TOTAL_CLI - SUM(productos)
         adj = round(total_b2 - total_prod, 2)
-        ws.write(row, COL_ADJ, adj if adj else None, fa)
+        # Fórmula: AM = AE − SUM(productos) → Excel garantiza AN = AE exactamente.
+        ws.write_formula(row, COL_ADJ,
+            f"={_L_tot1}{er}-SUM({_L_prod_s}{er}:{_L_prod_e}{er})",
+            fa, round(adj, 2))
         gran_adj += adj
 
         # TOTAL B2 productos — fórmula SUM(productos + ajuste) = TOTAL B2 cli
@@ -557,14 +561,15 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.merge_range(tr, 0, tr, N_META - 1, "TOTAL GENERAL", f_grand_l)
     for i in range(N_CLI):
         ws.write(tr, OFF + i, round(gran_cli[i], 2), f_grand)
-    ws.write(tr, COL_ADJ,  round(gran_adj,  2), f_grand_adj)
     # Sumar la columna TOTAL B2 (no los rangos brutos) para que la conciliacion sea exactamente 0.
     # SUM(AE4:AE{tr2}) = SUM(AN4:AN{tr2}) porque cada fila tiene CONCILIACION=0.
     ws.write_formula(tr, COL_TOT1,
         f"=SUM({_L_tot1}{tr1}:{_L_tot1}{tr2})", f_grand, round(gran_tot1, 2))
     for i in range(N_PROD):
         ws.write(tr, COL_PROD0 + i, round(gran_prod[i], 2), f_grand)
-    ws.write(tr, COL_ADJ, round(gran_adj, 2), f_grand_adj)
+    # Fórmula: suma la columna AM para que el total coincida con Excel.
+    ws.write_formula(tr, COL_ADJ,
+        f"=SUM({_L_adj}{tr1}:{_L_adj}{tr2})", f_grand_adj, round(gran_adj, 2))
     ws.write_formula(tr, COL_TOT2,
         f"=SUM({_L_tot2}{tr1}:{_L_tot2}{tr2})", f_grand, round(gran_tot2, 2))
     ws.write_formula(tr, COL_CONC,

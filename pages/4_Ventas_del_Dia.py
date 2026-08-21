@@ -356,6 +356,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     # ── Generar Excel con xlsxwriter ───────────────────────────────────────
     logs.append("⛽ Generando póliza Excel...")
+    from xlsxwriter.utility import xl_col_to_name as _xcn
     buf = io.BytesIO()
     wb  = xlsxwriter.Workbook(buf, {'in_memory': True})
     ws  = wb.add_worksheet("poliza IA")
@@ -441,6 +442,15 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.set_column(COL_CONC, COL_CONC, 14)
     ws.freeze_panes(3, 2)
 
+    # ── Letras de columna para fórmulas ───────────────────────────────────
+    _L_cli_s  = _xcn(OFF)           # primera col clientes
+    _L_adj    = _xcn(COL_ADJ)       # col ajuste
+    _L_tot1   = _xcn(COL_TOT1)      # TOTAL B2 clientes
+    _L_prod_s = _xcn(COL_PROD0)     # primera col productos
+    _L_prod_e = _xcn(COL_PROD0 + N_PROD - 1)  # última col productos
+    _L_tot2   = _xcn(COL_TOT2)      # TOTAL B2 productos
+    _L_conc   = _xcn(COL_CONC)      # CONCILIACION
+
     # ── Filas de datos ─────────────────────────────────────────────────────
     gran_cli  = [0.0] * N_CLI
     gran_adj  = 0.0
@@ -492,35 +502,47 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ]
         total_prod = round(sum(prod_vals), 2)
 
-        # Columna ajuste 101-01-0002: absorbe la diferencia → conciliación = 0
+        # Columna ajuste 101-01-0002: absorbe la diferencia
         adj = round(total_prod - total_b2, 2)
         ws.write(row, COL_ADJ, adj if adj else None, fa)
         gran_adj += adj
 
-        # TOTAL B2 clientes = total_prod (idéntico, para que CONC sea exactamente 0)
-        ws.write(row, COL_TOT1, total_prod, ft)
+        # TOTAL B2 clientes — fórmula SUM(clientes..ajuste)
+        er = row + 1  # fila Excel (1-indexed)
+        ws.write_formula(row, COL_TOT1,
+            f"=SUM({_L_cli_s}{er}:{_L_adj}{er})", ft, round(total_b2 + adj, 2))
         gran_tot1 += total_prod
 
         for i, v in enumerate(prod_vals):
             ws.write(row, COL_PROD0 + i, round(v, 2) if v else None, fn)
             gran_prod[i] += v
-        ws.write(row, COL_TOT2, total_prod, ft)
+
+        # TOTAL B2 productos — fórmula SUM(productos)
+        ws.write_formula(row, COL_TOT2,
+            f"=SUM({_L_prod_s}{er}:{_L_prod_e}{er})", ft, total_prod)
         gran_tot2 += total_prod
 
-        ws.write(row, COL_CONC, 0, fc)
-        gran_conc += 0
+        # CONCILIACION — fórmula TOTAL B2 cli - TOTAL B2 prod
+        ws.write_formula(row, COL_CONC,
+            f"={_L_tot1}{er}-{_L_tot2}{er}", fc, 0)
+        gran_conc += round(total_b2 + adj - total_prod, 2)
 
     # ── Fila totales generales ─────────────────────────────────────────────
-    tr = len(fechas) + 3
+    tr  = len(fechas) + 3          # 0-indexed xlsxwriter
+    tr1 = 4                        # primera fila de datos en Excel (1-indexed)
+    tr2 = tr                       # última fila de datos en Excel (0-indexed = Excel tr+1 -1 = tr)
     ws.merge_range(tr, 0, tr, N_META - 1, "TOTAL GENERAL", f_grand_l)
     for i in range(N_CLI):
         ws.write(tr, OFF + i, round(gran_cli[i], 2), f_grand)
     ws.write(tr, COL_ADJ,  round(gran_adj,  2), f_grand_adj)
-    ws.write(tr, COL_TOT1, round(gran_tot1, 2), f_grand)
+    ws.write_formula(tr, COL_TOT1,
+        f"=SUM({_L_cli_s}{tr1}:{_L_adj}{tr2})", f_grand, round(gran_tot1, 2))
     for i in range(N_PROD):
         ws.write(tr, COL_PROD0 + i, round(gran_prod[i], 2), f_grand)
-    ws.write(tr, COL_TOT2, round(gran_tot2, 2), f_grand)
-    ws.write(tr, COL_CONC, round(gran_conc, 2), f_grand_c)
+    ws.write_formula(tr, COL_TOT2,
+        f"=SUM({_L_prod_s}{tr1}:{_L_prod_e}{tr2})", f_grand, round(gran_tot2, 2))
+    ws.write_formula(tr, COL_CONC,
+        f"={_L_tot1}{tr+1}-{_L_tot2}{tr+1}", f_grand_c, round(gran_conc, 2))
 
     wb.close()
     buf.seek(0)

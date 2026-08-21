@@ -409,14 +409,10 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     for c in range(TOTAL_COLS):
         ws.write(0, c, c, f_acct)
 
-    # ── Fila 1: número de cuenta ──────────────────────────────────────────
-    for c in range(N_META): ws.write(1, c, c + 1, f_acct)
+    # ── Fila 1: número de cuenta (solo cuentas contables, sin numeración) ─
     for i, acct in enumerate(_cuentas_tpl): ws.write(1, OFF + i, acct, f_acct)
-    ws.write(1, COL_ADJ,  _CTA_ADJ,     f_acct)
-    ws.write(1, COL_TOT1, COL_TOT1 + 1, f_acct)
+    ws.write(1, COL_ADJ,  _CTA_ADJ, f_acct)
     for i, acct in enumerate(_ctas_prod): ws.write(1, COL_PROD0 + i, acct, f_acct)
-    ws.write(1, COL_TOT2, COL_TOT2 + 1, f_acct)
-    ws.write(1, COL_CONC, COL_CONC + 1, f_acct)
 
     # ── Fila 2: encabezados ────────────────────────────────────────────────
     for i, h in enumerate(META_HDRS):

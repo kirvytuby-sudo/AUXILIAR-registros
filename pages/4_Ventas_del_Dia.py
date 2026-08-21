@@ -558,15 +558,17 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     for i in range(N_CLI):
         ws.write(tr, OFF + i, round(gran_cli[i], 2), f_grand)
     ws.write(tr, COL_ADJ,  round(gran_adj,  2), f_grand_adj)
+    # Sumar la columna TOTAL B2 (no los rangos brutos) para que la conciliacion sea exactamente 0.
+    # SUM(AE4:AE{tr2}) = SUM(AN4:AN{tr2}) porque cada fila tiene CONCILIACION=0.
     ws.write_formula(tr, COL_TOT1,
-        f"=SUM({_L_cli_s}{tr1}:{_L_cli_e}{tr2})", f_grand, round(gran_tot1, 2))
+        f"=SUM({_L_tot1}{tr1}:{_L_tot1}{tr2})", f_grand, round(gran_tot1, 2))
     for i in range(N_PROD):
         ws.write(tr, COL_PROD0 + i, round(gran_prod[i], 2), f_grand)
     ws.write(tr, COL_ADJ, round(gran_adj, 2), f_grand_adj)
     ws.write_formula(tr, COL_TOT2,
-        f"=SUM({_L_prod_s}{tr1}:{_L_adj}{tr2})", f_grand, round(gran_tot2, 2))
+        f"=SUM({_L_tot2}{tr1}:{_L_tot2}{tr2})", f_grand, round(gran_tot2, 2))
     ws.write_formula(tr, COL_CONC,
-        f"={_L_tot1}{tr+1}-{_L_tot2}{tr+1}", f_grand_c, round(gran_conc, 2))
+        f"={_L_tot1}{tr+1}-{_L_tot2}{tr+1}", f_grand_c, 0)
 
     wb.close()
     buf.seek(0)

@@ -341,15 +341,18 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     NOMBRES_TPL = [cuentas_map.get(c, cli) for c, cli in zip(_cuentas_tpl, _clientes_tpl)]
 
     # ── Índices de columnas ────────────────────────────────────────────────
+    _CTA_ADJ  = "101-01-0002"
+    _NOM_ADJ  = cuentas_map.get(_CTA_ADJ, "Efectivo cta. diferencias")
     N_META    = len(META_HDRS)      # 8
-    N_CLI     = len(_clientes_tpl)  # dinámico desde hoja CUENTAS
-    N_PROD    = len(_prods)         # 7 si dinámico, si no fallback
+    N_CLI     = len(_clientes_tpl)
+    N_PROD    = len(_prods)
     OFF       = N_META            # 8  → inicio clientes
-    COL_TOT1  = OFF + N_CLI       # 28 → TOTAL B2 clientes
-    COL_PROD0 = OFF + N_CLI + 1   # 29 → inicio productos
-    COL_TOT2  = OFF + N_CLI + 1 + N_PROD  # 36 → TOTAL B2 productos
-    COL_CONC  = OFF + N_CLI + 1 + N_PROD + 1  # 37 → CONCILIACION
-    TOTAL_COLS = COL_CONC + 1     # 38
+    COL_ADJ   = OFF + N_CLI       # columna ajuste 101-01-0002 (antes de TOTAL B2)
+    COL_TOT1  = OFF + N_CLI + 1   # TOTAL B2 clientes
+    COL_PROD0 = OFF + N_CLI + 2   # inicio productos
+    COL_TOT2  = OFF + N_CLI + 2 + N_PROD  # TOTAL B2 productos
+    COL_CONC  = OFF + N_CLI + 2 + N_PROD + 1  # CONCILIACION
+    TOTAL_COLS = COL_CONC + 1
 
     # ── Generar Excel con xlsxwriter ───────────────────────────────────────
     logs.append("⛽ Generando póliza Excel...")
@@ -392,6 +395,12 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
                      'align': 'center', 'border': 2, 'border_color': '#000000'})
     f_grand_c = fmt({**BASE, 'bold': True, 'bg_color': '#E65100', 'font_color': '#FFFFFF',
                      'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
+    f_hdr_adj = fmt({**BASE, 'bold': True, 'bg_color': '#00695C', 'font_color': '#FFFFFF',
+                     'align': 'center', 'text_wrap': True, 'font_size': 8})
+    f_adj0    = fmt({**BASE, 'bg_color': '#E0F2F1', 'align': 'right', 'num_format': CURR})
+    f_adj1    = fmt({**BASE, 'bg_color': '#B2DFDB', 'align': 'right', 'num_format': CURR})
+    f_grand_adj = fmt({**BASE, 'bold': True, 'bg_color': '#00695C', 'font_color': '#FFFFFF',
+                       'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
 
     # ── Fila 0: numeración 0-based ────────────────────────────────────────
     ws.set_row(0, 14)
@@ -403,6 +412,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     # ── Fila 1: número de cuenta ──────────────────────────────────────────
     for c in range(N_META): ws.write(1, c, c + 1, f_acct)
     for i, acct in enumerate(_cuentas_tpl): ws.write(1, OFF + i, acct, f_acct)
+    ws.write(1, COL_ADJ,  _CTA_ADJ,     f_acct)
     ws.write(1, COL_TOT1, COL_TOT1 + 1, f_acct)
     for i, acct in enumerate(_ctas_prod): ws.write(1, COL_PROD0 + i, acct, f_acct)
     ws.write(1, COL_TOT2, COL_TOT2 + 1, f_acct)
@@ -413,10 +423,11 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.write(2, i, h, f_hdr_m)
     for i, nom in enumerate(NOMBRES_TPL):
         ws.write(2, OFF + i, nom, f_hdr_c)
-    ws.write(2, COL_TOT1, "TOTAL B2", f_hdr_tot)
+    ws.write(2, COL_ADJ,  _NOM_ADJ,      f_hdr_adj)
+    ws.write(2, COL_TOT1, "TOTAL B2",    f_hdr_tot)
     for i, nom in enumerate(NOMS_PROD):
         ws.write(2, COL_PROD0 + i, nom, f_hdr_p)
-    ws.write(2, COL_TOT2, "TOTAL B2", f_hdr_tot)
+    ws.write(2, COL_TOT2, "TOTAL B2",    f_hdr_tot)
     ws.write(2, COL_CONC, "CONCILIACION", f_hdr_con)
 
     # ── Anchos de columna ──────────────────────────────────────────────────
@@ -426,6 +437,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.set_column(c, c, 20)
     for i in range(N_CLI):
         ws.set_column(OFF + i, OFF + i, 14)
+    ws.set_column(COL_ADJ,  COL_ADJ,  14)
     ws.set_column(COL_TOT1, COL_TOT1, 13)
     for i in range(N_PROD):
         ws.set_column(COL_PROD0 + i, COL_PROD0 + i, 13)
@@ -435,6 +447,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     # ── Filas de datos ─────────────────────────────────────────────────────
     gran_cli  = [0.0] * N_CLI
+    gran_adj  = 0.0
     gran_tot1 = 0.0
     gran_prod = [0.0] * N_PROD
     gran_tot2 = 0.0
@@ -445,12 +458,13 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         fn  = f_num0 if ri % 2 == 0 else f_num1
         ft  = f_tot0 if ri % 2 == 0 else f_tot1
         fc  = f_conc0 if ri % 2 == 0 else f_conc1
+        fa  = f_adj0  if ri % 2 == 0 else f_adj1
 
         # Convertir fecha a objeto date para Excel
         try:
             _fd = datetime.strptime(fecha[:10], '%Y-%m-%d')
             fecha_display = _fd.strftime('%d/%m/%Y')
-            _fecha_val = _fd.date()
+            _fecha_val = _fd
         except Exception:
             fecha_display = fecha
             _fecha_val = fecha
@@ -469,10 +483,8 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             ws.write(row, OFF + i, v if v else None, fn)
             total_b2 += v
             gran_cli[i] += v
-        ws.write(row, COL_TOT1, round(total_b2, 2), ft)
-        gran_tot1 += total_b2
 
-        # Productos
+        # Productos (se calculan antes del ajuste)
         prod_vals = [
             prod_day.get((fecha, "GS"), 0.0),
             prod_day.get((fecha, "GP"), 0.0),
@@ -482,14 +494,25 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             ieps_prod.get((fecha, "GP"), 0.0),
             ieps_prod.get((fecha, "GD"), 0.0),
         ]
-        total_prod = sum(prod_vals)
+        total_prod = round(sum(prod_vals), 2)
+
+        # Columna ajuste 101-01-0002: absorbe la diferencia → conciliación = 0
+        adj = round(total_prod - total_b2, 2)
+        ws.write(row, COL_ADJ, adj if adj else None, fa)
+        gran_adj += adj
+
+        # TOTAL B2 clientes (incluye ajuste)
+        total_b2_adj = round(total_b2 + adj, 2)
+        ws.write(row, COL_TOT1, total_b2_adj, ft)
+        gran_tot1 += total_b2_adj
+
         for i, v in enumerate(prod_vals):
             ws.write(row, COL_PROD0 + i, round(v, 2) if v else None, fn)
             gran_prod[i] += v
-        ws.write(row, COL_TOT2, round(total_prod, 2), ft)
+        ws.write(row, COL_TOT2, total_prod, ft)
         gran_tot2 += total_prod
 
-        diferencia = round(total_b2 - total_prod, 2)
+        diferencia = round(total_b2_adj - total_prod, 2)
         ws.write(row, COL_CONC, diferencia, fc)
         gran_conc += diferencia
 
@@ -498,6 +521,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.merge_range(tr, 0, tr, N_META - 1, "TOTAL GENERAL", f_grand_l)
     for i in range(N_CLI):
         ws.write(tr, OFF + i, round(gran_cli[i], 2), f_grand)
+    ws.write(tr, COL_ADJ,  round(gran_adj,  2), f_grand_adj)
     ws.write(tr, COL_TOT1, round(gran_tot1, 2), f_grand)
     for i in range(N_PROD):
         ws.write(tr, COL_PROD0 + i, round(gran_prod[i], 2), f_grand)

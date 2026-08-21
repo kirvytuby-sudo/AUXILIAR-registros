@@ -260,6 +260,27 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     NOMS_PROD   = [cuentas_map.get(c, p) for c, p in zip(_ctas_prod, _prods)]
 
+    # ── Helper: normalizar cualquier valor de fecha a 'YYYY-MM-DD' ────────
+    def _fecha_norm(v):
+        if v is None: return ""
+        if isinstance(v, datetime): return v.strftime('%Y-%m-%d')
+        try:
+            from datetime import date as _date
+            if isinstance(v, _date): return v.strftime('%Y-%m-%d')
+        except Exception: pass
+        s = str(v).strip()
+        for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y'):
+            try: return datetime.strptime(s[:10], fmt).strftime('%Y-%m-%d')
+            except Exception: pass
+        # xlrd: fecha como float (número de serie Excel)
+        try:
+            f = float(s)
+            if 30000 < f < 100000:
+                from datetime import timedelta
+                return (datetime(1899, 12, 30) + timedelta(days=f)).strftime('%Y-%m-%d')
+        except Exception: pass
+        return s[:10]
+
     # ── Acumular por fecha / cliente / producto ────────────────────────────
     cli_day   = defaultdict(float)
     prod_day  = defaultdict(float)
@@ -268,7 +289,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     for r in data:
         try:
-            fecha       = str(r[C_FECHA])[:10] if r[C_FECHA] is not None else ""
+            fecha       = _fecha_norm(r[C_FECHA])
             cliente_raw = str(r[C_CLIENTE] or "").strip()
             cliente     = _match_cliente(cliente_raw, _clientes_tpl)
             prod        = str(r[C_PROD] or "")
@@ -301,6 +322,16 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
                   if not any(cli_day.get((f, nm), 0.0) for f in fechas)]
     if _sin_datos:
         logs.append(f"  ℹ️ Sin importe (se omiten): {', '.join(_sin_datos)}")
+
+    # Agregar clientes sin cuenta pero CON importe — se incluyen con cuenta vacía
+    _sin_cta_con_imp = [
+        ("", cli) for cli in _sin_cuenta
+        if any(cli_day.get((f, cli), 0.0) for f in fechas)
+    ]
+    if _sin_cta_con_imp:
+        logs.append(f"  ➕ Sin cuenta pero con importe — se incluyen tal cual: {', '.join(nm for _, nm in _sin_cta_con_imp)}")
+        _activos.extend(_sin_cta_con_imp)
+
     if _activos:
         _cuentas_tpl = [nc for nc, _ in _activos]
         _clientes_tpl = [nm for _, nm in _activos]

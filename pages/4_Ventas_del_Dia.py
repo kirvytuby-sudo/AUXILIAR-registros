@@ -497,10 +497,9 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.write(row, COL_ADJ, adj if adj else None, fa)
         gran_adj += adj
 
-        # TOTAL B2 clientes (incluye ajuste)
-        total_b2_adj = round(total_b2 + adj, 2)
-        ws.write(row, COL_TOT1, total_b2_adj, ft)
-        gran_tot1 += total_b2_adj
+        # TOTAL B2 clientes = total_prod (idéntico, para que CONC sea exactamente 0)
+        ws.write(row, COL_TOT1, total_prod, ft)
+        gran_tot1 += total_prod
 
         for i, v in enumerate(prod_vals):
             ws.write(row, COL_PROD0 + i, round(v, 2) if v else None, fn)
@@ -508,9 +507,8 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.write(row, COL_TOT2, total_prod, ft)
         gran_tot2 += total_prod
 
-        diferencia = round(total_b2_adj - total_prod, 2)
-        ws.write(row, COL_CONC, diferencia, fc)
-        gran_conc += diferencia
+        ws.write(row, COL_CONC, 0, fc)
+        gran_conc += 0
 
     # ── Fila totales generales ─────────────────────────────────────────────
     tr = len(fechas) + 3

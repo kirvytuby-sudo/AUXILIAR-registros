@@ -467,12 +467,12 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
     def write_sin_con_por_banco(ws, start_row,
             sin_banco, monto_b, label_b, fill_b, mfill_b, sfill_b, label_sec_b,
             sin_aux,   monto_a, label_a, pol_a,  fill_a, mfill_a, sfill_a, label_sec_a):
-        """Sin conciliar: banco (cols L) y auxiliar (cols R) con cursores independientes.
-        Ambos lados arrancan en la misma fila (sección y btag compartidos).
-        Dentro de cada btag los meses se escriben en paralelo sin forzar filas vacías."""
+        """Sin conciliar: banco (cols L) y auxiliar (cols R) agrupados solo por MES.
+        NO agrupa por btag — evita que nombres de archivo distintos separen las secciones.
+        Cada lado usa cursor independiente; se sincronizan al inicio de cada mes y en TOTAL."""
         L = (1, 2, 3); R = (5, 6, 7, 8); SEP = 4
 
-        # ── Encabezado de sección (compartido, 8 cols) ────────────────────────
+        # ── Encabezado de sección (compartido) ────────────────────────────────
         row_b = row_a = start_row
         ws.row_dimensions[row_b].height = 26
         for ci in range(1, 9):
@@ -484,51 +484,35 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
         ws.cell(row=row_b, column=SEP).border = brd
         row_b += 1; row_a += 1
 
-        # ── Agrupar datos ─────────────────────────────────────────────────────
-        por_banco_b = defaultdict(list)
-        for it in sin_banco: por_banco_b[it.get("banco_tag", "OTRO")].append(it)
-        por_banco_a = defaultdict(lambda: defaultdict(list))
-        for it in sin_aux:
-            por_banco_a[it.get("banco_tag", "OTRO")][it["fecha"].month].append(it)
-        all_btags = sorted(set(por_banco_b.keys()) | set(por_banco_a.keys()),
-                           key=lambda x: BANCO_ORDER.index(x) if x in BANCO_ORDER else 99)
+        # ── Agrupar solo por mes (btag ignorado en sin conciliar) ─────────────
+        por_mes_b = defaultdict(list)
+        for it in sin_banco: por_mes_b[it["fecha"].month].append(it)
+        por_mes_a = defaultdict(list)
+        for it in sin_aux:   por_mes_a[it["fecha"].month].append(it)
+        all_months = sorted(set(por_mes_b.keys()) | set(por_mes_a.keys()))
         grand_b = 0; grand_a = 0
 
-        for btag in all_btags:
-            b_fill = BANCO_HDR_FILLS.get(btag, PatternFill("solid", fgColor="374151"))
-
-            # Sincronizar ambos cursores antes del encabezado de banco
+        for mes in all_months:
+            # Sincronizar ambos cursores al inicio de cada mes
             sync = max(row_b, row_a)
             for r in range(min(row_b, row_a), sync):
                 ws.cell(row=r, column=SEP).border = brd
             row_b = row_a = sync
 
-            # Encabezado de banco (compartido)
-            ws.row_dimensions[row_b].height = 24
+            # Encabezado de mes (compartido)
+            ws.row_dimensions[row_b].height = 22
             for ci in range(1, 9):
-                cell = ws.cell(row=row_b, column=ci,
-                               value=f"\U0001f3e6 {btag}" if ci in (L[0], R[0]) else "")
-                cell.fill = b_fill
-                cell.font = Font(bold=True, color="FFFFFF", size=11)
-                cell.alignment = Alignment(vertical="center"); cell.border = brd
+                v = f"  {MESES[mes]}" if ci in (L[0], R[0]) else ""
+                c = ws.cell(row=row_b, column=ci, value=v)
+                c.fill = mfill_b if ci < SEP else mfill_a
+                c.font = Font(bold=True, color="FFFFFF", size=11)
+                c.alignment = Alignment(vertical="center"); c.border = brd
             ws.cell(row=row_b, column=SEP).border = brd
             row_b += 1; row_a += 1
 
-            # ── Banco: meses independientes ───────────────────────────────────
-            por_mes_b = defaultdict(list)
-            for it in por_banco_b.get(btag, []):
-                por_mes_b[it["fecha"].month].append(it)
-            banco_sub_b = 0
-            for mes in meses_ord:
-                its_b = sorted(por_mes_b.get(mes, []), key=lambda x: x["fecha"])
-                if not its_b: continue
-                ws.row_dimensions[row_b].height = 20
-                for ci in L:
-                    c = ws.cell(row=row_b, column=ci,
-                                value=f"  {MESES[mes]}" if ci == L[0] else "")
-                    c.fill = mfill_b; c.font = Font(bold=True, color="FFFFFF", size=10)
-                    c.alignment = Alignment(vertical="center"); c.border = brd
-                row_b += 1
+            # ── Banco: filas de este mes ──────────────────────────────────────
+            its_b = sorted(por_mes_b.get(mes, []), key=lambda x: x["fecha"])
+            if its_b:
                 hdr(ws, row_b, L[0], "FECHA",             mfill_b)
                 hdr(ws, row_b, L[1], "MONTO",             mfill_b)
                 hdr(ws, row_b, L[2], "DESCRIPCION BANCO", mfill_b)
@@ -543,22 +527,11 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
                 dc(ws, row_b, L[0], f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
                 dc(ws, row_b, L[1], sub_b, TOT_F, fmt='#,##0.00', align="right", bold=True)
                 dc(ws, row_b, L[2], "", TOT_F)
-                banco_sub_b += sub_b; row_b += 1
-            grand_b += banco_sub_b
+                grand_b += sub_b; row_b += 1
 
-            # ── Auxiliar: meses independientes ────────────────────────────────
-            por_mes_a = por_banco_a.get(btag, {})
-            banco_sub_a = 0
-            for mes in meses_ord:
-                its_a = sorted(por_mes_a.get(mes, []), key=lambda x: x["fecha"])
-                if not its_a: continue
-                ws.row_dimensions[row_a].height = 20
-                for ci in R:
-                    c = ws.cell(row=row_a, column=ci,
-                                value=f"  {MESES[mes]}" if ci == R[0] else "")
-                    c.fill = mfill_a; c.font = Font(bold=True, color="FFFFFF", size=10)
-                    c.alignment = Alignment(vertical="center"); c.border = brd
-                row_a += 1
+            # ── Auxiliar: filas de este mes ───────────────────────────────────
+            its_a = sorted(por_mes_a.get(mes, []), key=lambda x: x["fecha"])
+            if its_a:
                 hdr(ws, row_a, R[0], "FECHA",        mfill_a)
                 hdr(ws, row_a, R[1], "MONTO",        mfill_a)
                 hdr(ws, row_a, R[2], "CONCEPTO AUX", mfill_a)
@@ -575,8 +548,7 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
                 dc(ws, row_a, R[0], f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
                 dc(ws, row_a, R[1], sub_a, TOT_F, fmt='#,##0.00', align="right", bold=True)
                 dc(ws, row_a, R[2], "", TOT_F); dc(ws, row_a, R[3], "", TOT_F)
-                banco_sub_a += sub_a; row_a += 1
-            grand_a += banco_sub_a
+                grand_a += sub_a; row_a += 1
 
         # ── TOTAL: sincronizar y escribir en la misma fila ────────────────────
         total_row = max(row_b, row_a)

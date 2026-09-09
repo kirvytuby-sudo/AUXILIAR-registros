@@ -110,6 +110,10 @@ def clasificar_banorte(desc: str, monto: float):
         hora = int(m.group(1)) if m else 0
         return 17 if hora >= 12 else 12
 
+    # PLUXEE / PLUXE — paga vía Santander BCO:0014, debe detectarse ANTES
+    if "PLUXEE" in d or "PLUXE" in d:
+        return 20
+
     # EFECTIVALE / SANTANDER
     if "EFECTIVALE" in d or "EFE8908015L3" in d or "BCO:0014" in d or (
             "SANTANDER" in d and "SPEI RECIBIDO" in d):
@@ -238,13 +242,13 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
 
     F_ADMIN   = PatternFill("solid", fgColor="1E293B")
     F_GRAY2   = PatternFill("solid", fgColor="1E293B")
-    # Fondos de fila — familia azul por banco
-    F_BBVA_1  = PatternFill("solid", fgColor="EFF6FF")  # blue-50
-    F_BBVA_2  = PatternFill("solid", fgColor="DBEAFE")  # blue-100
-    F_BNT_1   = PatternFill("solid", fgColor="EEF2FF")  # indigo-50
-    F_BNT_2   = PatternFill("solid", fgColor="E0E7FF")  # indigo-100
-    F_INB_1   = PatternFill("solid", fgColor="F0F9FF")  # sky-50
-    F_INB_2   = PatternFill("solid", fgColor="E0F2FE")  # sky-100
+    # Fondos de fila — cian eléctrico claro por banco
+    F_BBVA_1  = PatternFill("solid", fgColor="E0F7FA")  # cyan-50  — BBVA impar
+    F_BBVA_2  = PatternFill("solid", fgColor="B2EBF2")  # cyan-100 — BBVA par
+    F_BNT_1   = PatternFill("solid", fgColor="E0FBFF")  # cian eléctrico muy claro — BANORTE impar
+    F_BNT_2   = PatternFill("solid", fgColor="C7F2FA")  # cian eléctrico suave     — BANORTE par
+    F_INB_1   = PatternFill("solid", fgColor="E3F8FC")  # cian-sky claro — INBURSA impar
+    F_INB_2   = PatternFill("solid", fgColor="BAE6FD")  # sky-200        — INBURSA par
     F_NONE    = PatternFill(fill_type=None)
 
     _S = Side(style="thin", color="999999")
@@ -278,30 +282,32 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         (["AMEX", "AMERICAN"],                    12),
         (["EFECTIVALE"],                           13),
         (["EDENRED", "TICKET", "TICKETCARD"],      14),
-        (["FONDO", "CAJA"],                        15),
-        (["GASNGO", "GASN"],                       16),
+        (["FONDO", "CAJA", "EFECTIVO"],             15),
+        (["GASNGO", "GASN", "BANORTE", "TRANSITO"], 16),
         (["SHELL", "SMARTBT", "ICIGAS"],           17),
         (["BANCOMER", "BBVA", "TDC", "VISA"],      18),
         (["INBURSA"],                              19),
+        (["PLUXE", "PLUXEE"],                      20),
     ]
     # Col semántico → color header de abono
     _SEM_FILL = {
-        12: PatternFill("solid", fgColor="312E81"),  # AMEX — índigo-900
-        13: PatternFill("solid", fgColor="3730A3"),  # EFECTIVALE — índigo-800
-        14: PatternFill("solid", fgColor="1D4ED8"),  # EDENRED — blue-700
-        15: PatternFill("solid", fgColor="1E40AF"),  # CAJA — blue-800
-        16: PatternFill("solid", fgColor="0C4A6E"),  # GASNGO — sky-900
-        17: PatternFill("solid", fgColor="164E63"),  # SHELL/ICIGAS — cyan-900
-        18: PatternFill("solid", fgColor="1E3A8A"),  # BBVA — blue-800
-        19: PatternFill("solid", fgColor="0F4C81"),  # INBURSA — blue oscuro
+        12: PatternFill("solid", fgColor="075985"),  # AMEX — sky-800
+        13: PatternFill("solid", fgColor="0369A1"),  # EFECTIVALE — sky-700
+        14: PatternFill("solid", fgColor="0284C7"),  # EDENRED — sky-600
+        15: PatternFill("solid", fgColor="0891B2"),  # CAJA — cyan-600
+        16: PatternFill("solid", fgColor="0E7490"),  # GASNGO/BANORTE — cyan-700
+        17: PatternFill("solid", fgColor="155E75"),  # SHELL/ICIGAS — cyan-800
+        18: PatternFill("solid", fgColor="1D4ED8"),  # BBVA — blue-700
+        19: PatternFill("solid", fgColor="0C4A6E"),  # INBURSA — sky-900
+        20: PatternFill("solid", fgColor="065F46"),  # PLUXEE — emerald-900 (distintivo)
     }
-    _DEFAULT_AB_FILL = PatternFill("solid", fgColor="1E3A8A")
+    _DEFAULT_AB_FILL = PatternFill("solid", fgColor="0369A1")
 
-    # Cargo banco → (fill header, color texto datos) — familia azul/índigo/cielo
+    # Cargo banco → (fill header, color texto datos) — familia cian eléctrico
     _CARGO_STYLE = {
-        "BANORTE": (PatternFill("solid", fgColor="312E81"), "4338CA"),  # índigo
-        "BBVA":    (PatternFill("solid", fgColor="1E3A8A"), "1D4ED8"),  # azul
-        "INBURSA": (PatternFill("solid", fgColor="0C4A6E"), "0369A1"),  # cielo
+        "BANORTE": (PatternFill("solid", fgColor="0E7490"), "06B6D4"),  # cyan-700/500
+        "BBVA":    (PatternFill("solid", fgColor="1D4ED8"), "60A5FA"),  # blue-700/400
+        "INBURSA": (PatternFill("solid", fgColor="075985"), "38BDF8"),  # sky-800/400
     }
 
     # ── Construir listas 100 % desde CUENTAS ─────────────────────────────────────
@@ -382,19 +388,30 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     cargos_col_map = {_c["banco"]: _c["col"] for _c in cargos_list}
 
     # ── Fills de color ────────────────────────────────────────────────────────────
-    F_META_HDR = PatternFill("solid", fgColor="0F172A")   # slate-950
-    F_TOT_CARG = PatternFill("solid", fgColor="6D28D9")   # violet-700
-    F_TOT_ABON = PatternFill("solid", fgColor="0369A1")   # sky-700
-    F_DIFF_HDR = PatternFill("solid", fgColor="4C1D95")   # violet-900
-    F_CTA_BG   = PatternFill("solid", fgColor="1E293B")   # slate-800
+    F_META_HDR = PatternFill("solid", fgColor="0369A1")   # sky-700  — headers meta (fila 3)
+    F_TOT_CARG = PatternFill("solid", fgColor="0284C7")   # sky-600  — TOTAL CARGOS
+    F_TOT_ABON = PatternFill("solid", fgColor="0891B2")   # cyan-600 — TOTAL ABONOS
+    F_DIFF_HDR = PatternFill("solid", fgColor="0E7490")   # cyan-700 — DIFERENCIA
+    F_F1_BG    = PatternFill("solid", fgColor="0C4A6E")   # sky-900  — fila 1 numeración
+    F_CTA_BG   = PatternFill("solid", fgColor="155E75")   # cyan-800 — fila 2 cuentas
 
-    # ── Fila 1: numeración ────────────────────────────────────────────────────────
+    # ── Fila 1: numeración — todas las celdas con color ───────────────────────────
+    _f1_fnt = fnt(color="BAE6FD", size=8)        # texto cian claro
+    _f1_fnt_meta = fnt(color="7DD3FC", size=8)   # ligeramente más brillante en cols meta
     for _idx in range(N_COLS):
-        set_cell(ws, 1, _idx + 1, value=_idx,
-                 font=fnt(color="94A3B8", size=8), fill=F_NONE, align=A_CTR)
+        _col1 = _idx + 1
+        # Cols meta (1-8): fondo un tono más oscuro para distinguir
+        _f1_fill = PatternFill("solid", fgColor="0C4A6E") if _col1 <= 8 else PatternFill("solid", fgColor="0E7490")
+        set_cell(ws, 1, _col1, value=_idx,
+                 font=_f1_fnt, fill=_f1_fill, align=A_CTR)
 
-    # ── Fila 2: N° de cuentas ─────────────────────────────────────────────────────
-    fnt_cta = fnt(bold=False, color="CBD5E1", size=8, italic=True)
+    # ── Fila 2: N° de cuentas — todas las celdas con color ────────────────────────
+    fnt_cta     = fnt(bold=False, color="E0F7FA", size=8, italic=True)
+    fnt_cta_emp = fnt(bold=False, color="BAE6FD", size=8, italic=True)  # celdas vacías
+    # Rellenar TODAS las celdas de fila 2 con el fondo base
+    for _ci2 in range(1, N_COLS + 1):
+        set_cell(ws, 2, _ci2, value=None, font=fnt_cta_emp, fill=F_CTA_BG, align=A_CTR)
+    # Sobrescribir celdas con número de cuenta
     for _c in cargos_list:
         set_cell(ws, 2, _c["col"], value=_c["cuenta"],
                  font=fnt_cta, fill=F_CTA_BG, align=A_CTR, border=BORDER)
@@ -403,26 +420,26 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
                  font=fnt_cta, fill=F_CTA_BG, align=A_CTR, border=BORDER)
 
     # ── Fila 3: encabezados ───────────────────────────────────────────────────────
-    fnt_h = lambda: fnt(bold=True, color="FFFFFF")
+    fnt_h = lambda: fnt(bold=True, color="FFFFFF", size=9)
     for _col, _lbl in [(1,"TIPO"),(2,"FECHA"),(3,"REFERENCIA"),(4,"CONCEPTO"),
-                       (5,"ERROR"),(6,"UIDD"),(7,"NÚM PÓLIZA"),(8,"PROCESADO")]:
+                       (5,"ERROR"),(6,"UIDD"),(7,"NÚM\nPÓLIZA"),(8,"PROCESADO")]:
         set_cell(ws, 3, _col, value=_lbl, font=fnt_h(), fill=F_META_HDR,
-                 align=A_CTR, border=BORDER_H)
+                 align=A_CTR_W, border=BORDER_H)
     for _c in cargos_list:
         _fh, _ = _CARGO_STYLE.get(_c["banco"], (_DEFAULT_AB_FILL, "FFFFFF"))
         set_cell(ws, 3, _c["col"],
                  value=CARGOS.get(_c["banco"], ("", _c["banco"]))[1].strip() or _c["banco"],
-                 font=fnt_h(), fill=_fh, align=A_CTR, border=BORDER_H)
-    set_cell(ws, 3, COL_TOT_CARGOS, value="TOTAL CARGOS",
-             font=fnt_h(), fill=F_TOT_CARG, align=A_CTR, border=BORDER_H)
+                 font=fnt_h(), fill=_fh, align=A_CTR_W, border=BORDER_H)
+    set_cell(ws, 3, COL_TOT_CARGOS, value="TOTAL\nCARGOS",
+             font=fnt_h(), fill=F_TOT_CARG, align=A_CTR_W, border=BORDER_H)
     for _ab in abonos_efectivos:
         _fh = _SEM_FILL.get(_ab.get("sem_col"), _DEFAULT_AB_FILL)
         set_cell(ws, 3, _ab["col"], value=_ab["nombre"],
                  font=fnt_h(), fill=_fh, align=A_CTR_W, border=BORDER_H)
-    set_cell(ws, 3, COL_TOT_ABONOS, value="TOTAL ABONOS",
-             font=fnt_h(), fill=F_TOT_ABON, align=A_CTR, border=BORDER_H)
+    set_cell(ws, 3, COL_TOT_ABONOS, value="TOTAL\nABONOS",
+             font=fnt_h(), fill=F_TOT_ABON, align=A_CTR_W, border=BORDER_H)
     set_cell(ws, 3, COL_DIFERENCIA, value="DIFERENCIA",
-             font=fnt_h(), fill=F_DIFF_HDR, align=A_CTR, border=BORDER_H)
+             font=fnt_h(), fill=F_DIFF_HDR, align=A_CTR_W, border=BORDER_H)
 
     # ── Filas de datos ────────────────────────────────────────────────────────────
     MESES_ES = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
@@ -435,16 +452,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
                                    orden_banco.get(x["banco"], 9),
                                    x["fecha"]))
 
-    # Inyectar separadores de mes
-    _rows_excel = []
-    _prev_mes   = None
-    for _rx in registros_sorted:
-        _mk = (getattr(_rx["fecha"],"year",0), getattr(_rx["fecha"],"month",0))
-        if _mk != _prev_mes:
-            _rows_excel.append({"_type": "mes_hdr",
-                                 "label": f"{MESES_ES.get(_mk[1],'')} {_mk[0]}"})
-            _prev_mes = _mk
-        _rows_excel.append(_rx)
+    _rows_excel = registros_sorted
 
     FILLS_BANCO = {
         "BBVA":    (F_BBVA_1, F_BBVA_2),
@@ -455,21 +463,7 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
 
     fila_num    = 4
     _row_parity = 0
-    for _item in _rows_excel:
-        if _item.get("_type") == "mes_hdr":
-            # Fila separadora de mes (fondo oscuro, texto centrado)
-            ws.merge_cells(start_row=fila_num, start_column=1,
-                           end_row=fila_num, end_column=N_COLS)
-            _mhc = ws.cell(row=fila_num, column=1, value=_item["label"])
-            _mhc.font      = Font(name=FONT_NAME, size=11, bold=True, color="FFFFFF")
-            _mhc.fill      = F_META_HDR
-            _mhc.alignment = A_CTR
-            _mhc.border    = BORDER_H
-            ws.row_dimensions[fila_num].height = 22
-            fila_num    += 1
-            _row_parity  = 0
-            continue
-        r            = _item
+    for r in _rows_excel:
         _row_parity += 1
         _f1, _f2    = FILLS_BANCO.get(r["banco"], (F_BBVA_1, F_BBVA_2))
         fill_row    = _f1 if _row_parity % 2 == 1 else _f2
@@ -504,6 +498,15 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
 
         # Abono: col semántico → col real
         _actual_ab = semantic_to_actual.get(r["col_abono"])
+        # Fallback: DEP.EFECTIVO (sem 15) sin cuenta asignada → usar BANORTE transit (sem 16)
+        if _actual_ab is None and r["col_abono"] == 15:
+            _actual_ab = semantic_to_actual.get(16)
+        # Fallback genérico: sem sin mapeo → primer abono sin sem_col asignado
+        if _actual_ab is None:
+            for _fb in abonos_efectivos:
+                if _fb.get("sem_col") is None:
+                    _actual_ab = _fb["col"]
+                    break
         if _actual_ab is not None:
             dat(_actual_ab, monto, num_fmt=FMT_NUM, align=A_RIGHT)
         dat(COL_TOT_ABONOS, monto, num_fmt=FMT_NUM, align=A_RIGHT)
@@ -530,14 +533,17 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
     ws.column_dimensions[get_column_letter(COL_TOT_ABONOS)].width = 15.0
     ws.column_dimensions[get_column_letter(COL_DIFERENCIA)].width  = 13.0
     ws.row_dimensions[1].height = 12
-    ws.row_dimensions[2].height = 18
-    ws.row_dimensions[3].height = 36
+    ws.row_dimensions[2].height = 22
+    ws.row_dimensions[3].height = 50
     ws.freeze_panes = "B4"
 
     # ── Hoja RESUMEN ──────────────────────────────────────────────────────────────
     from collections import defaultdict
     from datetime import date as _date_cls
 
+    # Eliminar hoja RESUMEN si ya existe (evita "RESUMEN1" con plantilla)
+    if "RESUMEN" in wb.sheetnames:
+        del wb["RESUMEN"]
     ws_res = wb.create_sheet("RESUMEN")
 
     # Fills

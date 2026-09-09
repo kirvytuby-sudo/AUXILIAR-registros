@@ -106,22 +106,50 @@ def _col(mapping, *candidates):
 
 
 def text_sim(a, b):
-    """Similitud de texto [0-1] entre descripción de banco y concepto auxiliar.
-    Combina similitud por caracteres (SequenceMatcher) con similitud por palabras
-    (tokens ≥3 chars), usando el máximo de ambos.  Así evita que strings con
-    muchas letras en común pero palabras distintas (p.ej. 'G500 NETWORK' vs
-    'COMERCIALIZADORA BENZIN') obtengan una puntuación inflada.
-    """
+    """Similitud de texto [0-1] entre descripción de banco y concepto auxiliar."""
     if not a or not b: return 0.0
     a = a.lower().strip(); b = b.lower().strip()
-    char_sim = difflib.SequenceMatcher(None, a, b).ratio()
-    # Similitud por palabras significativas (≥3 caracteres)
-    words_a = set(w for w in a.split() if len(w) >= 3)
-    words_b = set(w for w in b.split() if len(w) >= 3)
-    if words_a and words_b:
-        word_sim = len(words_a & words_b) / max(len(words_a), len(words_b))
-        return max(char_sim, word_sim)
-    return char_sim
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+_RE_PROV = re.compile(r'/PROV:(.+?)(?:\s*/F\s*\(|\s*$)', re.IGNORECASE)
+
+def _vendor_ok(concepto: str, desc_banco: str) -> bool | None:
+    """Verifica si el proveedor del concepto aux aparece en la desc del banco.
+
+    · Si el concepto tiene /PROV:<nombre> → extrae las palabras del proveedor
+      (≥4 chars) y devuelve True si AL MENOS UNA aparece en desc_banco.
+    · Si no tiene ese patrón → devuelve None (usar fallback text_sim).
+
+    Ejemplo que FALLA (correcto):
+      concepto = '...PROV:COMERCIALIZADORA DE COMBUSTIBLES BENZIN...'
+      banco    = '...G500 NETWORK SAPI...'
+      → ninguna de [COMERCIALIZADORA, COMBUSTIBLES, BENZIN] está en banco → False
+
+    Ejemplo que PASA (correcto):
+      concepto = '...PROV:G500 NETWORK...'
+      banco    = '...G500 NETWORK SAPI...'
+      → G500, NETWORK están en banco → True
+    """
+    if not concepto or not desc_banco:
+        return None
+    m = _RE_PROV.search(concepto)
+    if not m:
+        return None
+    vendor = m.group(1).strip().upper()
+    desc_up = desc_banco.upper()
+    vendor_words = [w for w in vendor.split() if len(w) >= 4]
+    if not vendor_words:
+        return None
+    return any(w in desc_up for w in vendor_words)
+
+
+def _texto_ok(concepto: str, desc_b: str, sim_min: float) -> bool:
+    """Filtro combinado: usa vendor matching si está disponible, si no text_sim."""
+    vm = _vendor_ok(concepto, desc_b)
+    if vm is not None:
+        return vm
+    return text_sim(desc_b, concepto) >= sim_min
 
 
 def _read_banco(wb):
@@ -253,13 +281,13 @@ def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_
         if target < 10: continue
         min_monto = max(1.0, target * combo_min_pct)
         desc_b = banco["desc"]
-        # Filtrar candidatos también por similitud de texto — evita combinar
-        # entradas con descripción diferente (p.ej. G500 con BENZIN)
+        # Filtrar candidatos por proveedor (si concepto tiene /PROV:) o text_sim
+        # Evita combinar entradas de distintos proveedores aunque los montos cuadren
         candidatos = [a for a in libres_p2
                       if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"], dias)
                       and a["monto"] >= min_monto
                       and a["monto"] <= target + tol_n
-                      and text_sim(desc_b, a["concepto"]) >= combo_sim_min]
+                      and _texto_ok(a["concepto"], desc_b, combo_sim_min)]
         # Ordenar por proximidad al monto esperado y limitar tamaño del pool
         if len(candidatos) > _MAX_CAND_COMBO:
             candidatos.sort(key=lambda a: abs(a["monto"] - target / 2))

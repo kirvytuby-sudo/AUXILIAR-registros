@@ -241,10 +241,13 @@ def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_
         if target < 10: continue
         min_monto = max(1.0, target * combo_min_pct)
         desc_b = banco["desc"]
+        # Filtrar candidatos también por similitud de texto — evita combinar
+        # entradas con descripción diferente (p.ej. G500 con BENZIN)
         candidatos = [a for a in libres_p2
                       if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"], dias)
                       and a["monto"] >= min_monto
-                      and a["monto"] <= target + tol_n]
+                      and a["monto"] <= target + tol_n
+                      and text_sim(desc_b, a["concepto"]) >= combo_sim_min]
         # Ordenar por proximidad al monto esperado y limitar tamaño del pool
         if len(candidatos) > _MAX_CAND_COMBO:
             candidatos.sort(key=lambda a: abs(a["monto"] - target / 2))
@@ -253,9 +256,7 @@ def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_
         for n in range(2, min(max_combo + 1, len(candidatos) + 1)):
             for combo in itertools.combinations(candidatos, n):
                 if abs(sum(c["monto"] for c in combo) - target) <= tol_n:
-                    max_sim = max(text_sim(desc_b, c["concepto"]) for c in combo)
-                    if max_sim < combo_sim_min:
-                        continue
+                    # Todos los candidatos ya cumplen combo_sim_min (filtrado arriba)
                     results.append({"tipo": f"🔀 COMBINADO ({n})", "banco": banco,
                                     "aux_entries": list(combo),
                                     "diferencia": sum(c["monto"] for c in combo) - target})
@@ -415,7 +416,8 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
             for r in por_banco[btag]: por_mes[r["banco"]["fecha"].month].append(r)
             banco_sub = 0
             for mes in meses_ord:
-                its = por_mes.get(mes, [])
+                # Ordenar por fecha banco — mezcla exactos y combinados cronológicamente
+                its = sorted(por_mes.get(mes, []), key=lambda x: x["banco"]["fecha"])
                 if not its: continue
                 ws.row_dimensions[row].height = 24
                 for ci in range(1, 10):

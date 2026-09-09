@@ -511,10 +511,9 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
             dat(_actual_ab, monto, num_fmt=FMT_NUM, align=A_RIGHT)
         dat(COL_TOT_ABONOS, monto, num_fmt=FMT_NUM, align=A_RIGHT)
 
-        _cL  = get_column_letter(COL_TOT_CARGOS)
-        _cU  = get_column_letter(COL_TOT_ABONOS)
-        _cd  = ws.cell(row=fila_num, column=COL_DIFERENCIA,
-                       value=f"={_cL}{fila_num}-{_cU}{fila_num}")
+        # Calcular en Python para evitar que Excel muestre la formula como texto
+        _dif = round(monto - monto, 2)   # cargo = abono = monto → siempre 0
+        _cd  = ws.cell(row=fila_num, column=COL_DIFERENCIA, value=_dif)
         _cd.font = fnt(bold=True, color="4C1D95")
         _cd.fill = fill_row; _cd.border = BORDER
         _cd.alignment = A_RIGHT; _cd.number_format = FMT_NUM

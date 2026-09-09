@@ -10889,8 +10889,8 @@ class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
                 dat(12,m,FMT_N,AR)
                 dat(r["col_abono"]+1,m,FMT_N,AR)
                 dat(COL_TOTAL_ABONOS,m,FMT_N,AR)
-                cd=ws_p.cell(row=fn_num,column=COL_DIFERENCIA,
-                    value=f"={get_column_letter(12)}{fn_num}-{get_column_letter(COL_TOTAL_ABONOS)}{fn_num}")
+                # Calcular en Python para evitar que Excel muestre formula como texto
+                cd=ws_p.cell(row=fn_num,column=COL_DIFERENCIA,value=round(m-m,2))
                 cd.font=fd; cd.fill=fr; cd.alignment=AR; cd.number_format=FMT_N
 
             _col_widths = {1:14.4,2:13.0,3:36.9,4:26.3,5:6.7,6:5.3,7:11.3,8:11.6,

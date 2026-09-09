@@ -538,9 +538,9 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
         # Ajuste 101-01-0002 en lado abonos: TOTAL_CLI - SUM(productos)
         adj = round(total_b2 - total_prod, 2)
-        # Fórmula: AM = AE − SUM(productos) → Excel garantiza AN = AE exactamente.
+        # ROUND(...,2) en la fórmula evita decimales flotantes en Excel
         ws.write_formula(row, COL_ADJ,
-            f"={_L_tot1}{er}-SUM({_L_prod_s}{er}:{_L_prod_e}{er})",
+            f"=ROUND({_L_tot1}{er}-SUM({_L_prod_s}{er}:{_L_prod_e}{er}),2)",
             fa, round(adj, 2))
         gran_adj += adj
 
@@ -569,7 +569,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.write(tr, COL_PROD0 + i, round(gran_prod[i], 2), f_grand)
     # Fórmula: suma la columna AM para que el total coincida con Excel.
     ws.write_formula(tr, COL_ADJ,
-        f"=SUM({_L_adj}{tr1}:{_L_adj}{tr2})", f_grand_adj, round(gran_adj, 2))
+        f"=ROUND(SUM({_L_adj}{tr1}:{_L_adj}{tr2}),2)", f_grand_adj, round(gran_adj, 2))
     ws.write_formula(tr, COL_TOT2,
         f"=SUM({_L_tot2}{tr1}:{_L_tot2}{tr2})", f_grand, round(gran_tot2, 2))
     ws.write_formula(tr, COL_CONC,

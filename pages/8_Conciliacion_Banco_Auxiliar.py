@@ -59,6 +59,9 @@ PAT_COM = [
     # Banorte — comisiones SPEI banca internet
     r'TRANSFERENCIA\s*-\s*ENVIO.*SPEI.*BANCA POR INTERNET',
     r'I\.V\.A\.\s+ORDEN DE PAGO SPEI',
+    # Banorte — comisiones dispersión nómina (MISMA ENTIDAD; BANCA POR INTERNET)
+    r'TRANSFERENCIA\s*-\s*ENVIO.*DISPERSION\s+DE\s+NOMINA.*BANCA POR INTERNET',
+    r'IVA[.\s]+COM[.\s]+NOMINA\s+LINEA',
 ]
 PAT_MORA = [r'MORA SPEI', r'COMPENSACION POR RETRASO', r'COMP SPEI']
 

@@ -106,10 +106,22 @@ def _col(mapping, *candidates):
 
 
 def text_sim(a, b):
-    """Similitud de texto [0-1] entre descripción de banco y concepto auxiliar."""
+    """Similitud de texto [0-1] entre descripción de banco y concepto auxiliar.
+    Combina similitud por caracteres (SequenceMatcher) con similitud por palabras
+    (tokens ≥3 chars), usando el máximo de ambos.  Así evita que strings con
+    muchas letras en común pero palabras distintas (p.ej. 'G500 NETWORK' vs
+    'COMERCIALIZADORA BENZIN') obtengan una puntuación inflada.
+    """
     if not a or not b: return 0.0
     a = a.lower().strip(); b = b.lower().strip()
-    return difflib.SequenceMatcher(None, a, b).ratio()
+    char_sim = difflib.SequenceMatcher(None, a, b).ratio()
+    # Similitud por palabras significativas (≥3 caracteres)
+    words_a = set(w for w in a.split() if len(w) >= 3)
+    words_b = set(w for w in b.split() if len(w) >= 3)
+    if words_a and words_b:
+        word_sim = len(words_a & words_b) / max(len(words_a), len(words_b))
+        return max(char_sim, word_sim)
+    return char_sim
 
 
 def _read_banco(wb):
@@ -839,9 +851,9 @@ with st.expander("⚙️ Parámetros de conciliación", expanded=False):
     with c2:
         p_dias          = st.slider("Días de tolerancia fecha",              0,    15,   7,    1,    key="p_dias")
         p_tol_text      = st.slider("Texto  — tolerancia monto ($)",         1.0,  50.0, 2.0,  1.0,  key="p_tolt")
-        p_combo_sim_min = st.slider("Combo  — similitud mínima descripción", 0,    50,   10,   5,    key="p_csim",
+        p_combo_sim_min = st.slider("Combo  — similitud mínima descripción", 0,    50,   30,   5,    key="p_csim",
                                     format="%d%%",
-                                    help="Al menos una entrada del combo debe parecerse en descripción al banco. 10% es muy permisivo; sube si hay falsos positivos.")
+                                    help="Cada entrada del combo debe parecerse en descripción al banco (por palabras o caracteres). 30% evita combinar proveedores distintos; baja solo si hay falsos negativos.")
     with c3:
         p_sim_min       = st.slider("Texto  — similitud mínima",             0.20, 0.90, 0.45, 0.05, key="p_sim",
                                     format="%.2f",

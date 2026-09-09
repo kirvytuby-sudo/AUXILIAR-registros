@@ -65,7 +65,17 @@ PAT_COM = [
 ]
 PAT_MORA = [r'MORA SPEI', r'COMPENSACION POR RETRASO', r'COMP SPEI']
 
-def is_comision(d): return any(re.search(p, str(d).upper()) for p in PAT_COM)
+# Patrones de EXCLUSIÓN: aunque coincidan con PAT_COM, NO son comisiones bancarias
+PAT_COM_EXCL = [
+    r'CONCENTRACION\s+BEM',        # pago a CFE (Comisión Federal de Electricidad)
+    r'COMISION\s+FEDERA',           # CFE en descripción larga
+    r'CARGO\s+POR\s+PAGO\s+CONCENTRACION',
+]
+
+def is_comision(d):
+    s = str(d).upper()
+    if any(re.search(p, s) for p in PAT_COM_EXCL): return False
+    return any(re.search(p, s) for p in PAT_COM)
 def is_mora(d):     return any(re.search(p, str(d).upper()) for p in PAT_MORA)
 
 # ── Utilidades ────────────────────────────────────────────────────────────────

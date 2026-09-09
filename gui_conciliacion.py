@@ -3,14 +3,14 @@
 """
 gui_conciliacion.py
 ====================
-Interfaz grÃ¡fica con pestaÃ±as para ejecutar conciliacion_nomina.py sin
+Interfaz gráfica con pestañas para ejecutar conciliacion_nomina.py sin
 tener que escribir comandos en la terminal.
 
-PestaÃ±as disponibles:
-  1. ConciliaciÃ³n  â nÃ³mina principal, complementos, vacaciones
-  2. PrÃ©stamos     â PDFs de prÃ©stamos detectados
-  3. Reportes      â resumen consolidado y filtros por fecha
-  4. ConfiguraciÃ³n â rutas por defecto, carpeta de salida
+Pestañas disponibles:
+  1. Conciliación  — nómina principal, complementos, vacaciones
+  2. Préstamos     — PDFs de préstamos detectados
+  3. Reportes      — resumen consolidado y filtros por fecha
+  4. Configuración — rutas por defecto, carpeta de salida
 h
 Requiere: pandas, openpyxl, pdfplumber
 """
@@ -38,38 +38,52 @@ except ImportError:
     _DND_OK = False
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Módulos GUI separados (Mixins)
 try:
-    import conciliacion_nomina as cn
+    from modules.poliza_nomina import PolizaNominaMixin
 except ImportError:
-    cn = None
+    class PolizaNominaMixin: pass   # fallback sin el módulo
+cn = None
+_cn_load_error = None
+
+def _cargar_cn_bg():
+    """Carga conciliacion_nomina en background para no bloquear el arranque."""
+    global cn, _cn_load_error
+    try:
+        import conciliacion_nomina as _cn
+        cn = _cn
+    except Exception as _e:
+        _cn_load_error = str(_e)
+
+threading.Thread(target=_cargar_cn_bg, daemon=True).start()
 
 
 # ------------------------------------------------------------------ #
 # Paleta de colores
 # ------------------------------------------------------------------ #
-COLOR_FONDO          = "#FFF0F5"   # canvas â azul cielo claro
-COLOR_TARJETA        = "#FFFFFF"   # tarjeta â azul muy suave
-COLOR_FUCSIA         = "#1E3A8A"   # denim â acento principal
-COLOR_FUCSIA_OSCURO  = "#0F172A"   # ink â azul marino oscuro
-COLOR_FUCSIA_SUAVE   = "#DBEAFE"   # line â borde azul suave
-COLOR_FUCSIA_MID     = "#1D4ED8"   # rope â tono medio marino
-COLOR_TEXTO          = "#0F172A"   # ink â texto principal
+COLOR_FONDO          = "#FFF0F5"   # canvas — azul cielo claro
+COLOR_TARJETA        = "#FFFFFF"   # tarjeta — azul muy suave
+COLOR_FUCSIA         = "#1E3A8A"   # denim — acento principal
+COLOR_FUCSIA_OSCURO  = "#0F172A"   # ink — azul marino oscuro
+COLOR_FUCSIA_SUAVE   = "#DBEAFE"   # line — borde azul suave
+COLOR_FUCSIA_MID     = "#1D4ED8"   # rope — tono medio marino
+COLOR_TEXTO          = "#0F172A"   # ink — texto principal
 COLOR_BLANCO         = "#FFFFFF"
-COLOR_OK             = "#1D4ED8"   # denim â Ã©xito en log
-COLOR_ERROR          = "#E14B3D"   # coral â error en log
+COLOR_OK             = "#1D4ED8"   # denim — éxito en log
+COLOR_ERROR          = "#E14B3D"   # coral — error en log
 COLOR_AZUL           = "#1E3A8A"   # denim
 COLOR_AZUL_SUAVE     = "#EFF6FF"   # canvas suave
 COLOR_VERDE          = "#1D4ED8"   # rope
 COLOR_VERDE_SUAVE    = "#DBEAFE"   # canvas deep
-COLOR_NARANJA        = "#F43F8A"   # rust â bancos
+COLOR_NARANJA        = "#F43F8A"   # rust — bancos
 COLOR_NARANJA_SUAVE  = "#FDF2F8"   # gold light
 
 
 CATEGORIA_LABELS = {
-    "nomina":        "NÃ³mina principal",
+    "nomina":        "Nómina principal",
     "complementos":  "Complementos",
     "vacaciones":    "Vacaciones",
-    "prestamos":     "PrÃ©stamos",
+    "prestamos":     "Préstamos",
     "no_reconocido": "No reconocido",
     "error":         "No se pudo leer",
 }
@@ -81,6 +95,7 @@ CATEGORIA_LABELS = {
 
 def clasificar_pdf(path):
     """Devuelve (categoria, descripcion_legible) para un PDF."""
+    nombre = os.path.basename(path).upper()
     try:
         tipo = cn.detect_template(path)
     except Exception:
@@ -95,9 +110,12 @@ def clasificar_pdf(path):
         return "error", os.path.basename(path)
 
     desc = (meta.get("descripcion") or "").upper()
-    if "VAC" in desc:
+    # Revisa descripcion interna Y nombre del archivo: cubre casos donde
+    # el PDF tiene descripcion generica pero el nombre indica VAC/PRESTAMO
+    buscar = desc + " " + nombre
+    if "VAC" in buscar:
         categoria = "vacaciones"
-    elif "PRESTAMO" in desc or "PRÃSTAMO" in desc:
+    elif "PRESTAMO" in buscar or "PRÉSTAMO" in buscar:
         categoria = "prestamos"
     elif tipo == "dispersion":
         categoria = "nomina"
@@ -139,7 +157,7 @@ def _make_listbox(parent, bg_card):
 def _dibujar_brujula(cv, size=38):
     """
     Intenta cargar logo.png desde la carpeta de la app (sin fondo blanco).
-    Si no existe o falla, dibuja la brÃºjula vectorial de respaldo.
+    Si no existe o falla, dibuja la brújula vectorial de respaldo.
     """
     import os
     _DIR = os.path.dirname(os.path.abspath(__file__))
@@ -170,8 +188,8 @@ def _dibujar_brujula(cv, size=38):
             cv.create_image(size // 2, size // 2, image=photo, anchor='center')
             return
         except Exception:
-            pass  # fallback a brÃºjula
-    # ââ BrÃºjula vectorial de respaldo ââââââââââââââââââââââââââââââââ
+            pass  # fallback a brújula
+    # ── Brújula vectorial de respaldo ────────────────────────────────
     cx = cy = size // 2
     r = cx - 2
     cv.create_oval(2, 2, size - 2, size - 2, outline="#F2C572", width=1.5)
@@ -187,20 +205,20 @@ def _dibujar_brujula(cv, size=38):
                    fill="#0B2A3D", outline="#F2C572", width=1)
 
 
-# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ──────────────────────────────────────────────────────────────────────────────
 # BARRA DE PROGRESO PERSONALIZADA  (estilo aventura marina)
-# ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+# ──────────────────────────────────────────────────────────────────────────────
 class FunkyProgressBar(tk.Canvas):
-    """Barra de progreso animada â bloques segmentados estilo aventura."""
+    """Barra de progreso animada — bloques segmentados estilo aventura."""
 
-    # Paleta: rojo oscuro â naranja â Ã¡mbar â dorado (cÃ­clico)
+    # Paleta: rojo oscuro → naranja → ámbar → dorado (cíclico)
     _SEG_COLORS = [
         (204, 34,   0),   # rojo oscuro
         (255, 107,  0),   # naranja
-        (255, 140,  0),   # naranja Ã¡mbar
-        (255, 184,  0),   # amarillo Ã¡mbar
+        (255, 140,  0),   # naranja ámbar
+        (255, 184,  0),   # amarillo ámbar
         (255, 215,  0),   # dorado
-        (255, 140,  0),   # naranja Ã¡mbar
+        (255, 140,  0),   # naranja ámbar
         (255, 107,  0),   # naranja
     ]
     _SEG_W   = 18
@@ -210,8 +228,8 @@ class FunkyProgressBar(tk.Canvas):
     def __init__(self, master, maximum=100, height=44, **kw):
         kw.setdefault("highlightthickness", 0)
         kw.setdefault("bd", 0)
-        # Obtener color de fondo del parent â compatible con tk Y ttk
-        # (ttk.Frame no soporta cget("bg"), asÃ­ que se captura el error)
+        # Obtener color de fondo del parent — compatible con tk Y ttk
+        # (ttk.Frame no soporta cget("bg"), así que se captura el error)
         _fallback_bg = "#CFE7F8"
         if hasattr(master, "cget"):
             try:
@@ -231,7 +249,7 @@ class FunkyProgressBar(tk.Canvas):
         self._stripe_offset = 0.0
         self.bind("<Configure>", lambda e: self._draw())
 
-    # ââ ttk.Progressbar-compatible API ââââââââââââââââââââââââââââââââââââââââ
+    # ── ttk.Progressbar-compatible API ────────────────────────────────────────
     def __getitem__(self, key):
         if key == "value":  return self._value
         if key == "maximum": return self._maximum
@@ -246,7 +264,7 @@ class FunkyProgressBar(tk.Canvas):
         else:
             raise KeyError(key)
 
-    # ââ Dibujo ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Dibujo ────────────────────────────────────────────────────────────────
     def _load_side_imgs(self, H):
         """Carga y escala pb_izquierda/derecha, cacheadas por altura."""
         from PIL import Image as _Img
@@ -280,12 +298,12 @@ class FunkyProgressBar(tk.Canvas):
         H = self._h
         pct = min(100.0, max(0.0, self._value / self._maximum * 100))
 
-        # ââ ImÃ¡genes laterales ââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Imágenes laterales ────────────────────────────────────────────
         il, ir = self._load_side_imgs(H)
         lw = (il.width - 12) if il else 0   # ancho reservado izquierda (con solapado)
         rw = (ir.width - 12) if ir else 0   # ancho reservado derecha
 
-        # ââ Track horizontal: ocupa la zona entre los personajes ââââââââââ
+        # ── Track horizontal: ocupa la zona entre los personajes ──────────
         # La barra ocupa el tercio central verticalmente
         bvt  = H // 3        # bar vertical top
         bvb  = H - H // 3   # bar vertical bottom
@@ -300,7 +318,7 @@ class FunkyProgressBar(tk.Canvas):
         r_out = bh // 2 - pad
         r_in  = max(1, r_out - 3)
 
-        # CÃ¡psula exterior oscura
+        # Cápsula exterior oscura
         self._draw_rounded(d, BL, bvt+pad, BR, bvb-pad, r_out,
                            fill=(30, 34, 45, 255), outline=(60, 65, 80, 255))
         # Track interior casi negro
@@ -308,7 +326,7 @@ class FunkyProgressBar(tk.Canvas):
         self._draw_rounded(d, BL+tp, bvt+tp, BR-tp, bvb-tp, r_in,
                            fill=(15, 17, 23, 255), outline=None)
 
-        # ââ Bloques segmentados âââââââââââââââââââââââââââââââââââââââââââ
+        # ── Bloques segmentados ───────────────────────────────────────────
         track_x0 = BL + tp
         track_x1 = BR - tp
         track_y0 = bvt + tp
@@ -351,10 +369,10 @@ class FunkyProgressBar(tk.Canvas):
                                fill=(255, 255, 255, 45), outline=None)
             img = Image.alpha_composite(img, shine)
 
-        # ââ Texto en pill navy oscuro âââââââââââââââââââââââââââââââââââââ
+        # ── Texto en pill navy oscuro ─────────────────────────────────────
         d2 = ImageDraw.Draw(img)
         if pct >= 100:
-            txt = "â  Listo"
+            txt = "✓  Listo"
             tc  = (120, 255, 120, 255)
         elif pct > 0:
             txt = f"Loading...  {int(pct)} %"
@@ -376,13 +394,13 @@ class FunkyProgressBar(tk.Canvas):
                            fill=(20, 30, 55, 210), outline=None)
         d2.text((tx, ty), txt, fill=tc, font=font)
 
-        # ââ Pegar personajes sobre la barra âââââââââââââââââââââââââââââââ
+        # ── Pegar personajes sobre la barra ───────────────────────────────
         if il:
             img.paste(il, (0, 0), il)
         if ir:
             img.paste(ir, (W - ir.width, 0), ir)
 
-        # ââ Convertir a PhotoImage âââââââââââââââââââââââââââââââââââââââââ
+        # ── Convertir a PhotoImage ─────────────────────────────────────────
         bg_hex = self.cget("bg")
         try:
             rbg = tuple(int(bg_hex.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
@@ -409,7 +427,7 @@ class FunkyProgressBar(tk.Canvas):
             draw.rounded_rectangle([x0, y0, x1, y1], radius=r, outline=outline, width=lw)
 
     def _draw_fallback(self):
-        """Fallback si PIL no estÃ¡ disponible."""
+        """Fallback si PIL no está disponible."""
         W = self.winfo_width() or 400
         H = self._h
         pct = min(100.0, max(0.0, self._value / self._maximum * 100))
@@ -423,9 +441,9 @@ class FunkyProgressBar(tk.Canvas):
             self.create_text(W//2, H//2, text=txt, fill="white",
                             font=("Segoe UI", 9, "bold"))
 
-    # ââ AnimaciÃ³n âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Animación ─────────────────────────────────────────────────────────────
     def animate_step(self):
-        """Desliza bloques en cada tick de animaciÃ³n."""
+        """Desliza bloques en cada tick de animación."""
         self._stripe_offset = (self._stripe_offset + 2) % (self._SEG_W + self._SEG_GAP)
         self._draw()
 
@@ -438,25 +456,28 @@ def _hex_adjust(hex_col, factor):
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
-class WorkspaceWindow(tk.Toplevel):
+class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
     """Una ventana de trabajo independiente (empresa / proyecto)."""
 
-    # CatÃ¡logo de mÃ³dulos disponibles: (clave, etiqueta_pestaÃ±a, mÃ©todo_constructor)
+    # Catálogo de módulos disponibles: (clave, etiqueta_pestaña, método_constructor)
     MODULOS = [
-        ("pagos_bancarios",  "  ð¼ Pagos Bancarios  ",    "_tab_conciliacion"),
-        ("prestamos",        "  ð³ PrÃ©stamos  ",           "_tab_prestamos"),
-        ("provision_nomina", "  ð ProvisiÃ³n de NÃ³mina  ", "_tab_provision_nomina"),
-        ("ventas_dia",       "  â½ Ventas del DÃ­a  ",      "_tab_ventas_grupo"),
-        ("estado_cuenta",    "  ð¦ Estado de Cuenta  ",   "_tab_estado_cuenta"),
-        ("reconciliacion",   "  ð ReconciliaciÃ³n  ",      "_tab_reconciliacion"),
-        ("visor",            "  ð Visor de Resultados  ", "_tab_visor"),
-        ("configuracion",    "  â  ConfiguraciÃ³n  ",       "_tab_configuracion"),
-        ("concilia_sat",     "  ð ConciliaciÃ³n SAT  ",    "_tab_concilia_sat"),
-        ("conc_banco_aux",   "  ð Banco vs Auxiliar  ",   "_tab_conc_banco_aux"),
-        ("depositos_bancarios", "  ð¦ DepÃ³sitos Bancarios  ", "_tab_depositos_bancarios"),
+        ("pagos_bancarios",  "  💼 Pagos Bancarios  ",    "_tab_conciliacion"),
+        ("prestamos",        "  💳 Préstamos  ",           "_tab_prestamos"),
+        ("provision_nomina", "  📋 Provisión de Nómina  ", "_tab_provision_nomina"),
+        ("ventas_dia",       "  ⛽ Ventas del Día  ",      "_tab_ventas_grupo"),
+        ("estado_cuenta",    "  🏦 Estado de Cuenta  ",   "_tab_estado_cuenta"),
+        ("reconciliacion",   "  📑 Reconciliación  ",      "_tab_reconciliacion"),
+        ("visor",            "  📊 Visor de Resultados  ", "_tab_visor"),
+        ("configuracion",    "  ⚙  Configuración  ",       "_tab_configuracion"),
+        ("concilia_sat",     "  🔗 Conciliación SAT  ",    "_tab_concilia_sat"),
+        ("conc_banco_aux",   "  🔀 Banco vs Auxiliar  ",   "_tab_conc_banco_aux"),
+        ("depositos_bancarios", "  🏦 Depósitos Bancarios  ", "_tab_depositos_bancarios"),
+        ("poliza_nomina",    "  📋 Póliza de Nómina  ", "_tab_poliza_nomina"),
+        ("opinion_imss",     "  🏥 Opinión IMSS  ",      "_tab_opinion_imss"),
+        ("buzon_sat",        "  🗂 Buzón SAT  ",          "_tab_buzon_sat"),
     ]
 
-    # Color de acento por mÃ³dulo (orden visual del mockup RumboERP)
+    # Color de acento por módulo (orden visual del mockup RumboERP)
     _MODULE_COLORS = {
         "pagos_bancarios":  "#E8A23A",
         "prestamos":        "#D9527A",
@@ -470,22 +491,28 @@ class WorkspaceWindow(tk.Toplevel):
         "concilia_sat":     "#0A7A4A",
         "conc_banco_aux":   "#6B3FA0",
         "depositos_bancarios": "#1565C0",
+        "poliza_nomina":    "#0F766E",
+        "opinion_imss":     "#00695C",
+        "buzon_sat":        "#1565C0",
     }
 
     # (emoji, etiqueta ribbon, color acento)
     _MODULE_INFO = {
-        "pagos_bancarios":  ("ð¼", "PAGOS",      "#E8A23A"),
-        "prestamos":        ("ð³", "PRÃSTAMOS",  "#D9527A"),
-        "provision_nomina": ("ð", "PROVISIÃN",  "#1E6FBF"),
-        "ventas_dia":       ("â½", "VENTAS",      "#E14B3D"),
-        "vd_concilia":      ("ð", "DESP/VTA",   "#B45309"),
-        "estado_cuenta":    ("ð¦", "BANCOS",      "#C2611A"),
-        "reconciliacion":   ("ð", "RECONCILIA",  "#2E7D32"),
-        "visor":            ("ð", "VISOR",       "#4F46C7"),
-        "configuracion":    ("â",  "CONFIG",      "#8C3B73"),
-        "concilia_sat":     ("ð", "CONCILIA",     "#0A7A4A"),
-        "conc_banco_aux":   ("ð", "BCO/AUX",     "#6B3FA0"),
-        "depositos_bancarios": ("ð¦", "DEPÃSITOS",   "#1565C0"),
+        "pagos_bancarios":  ("💼", "PAGOS",      "#E8A23A"),
+        "prestamos":        ("💳", "PRÉSTAMOS",  "#D9527A"),
+        "provision_nomina": ("📋", "PROVISIÓN",  "#1E6FBF"),
+        "ventas_dia":       ("⛽", "VENTAS",      "#E14B3D"),
+        "vd_concilia":      ("📊", "DESP/VTA",   "#B45309"),
+        "estado_cuenta":    ("🏦", "BANCOS",      "#C2611A"),
+        "reconciliacion":   ("📑", "RECONCILIA",  "#2E7D32"),
+        "visor":            ("📊", "VISOR",       "#4F46C7"),
+        "configuracion":    ("⚙",  "CONFIG",      "#8C3B73"),
+        "concilia_sat":     ("🔗", "CONCILIA",     "#0A7A4A"),
+        "conc_banco_aux":   ("🔀", "BCO/AUX",     "#6B3FA0"),
+        "depositos_bancarios": ("🏦", "DEPÓSITOS",   "#1565C0"),
+        "poliza_nomina":    ("📋", "PÓLIZA",   "#0F766E"),
+        "opinion_imss":     ("🏥", "OP IMSS",  "#00695C"),
+        "buzon_sat":        ("🗂", "BUZÓN SAT", "#1565C0"),
     }
 
     def __init__(self, master, nombre="LA SANITARIA", modulos=None,
@@ -498,20 +525,20 @@ class WorkspaceWindow(tk.Toplevel):
         self.state("zoomed")
         self.configure(bg=COLOR_FONDO)
 
-        # Todos los mÃ³dulos disponibles para todas las empresas
+        # Todos los módulos disponibles para todas las empresas
         all_keys = [k for k, _, _ in WorkspaceWindow.MODULOS]
         self._modulos_disponibles = all_keys
 
-        # MÃ³dulos activos y callback para guardar cambios
+        # Módulos activos y callback para guardar cambios
         self._modulos_activos = [m for m in (modulos or []) if m in self._modulos_disponibles]
         self._tab_frames = {}   # key -> tab_id para poder quitar sin buscar por texto
         self._on_modulos_change = on_modulos_change
 
-        # Variables de instancia (globales â backward compat con otros mÃ³dulos)
+        # Variables de instancia (globales — backward compat con otros módulos)
         self.carpeta    = tk.StringVar(value=os.getcwd())
         self.excel_path = tk.StringVar(value="")
 
-        # Variables INDEPENDIENTES por mÃ³dulo
+        # Variables INDEPENDIENTES por módulo
         self.carpeta_pagos      = tk.StringVar(value=os.getcwd())
         self.excel_path_pagos   = tk.StringVar(value="")
         self.carpeta_prestamos  = tk.StringVar(value=os.getcwd())
@@ -528,7 +555,7 @@ class WorkspaceWindow(tk.Toplevel):
         self.archivos_por_categoria = {
             "nomina": {}, "complementos": {}, "vacaciones": {}, "prestamos": {}
         }
-        # Inicializar widgets opcionales (solo existen si su tab estÃ¡ cargada)
+        # Inicializar widgets opcionales (solo existen si su tab está cargada)
         self.listboxes    = {}
         self.lb_prestamos = None
         self.otros_label  = None
@@ -538,20 +565,20 @@ class WorkspaceWindow(tk.Toplevel):
 
         if cn is None:
             self._log(
-                "â   No encontrÃ© 'conciliacion_nomina.py' en esta carpeta.\n"
+                "⚠  No encontré 'conciliacion_nomina.py' en esta carpeta.\n"
                 "   Copia este archivo a la misma carpeta y vuelve a abrir la interfaz.",
                 error=True,
             )
 
     # ---------------------------------------------------------------- #
-    # HELPERS VISUALES (logo + indicadores de mÃ³dulo)
+    # HELPERS VISUALES (logo + indicadores de módulo)
     # ---------------------------------------------------------------- #
     def _dibujar_brujula(self, cv, size=38):
-        """Delega a la funciÃ³n de mÃ³dulo."""
+        """Delega a la función de módulo."""
         _dibujar_brujula(cv, size)
 
     def _make_tab_dot(self, color):
-        """PhotoImage cuadrado 10Ã10 del color de acento del mÃ³dulo."""
+        """PhotoImage cuadrado 10×10 del color de acento del módulo."""
         img = tk.PhotoImage(width=10, height=10)
         row = " ".join([color] * 10)
         for y in range(10):
@@ -559,14 +586,14 @@ class WorkspaceWindow(tk.Toplevel):
         return img
 
     # ---------------------------------------------------------------- #
-    # RIBBON DE MÃDULOS
+    # RIBBON DE MÓDULOS
     # ---------------------------------------------------------------- #
-    _RIBBON_BG     = "#111827"   # sidebar â dark navy
-    _RIBBON_ACTIVE = "#1E3A8A"   # sidebar item activo â royal blue
+    _RIBBON_BG     = "#111827"   # sidebar — dark navy
+    _RIBBON_ACTIVE = "#1E3A8A"   # sidebar item activo — royal blue
     _RIBBON_HOVER  = "#1F2937"   # sidebar item hover
 
     def _rebuild_ribbon(self):
-        """Reconstruye los botones de la sidebar (muestra todos los mÃ³dulos disponibles)."""
+        """Reconstruye los botones de la sidebar (muestra todos los módulos disponibles)."""
         if not hasattr(self, "_ribbon_frame") or not self._ribbon_frame.winfo_exists():
             return
         prev = getattr(self, "_ribbon_active", None)
@@ -586,7 +613,7 @@ class WorkspaceWindow(tk.Toplevel):
             self._ribbon_select(target)
 
     def _ribbon_add_btn(self, key, emoji, label, color):
-        """Ãtem de mÃ³dulo en la barra lateral izquierda (sidebar vertical)."""
+        """Ítem de módulo en la barra lateral izquierda (sidebar vertical)."""
         # Nombre completo desde MODULOS (label limpio, sin espacios ni emoji)
         full_name = next(
             (lbl.strip() for k, lbl, _ in self.MODULOS if k == key), label
@@ -604,12 +631,12 @@ class WorkspaceWindow(tk.Toplevel):
         accent = tk.Frame(outer, bg=BG_IDLE, width=3)
         accent.pack(side="left", fill="y")
 
-        # Emoji del mÃ³dulo
+        # Emoji del módulo
         ico = tk.Label(outer, text=emoji, bg=BG_IDLE, fg=FG_IDLE,
                        font=("Segoe UI Emoji", 11), padx=8, pady=8)
         ico.pack(side="left")
 
-        # Nombre del mÃ³dulo
+        # Nombre del módulo
         lbl_tx = tk.Label(outer, text=full_name, bg=BG_IDLE, fg=FG_IDLE,
                           font=("Segoe UI", 8, "bold"), anchor="w")
         lbl_tx.pack(side="left", fill="x", expand=True, pady=8)
@@ -647,7 +674,7 @@ class WorkspaceWindow(tk.Toplevel):
         self._ribbon_set_fns[key] = _set_state
 
     def _ribbon_select(self, key):
-        """Clic en Ã­cono: navega al tab existente o lo crea si es la primera vez."""
+        """Clic en ícono: navega al tab existente o lo crea si es la primera vez."""
         # Desactivar anterior en ribbon
         if self._ribbon_active and self._ribbon_active in self._ribbon_set_fns:
             try:
@@ -655,7 +682,7 @@ class WorkspaceWindow(tk.Toplevel):
             except Exception:
                 pass
         self._ribbon_active = key
-        # Activar Ã­cono
+        # Activar ícono
         if key in self._ribbon_set_fns:
             try:
                 self._ribbon_set_fns[key](True)
@@ -664,11 +691,11 @@ class WorkspaceWindow(tk.Toplevel):
         # Verificar que la referencia guardada siga viva
         if key in self._tab_frames:
             if self._tab_frames[key] not in self.nb.tabs():
-                del self._tab_frames[key]   # referencia muerta â permitir recreaciÃ³n
-        # Crear tab solo si no existe todavÃ­a
+                del self._tab_frames[key]   # referencia muerta — permitir recreación
+        # Crear tab solo si no existe todavía
         if key not in self._tab_frames:
             self._cargar_tab(key)
-            # Registrar en mÃ³dulos activos para persistencia
+            # Registrar en módulos activos para persistencia
             if key not in self._modulos_activos:
                 self._modulos_activos.append(key)
                 if self._on_modulos_change:
@@ -677,7 +704,7 @@ class WorkspaceWindow(tk.Toplevel):
                     except Exception:
                         pass
         # Navegar al tab
-        self._asegurar_x_tabs()   # garantizar â en todos los tabs
+        self._asegurar_x_tabs()   # garantizar ✕ en todos los tabs
         if key in self._tab_frames:
             try:
                 self.nb.select(self._tab_frames[key])
@@ -685,22 +712,22 @@ class WorkspaceWindow(tk.Toplevel):
                 pass
 
     # ---------------------------------------------------------------- #
-    # CONSTRUCCIÃN PRINCIPAL
+    # CONSTRUCCIÓN PRINCIPAL
     # ---------------------------------------------------------------- #
     def _construir_ui(self):
         self._tab_dot_imgs = {}
         self._btn_cinta    = {}
 
-        # ââ LAYOUT: sidebar izquierda + contenido derecho ââââââââââââ
+        # ── LAYOUT: sidebar izquierda + contenido derecho ────────────
         main = tk.Frame(self, bg=COLOR_FONDO)
         main.pack(fill="both", expand=True)
 
-        # ââ SIDEBAR ââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── SIDEBAR ──────────────────────────────────────────────────
         sidebar = tk.Frame(main, bg=self._RIBBON_BG, width=178)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
-        # Header: logo brÃºjula + nombre empresa
+        # Header: logo brújula + nombre empresa
         hdr_side = tk.Frame(sidebar, bg=self._RIBBON_BG)
         hdr_side.pack(fill="x")
         logo_cv = tk.Canvas(hdr_side, width=34, height=34,
@@ -718,18 +745,18 @@ class WorkspaceWindow(tk.Toplevel):
 
         # Separador
         tk.Frame(sidebar, bg="#1F2937", height=1).pack(fill="x", padx=10)
-        tk.Label(sidebar, text="MÃDULOS", bg=self._RIBBON_BG, fg="#6B7280",
+        tk.Label(sidebar, text="MÓDULOS", bg=self._RIBBON_BG, fg="#6B7280",
                  font=("Segoe UI", 7, "bold"), anchor="w",
                  padx=16).pack(fill="x", pady=(10, 2))
 
-        # Frame de mÃ³dulos (vertical)
+        # Frame de módulos (vertical)
         self._ribbon_active = None
         self._ribbon_btns   = {}
         self._ribbon_photos = {}
         self._ribbon_frame  = tk.Frame(sidebar, bg=self._RIBBON_BG)
         self._ribbon_frame.pack(fill="x")
 
-        # Botones de acciÃ³n fijos al fondo de la sidebar
+        # Botones de acción fijos al fondo de la sidebar
         def _side_action(txt, cmd):
             b = tk.Label(sidebar, text=txt, bg=self._RIBBON_BG, fg="#9CA3AF",
                          font=("Segoe UI", 8), anchor="w", padx=16, pady=6,
@@ -741,14 +768,14 @@ class WorkspaceWindow(tk.Toplevel):
             return b
         tk.Frame(sidebar, bg="#1F2937", height=1).pack(
             fill="x", padx=10, side="bottom")
-        self._btn_modulos = None   # botÃ³n removido; referencia conservada para compatibilidad
-        _side_action("â  Empresas", self._mostrar_lanzador)
+        self._btn_modulos = None   # botón removido; referencia conservada para compatibilidad
+        _side_action("⊞  Empresas", self._mostrar_lanzador)
 
-        # ââ CONTENIDO DERECHO âââââââââââââââââââââââââââââââââââââââââ
+        # ── CONTENIDO DERECHO ─────────────────────────────────────────
         self._content_frame = tk.Frame(main, bg=COLOR_FONDO)
         self._content_frame.pack(side="right", fill="both", expand=True)
 
-        # Mini-barra superior (tÃ­tulo)
+        # Mini-barra superior (título)
         top_bar = tk.Frame(self._content_frame, bg=self._RIBBON_ACTIVE, height=40)
         top_bar.pack(fill="x")
         top_bar.pack_propagate(False)
@@ -772,7 +799,7 @@ class WorkspaceWindow(tk.Toplevel):
                                         font=("Segoe UI", 8, "bold"), width=12, anchor="w")
         self._global_pb_lbl.pack(side="left")
 
-        # Notebook en el medio â ahora expande solo el espacio que queda
+        # Notebook en el medio — ahora expande solo el espacio que queda
         self.nb = ttk.Notebook(self._content_frame)
         self.nb.pack(fill="both", expand=True, padx=8, pady=(0, 2))
         self._habilitar_drag_tabs(self.nb)
@@ -783,26 +810,26 @@ class WorkspaceWindow(tk.Toplevel):
             self._mostrar_hint_vacio()
 
     def _asegurar_x_tabs(self):
-        """Agrega el sÃ­mbolo â a cualquier pestaÃ±a que no lo tenga todavÃ­a."""
+        """Agrega el símbolo ✕ a cualquier pestaña que no lo tenga todavía."""
         try:
             for tid in self.nb.tabs():
                 txt = self.nb.tab(tid, "text")
-                if "â" not in txt:          # â U+2715
-                    self.nb.tab(tid, text=txt.rstrip() + "  â")
+                if "✕" not in txt:          # ✕ U+2715
+                    self.nb.tab(tid, text=txt.rstrip() + "  ✕")
         except Exception:
             pass
 
     def _on_tab_close_click(self, event):
-        """Cierra la pestaÃ±a si el clic cae sobre el â al final del label."""
-        # Identificar quÃ© tab estÃ¡ bajo el cursor (sin filtrar por element,
-        # porque nb.identify() devuelve valores distintos segÃºn el tema/SO)
+        """Cierra la pestaña si el clic cae sobre el ✕ al final del label."""
+        # Identificar qué tab está bajo el cursor (sin filtrar por element,
+        # porque nb.identify() devuelve valores distintos según el tema/SO)
         try:
             idx = self.nb.index("@%d,%d" % (event.x, event.y))
         except Exception:
             return
         try:
             tab_text = self.nb.tab(idx, "text")
-            if "â" not in tab_text:
+            if "✕" not in tab_text:
                 return
             # Escanear a la derecha para hallar el borde derecho del tab
             scan_x = event.x + 1
@@ -814,10 +841,10 @@ class WorkspaceWindow(tk.Toplevel):
                 except Exception:
                     break
                 scan_x += 1
-            # El â mÃ¡s padding del tema ocupa los Ãºltimos ~40 px del tab
+            # El ✕ más padding del tema ocupa los últimos ~40 px del tab
             if scan_x - event.x > 40:
                 return
-            # Identificar el key y cerrar vÃ­a _toggle_modulo
+            # Identificar el key y cerrar vía _toggle_modulo
             tab_id = self.nb.tabs()[idx]
             key = next((k for k, tid in self._tab_frames.items() if tid == tab_id), None)
             if key:
@@ -826,9 +853,9 @@ class WorkspaceWindow(tk.Toplevel):
             pass
 
     def _refrescar_cinta(self):
-        """Actualiza colores y visibilidad de la cinta segÃºn mÃ³dulos disponibles/activos."""
+        """Actualiza colores y visibilidad de la cinta según módulos disponibles/activos."""
         for key, b in self._btn_cinta.items():
-            # Mostrar solo mÃ³dulos disponibles para esta empresa
+            # Mostrar solo módulos disponibles para esta empresa
             if key in self._modulos_disponibles:
                 b.pack(side="left", padx=2, pady=4)
                 if key in self._modulos_activos:
@@ -841,7 +868,7 @@ class WorkspaceWindow(tk.Toplevel):
                 b.pack_forget()
 
     def _toggle_modulo(self, key):
-        """Activa o desactiva un mÃ³dulo desde la cinta."""
+        """Activa o desactiva un módulo desde la cinta."""
         if key not in self._modulos_disponibles:
             return  # no disponible para esta empresa
         if key in self._modulos_activos:
@@ -874,7 +901,7 @@ class WorkspaceWindow(tk.Toplevel):
         self._refrescar_cinta()
 
     def _mostrar_hint_vacio(self):
-        """Sin mÃ³dulos activos: vaciar el notebook completamente."""
+        """Sin módulos activos: vaciar el notebook completamente."""
         for tab_id in list(self.nb.tabs()):
             try:
                 self.nb.forget(tab_id)
@@ -883,15 +910,15 @@ class WorkspaceWindow(tk.Toplevel):
         self._tab_frames.clear()
 
     def _cargar_tab(self, key):
-        """Construye la pestaÃ±a de un mÃ³dulo por su clave (no agrega si ya existe)."""
+        """Construye la pestaña de un módulo por su clave (no agrega si ya existe)."""
         # Verificar referencia guardada
         if key in self._tab_frames:
             if self._tab_frames[key] in self.nb.tabs():
-                return  # ya existe y estÃ¡ activa â no duplicar
+                return  # ya existe y está activa — no duplicar
             else:
                 del self._tab_frames[key]  # referencia muerta, limpiar
-        # Verificar que ningÃºn tab existente en el notebook es ya este mÃ³dulo
-        # (por si _tab_frames se desincronizÃ³)
+        # Verificar que ningún tab existente en el notebook es ya este módulo
+        # (por si _tab_frames se desincronizó)
         label_esperado = next((lbl.strip() for k, lbl, _ in self.MODULOS if k == key), None)
         if label_esperado:
             for tid in self.nb.tabs():
@@ -904,7 +931,16 @@ class WorkspaceWindow(tk.Toplevel):
         for k, _, metodo in self.MODULOS:
             if k == key:
                 n_antes = self.nb.index("end")
-                getattr(self, metodo)(self.nb)
+                try:
+                    getattr(self, metodo)(self.nb)
+                except Exception as _tab_err:
+                    import traceback as _trc
+                    msg = f"[Error al abrir módulo '{key}']: {_tab_err}\n{_trc.format_exc()}"
+                    try:
+                        self._log(msg, error=True)
+                    except Exception:
+                        print(msg)
+                    return
                 n_despues = self.nb.index("end")
                 if n_despues > n_antes:
                     tab_id = self.nb.tabs()[-1]
@@ -912,30 +948,30 @@ class WorkspaceWindow(tk.Toplevel):
                     _color = self._MODULE_COLORS.get(key, "#1E6FBF")
                     _dot = self._make_tab_dot(_color)
                     self._tab_dot_imgs[key] = _dot
-                    # AÃ±adir botÃ³n â al texto de la pestaÃ±a
+                    # Añadir botón ✕ al texto de la pestaña
                     try:
                         _txt = self.nb.tab(tab_id, "text").rstrip()
-                        self.nb.tab(tab_id, text=_txt + "  â")
+                        self.nb.tab(tab_id, text=_txt + "  ✕")
                     except Exception:
                         pass
                 return
 
     def _agregar_modulo_dialog(self):
-        """DiÃ¡logo para seleccionar mÃ³dulos a agregar."""
+        """Diálogo para seleccionar módulos a agregar."""
         disponibles = [(k, lbl) for k, lbl, _ in self.MODULOS
                        if k not in self._modulos_activos]
         if not disponibles:
-            messagebox.showinfo("MÃ³dulos", "Ya tienes todos los mÃ³dulos disponibles en esta ventana.")
+            messagebox.showinfo("Módulos", "Ya tienes todos los módulos disponibles en esta ventana.")
             return
 
         win = tk.Toplevel(self)
-        win.title("Agregar mÃ³dulo")
+        win.title("Agregar módulo")
         win.geometry("360x280")
         win.resizable(False, False)
         win.configure(bg=COLOR_FONDO)
         win.grab_set()
 
-        ttk.Label(win, text="Selecciona los mÃ³dulos a agregar:",
+        ttk.Label(win, text="Selecciona los módulos a agregar:",
                   style="Seccion.TLabel").pack(padx=20, pady=(18, 8), anchor="w")
 
         vars_check = {}
@@ -951,7 +987,7 @@ class WorkspaceWindow(tk.Toplevel):
         def _confirmar():
             seleccionados = [k for k, v in vars_check.items() if v.get()]
             for key in seleccionados:
-                # Quitar pestaÃ±a de inicio si es la primera vez
+                # Quitar pestaña de inicio si es la primera vez
                 if not self._modulos_activos:
                     try:
                         self.nb.forget(0)
@@ -967,7 +1003,7 @@ class WorkspaceWindow(tk.Toplevel):
                    command=_confirmar).pack(pady=16)
 
     def _habilitar_drag_tabs(self, nb):
-        """Permite reordenar pestaÃ±as del Notebook arrastrÃ¡ndolas."""
+        """Permite reordenar pestañas del Notebook arrastrándolas."""
         _d = {}
 
         def _tab_en(x, y):
@@ -1014,7 +1050,7 @@ class WorkspaceWindow(tk.Toplevel):
                 nb.select(dst)
             except Exception:
                 return
-            # Sincronizar orden de mÃ³dulos
+            # Sincronizar orden de módulos
             nuevo_orden = []
             for i in range(nb.index("end")):
                 lbl = nb.tab(i, "text").strip()
@@ -1034,13 +1070,13 @@ class WorkspaceWindow(tk.Toplevel):
         nb.bind("<ButtonRelease-1>", _release, add="+")
 
     def _on_cerrar_workspace(self):
-        """Cierra esta Ã¡rea de trabajo y re-muestra el launcher si es la Ãºltima."""
+        """Cierra esta área de trabajo y re-muestra el launcher si es la última."""
         self.destroy()
         try:
             app = self.master
             abiertas = [w for w in app.workspaces.values() if w.winfo_exists()]
             if not abiertas:
-                # No quedan Ã¡reas abiertas â mostrar el launcher
+                # No quedan áreas abiertas → mostrar el launcher
                 app.deiconify()
                 app.lift()
                 app.focus_force()
@@ -1048,7 +1084,7 @@ class WorkspaceWindow(tk.Toplevel):
             pass
 
     def _configurar_modulos_dropdown(self):
-        """Despliega un menÃº hacia abajo debajo del botÃ³n â MÃ³dulos."""
+        """Despliega un menú hacia abajo debajo del botón ⚙ Módulos."""
         btn = self._btn_modulos
 
         # Si ya hay un dropdown abierto, cerrarlo
@@ -1060,7 +1096,7 @@ class WorkspaceWindow(tk.Toplevel):
             self._modulos_popup = None
             return
 
-        # PosiciÃ³n: justo debajo del botÃ³n
+        # Posición: justo debajo del botón
         x = btn.winfo_rootx()
         y = btn.winfo_rooty() + btn.winfo_height()
 
@@ -1078,7 +1114,7 @@ class WorkspaceWindow(tk.Toplevel):
 
         checks = {}
         for key, lbl, _ in self.MODULOS:
-            # Checkbox refleja si la pestaÃ±a estÃ¡ activa actualmente
+            # Checkbox refleja si la pestaña está activa actualmente
             var = tk.BooleanVar(value=key in self._modulos_activos)
             checks[key] = var
             cb = tk.Checkbutton(inner, text=lbl.strip(), variable=var,
@@ -1094,7 +1130,7 @@ class WorkspaceWindow(tk.Toplevel):
 
         def aplicar():
             seleccionados = [k for k, var in checks.items() if var.get()]
-            # Activar los nuevos (NO crear tabs aquÃ­ â solo al hacer clic en ribbon)
+            # Activar los nuevos (NO crear tabs aquí — solo al hacer clic en ribbon)
             for k in seleccionados:
                 if k not in self._modulos_activos:
                     self._modulos_activos.append(k)
@@ -1102,7 +1138,7 @@ class WorkspaceWindow(tk.Toplevel):
             for k in list(self._modulos_activos):
                 if k not in seleccionados:
                     self._modulos_activos.remove(k)
-                    # Quitar la pestaÃ±a usando _tab_frames (fiable)
+                    # Quitar la pestaña usando _tab_frames (fiable)
                     tab_id = self._tab_frames.pop(k, None)
                     if tab_id:
                         try:
@@ -1150,19 +1186,19 @@ class WorkspaceWindow(tk.Toplevel):
             pass
 
     def _quitar_modulo_activo(self):
-        """DiÃ¡logo para seleccionar quÃ© mÃ³dulos quitar."""
+        """Diálogo para seleccionar qué módulos quitar."""
         if not self._modulos_activos:
-            messagebox.showinfo("Sin mÃ³dulos", "No hay mÃ³dulos activos en esta ventana.")
+            messagebox.showinfo("Sin módulos", "No hay módulos activos en esta ventana.")
             return
 
         win = tk.Toplevel(self)
-        win.title("Quitar mÃ³dulo")
+        win.title("Quitar módulo")
         win.geometry("360x260")
         win.resizable(False, False)
         win.configure(bg=COLOR_FONDO)
         win.grab_set()
 
-        ttk.Label(win, text="Selecciona los mÃ³dulos a quitar:",
+        ttk.Label(win, text="Selecciona los módulos a quitar:",
                   style="Seccion.TLabel").pack(padx=20, pady=(18, 8), anchor="w")
 
         vars_check = {}
@@ -1205,29 +1241,29 @@ class WorkspaceWindow(tk.Toplevel):
     # PANEL SUPERIOR
     # ---------------------------------------------------------------- #
     def _panel_superior(self):
-        # El panel de Carpeta/CatÃ¡logo/Escanear ahora vive dentro de cada mÃ³dulo.
-        # AquÃ­ solo queda el botÃ³n global de Instrucciones.
+        # El panel de Carpeta/Catálogo/Escanear ahora vive dentro de cada módulo.
+        # Aquí solo queda el botón global de Instrucciones.
         fila_botones = ttk.Frame(self._content_frame)
         fila_botones.pack(pady=(6, 4))
-        ttk.Button(fila_botones, text="â  Instrucciones",
+        ttk.Button(fila_botones, text="❓  Instrucciones",
                    command=self._mostrar_instrucciones).pack(side="left")
 
     def _mostrar_instrucciones(self):
-        """Ventana con instrucciones organizadas por mÃ³dulo."""
+        """Ventana con instrucciones organizadas por módulo."""
         win = tk.Toplevel(self)
-        win.title("â Instrucciones de uso")
+        win.title("❓ Instrucciones de uso")
         win.geometry("780x640")
         win.resizable(True, True)
         win.configure(bg=COLOR_FONDO)
         win.grab_set()
 
         tk.Label(win,
-            text=f"ð  {self.nombre} â GuÃ­a por mÃ³dulo",
+            text=f"💗  {self.nombre} — Guía por módulo",
             bg=COLOR_FONDO, fg=COLOR_FUCSIA,
             font=("Segoe UI", 13, "bold"),
         ).pack(pady=(16, 2))
         tk.Label(win,
-            text="Selecciona un mÃ³dulo para ver sus instrucciones.",
+            text="Selecciona un módulo para ver sus instrucciones.",
             bg=COLOR_FONDO, fg=COLOR_TEXTO,
             font=("Segoe UI", 9),
         ).pack(pady=(0, 8))
@@ -1237,84 +1273,84 @@ class WorkspaceWindow(tk.Toplevel):
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
 
-        # ââ MÃ³dulos disponibles con sus instrucciones ââ
+        # ── Módulos disponibles con sus instrucciones ──
         INSTRUCCIONES = {
             "conciliacion": {
-                "icono": "ð¼", "titulo": "Pagos Bancarios",
+                "icono": "💼", "titulo": "Pagos Bancarios",
                 "pasos": [
-                    ("Escanea tu carpeta", "Haz clic en ð Escanear carpeta y selecciona la carpeta donde estÃ¡n los PDFs de dispersiÃ³n o comprobantes de pago de nÃ³mina."),
-                    ("Selecciona archivos", "Se muestran 3 listas separadas:\nâ¸ NÃ³mina principal\nâ¸ Complementos\nâ¸ Vacaciones\nUsa 'Todos' o 'Ninguno' para seleccionar masivamente, o marca uno a uno."),
-                    ("Procesa", "â¸ BotÃ³n individual (NÃ³mina / Complementos / Vacaciones): genera un Excel solo de esa categorÃ­a.\nâ¸ ð¦ Generar TODO: procesa las 3 listas y las combina en un solo archivo Excel consolidado."),
-                    ("Descarga el resultado", "Al terminar aparecen los botones:\nâ¸ ð Abrir archivo â abre el Excel directamente.\nâ¸ ð¾ Guardar como â guarda una copia en la ubicaciÃ³n que elijas."),
+                    ("Escanea tu carpeta", "Haz clic en 🔍 Escanear carpeta y selecciona la carpeta donde están los PDFs de dispersión o comprobantes de pago de nómina."),
+                    ("Selecciona archivos", "Se muestran 3 listas separadas:\n▸ Nómina principal\n▸ Complementos\n▸ Vacaciones\nUsa 'Todos' o 'Ninguno' para seleccionar masivamente, o marca uno a uno."),
+                    ("Procesa", "▸ Botón individual (Nómina / Complementos / Vacaciones): genera un Excel solo de esa categoría.\n▸ 📦 Generar TODO: procesa las 3 listas y las combina en un solo archivo Excel consolidado."),
+                    ("Descarga el resultado", "Al terminar aparecen los botones:\n▸ 📂 Abrir archivo — abre el Excel directamente.\n▸ 💾 Guardar como — guarda una copia en la ubicación que elijas."),
                 ],
             },
             "prestamos": {
-                "icono": "ð³", "titulo": "PrÃ©stamos",
+                "icono": "💳", "titulo": "Préstamos",
                 "pasos": [
-                    ("Escanea la carpeta", "Haz clic en ð Escanear carpeta para detectar automÃ¡ticamente los PDFs de prÃ©stamos de nÃ³mina."),
+                    ("Escanea la carpeta", "Haz clic en 🔍 Escanear carpeta para detectar automáticamente los PDFs de préstamos de nómina."),
                     ("Selecciona empleados", "Marca los archivos que quieres procesar. Puedes usar 'Todos' o buscar por nombre."),
-                    ("Exporta a Excel", "Haz clic en ð¤ Exportar prÃ©stamos a Excel para generar el reporte con montos, descuentos y saldos pendientes."),
-                    ("Descarga", "Al finalizar, abre el archivo directamente con ð Abrir o guÃ¡rdalo con ð¾ Guardar como."),
+                    ("Exporta a Excel", "Haz clic en 📤 Exportar préstamos a Excel para generar el reporte con montos, descuentos y saldos pendientes."),
+                    ("Descarga", "Al finalizar, abre el archivo directamente con 📂 Abrir o guárdalo con 💾 Guardar como."),
                 ],
             },
             "provision": {
-                "icono": "ð", "titulo": "ProvisiÃ³n de NÃ³mina",
+                "icono": "📋", "titulo": "Provisión de Nómina",
                 "pasos": [
-                    ("Selecciona la plantilla SINUBE", "Haz clic en ð Seleccionar plantilla y elige el archivo Excel base de SINUBE que contiene las columnas de dispersiÃ³n."),
-                    ("Carga los XMLs del SAT", "Haz clic en â Agregar XMLs y selecciona los CFDIs de nÃ³mina emitidos por el SAT (pueden ser varios a la vez)."),
-                    ("Procesa", "Haz clic en â¶ Procesar XMLs. La app lee cada CFDI y llena automÃ¡ticamente las columnas de la plantilla SINUBE con los datos de cada empleado."),
-                    ("Descarga el resultado", "El archivo Excel generado aparece abajo. Usa ð Abrir para revisarlo o ð¾ Guardar como para guardarlo donde prefieras."),
+                    ("Selecciona la plantilla SINUBE", "Haz clic en 📂 Seleccionar plantilla y elige el archivo Excel base de SINUBE que contiene las columnas de dispersión."),
+                    ("Carga los XMLs del SAT", "Haz clic en ➕ Agregar XMLs y selecciona los CFDIs de nómina emitidos por el SAT (pueden ser varios a la vez)."),
+                    ("Procesa", "Haz clic en ▶ Procesar XMLs. La app lee cada CFDI y llena automáticamente las columnas de la plantilla SINUBE con los datos de cada empleado."),
+                    ("Descarga el resultado", "El archivo Excel generado aparece abajo. Usa 📂 Abrir para revisarlo o 💾 Guardar como para guardarlo donde prefieras."),
                 ],
             },
             "ventas": {
-                "icono": "â½", "titulo": "Ventas del DÃ­a",
+                "icono": "⛽", "titulo": "Ventas del Día",
                 "pasos": [
-                    ("Carga el control de despachos", "Haz clic en ð Seleccionar Excel y elige el archivo de Control de Despachos del dÃ­a (generado por el sistema de la gasolinera)."),
-                    ("Selecciona la plantilla de cuentas", "Elige la plantilla de cuentas contables que define las cuentas de mayor para la pÃ³liza."),
-                    ("Genera la pÃ³liza", "Haz clic en â½ Generar PÃ³liza Ventas del DÃ­a. La app calcula totales por turno, producto y forma de pago y crea la pÃ³liza contable en Excel."),
-                    ("Descarga", "El archivo Excel con la pÃ³liza aparece al terminar. Ãbrelo con ð Abrir Excel o guÃ¡rdalo con ð¾ Guardar como."),
+                    ("Carga el control de despachos", "Haz clic en 📂 Seleccionar Excel y elige el archivo de Control de Despachos del día (generado por el sistema de la gasolinera)."),
+                    ("Selecciona la plantilla de cuentas", "Elige la plantilla de cuentas contables que define las cuentas de mayor para la póliza."),
+                    ("Genera la póliza", "Haz clic en ⛽ Generar Póliza Ventas del Día. La app calcula totales por turno, producto y forma de pago y crea la póliza contable en Excel."),
+                    ("Descarga", "El archivo Excel con la póliza aparece al terminar. Ábrelo con 📂 Abrir Excel o guárdalo con 💾 Guardar como."),
                 ],
             },
             "estado_cuenta": {
-                "icono": "ð¦", "titulo": "Estado de Cuenta",
+                "icono": "🏦", "titulo": "Estado de Cuenta",
                 "pasos": [
                     ("Selecciona el banco", "Haz clic en el banco correspondiente al estado de cuenta que vas a procesar (BBVA, Banorte, HSBC, Inbursa, etc.)."),
                     ("Carga el PDF", "Arrastra el PDF directamente a la zona azul, o haz clic en ella para buscar el archivo en tu equipo."),
-                    ("Extrae las tablas", "Haz clic en â¬ Extraer tablas y generar Excel. La app lee el PDF y detecta automÃ¡ticamente los movimientos bancarios (depÃ³sitos, retiros, saldo)."),
-                    ("Revisa y herramientas", "VerÃ¡s la tabla de movimientos. Puedes:\nâ¸ Copiar â copiar al portapapeles.\nâ¸ Î£ Autosuma â sumar columnas seleccionadas.\nâ¸ Quitar duplicados â eliminar filas repetidas.\nâ¸ Ordenar AâZ / ZâA â ordenar por fecha o monto.\nâ¸ ð Buscar â filtrar por descripciÃ³n o monto.\nâ¸ ð Abrir Excel â abrir el archivo generado."),
+                    ("Extrae las tablas", "Haz clic en ⬛ Extraer tablas y generar Excel. La app lee el PDF y detecta automáticamente los movimientos bancarios (depósitos, retiros, saldo)."),
+                    ("Revisa y herramientas", "Verás la tabla de movimientos. Puedes:\n▸ Copiar — copiar al portapapeles.\n▸ Σ Autosuma — sumar columnas seleccionadas.\n▸ Quitar duplicados — eliminar filas repetidas.\n▸ Ordenar A→Z / Z→A — ordenar por fecha o monto.\n▸ 🔍 Buscar — filtrar por descripción o monto.\n▸ 📂 Abrir Excel — abrir el archivo generado."),
                 ],
             },
             "visor": {
-                "icono": "ð", "titulo": "Visor de Resultados",
+                "icono": "📊", "titulo": "Visor de Resultados",
                 "pasos": [
-                    ("Abre un archivo Excel", "Haz clic en ð Abrir archivo y selecciona cualquier Excel generado por la app (pÃ³lizas, conciliaciones, nÃ³mina, etc.)."),
-                    ("Navega entre hojas", "Usa las pestaÃ±as en la parte inferior para cambiar de hoja dentro del archivo."),
-                    ("Filtra y busca", "Usa el campo de bÃºsqueda para filtrar filas. Haz clic en los encabezados de columna para ordenar los datos."),
+                    ("Abre un archivo Excel", "Haz clic en 📂 Abrir archivo y selecciona cualquier Excel generado por la app (pólizas, conciliaciones, nómina, etc.)."),
+                    ("Navega entre hojas", "Usa las pestañas en la parte inferior para cambiar de hoja dentro del archivo."),
+                    ("Filtra y busca", "Usa el campo de búsqueda para filtrar filas. Haz clic en los encabezados de columna para ordenar los datos."),
                     ("Exporta o imprime", "Desde el visor puedes copiar datos al portapapeles o imprimir directamente el reporte."),
                 ],
             },
             "configuracion": {
-                "icono": "â", "titulo": "ConfiguraciÃ³n",
+                "icono": "⚙", "titulo": "Configuración",
                 "pasos": [
-                    ("Carpeta de trabajo", "Define la carpeta raÃ­z donde la app buscarÃ¡ y guardarÃ¡ los archivos. Al cambiarla, todas las rutas se actualizan automÃ¡ticamente."),
+                    ("Carpeta de trabajo", "Define la carpeta raíz donde la app buscará y guardará los archivos. Al cambiarla, todas las rutas se actualizan automáticamente."),
                     ("Carpeta de salida", "Subcarpeta donde se guardan los Excel generados. Por defecto es 'resultados' dentro de la carpeta de trabajo."),
-                    ("Prefijo de archivos", "Texto que se agrega al inicio del nombre de cada archivo generado, p. ej. 'MAYO2026_'. Ãtil para organizar por periodo."),
-                    ("Empresa activa", "Nombre de la empresa o razÃ³n social que aparece en los encabezados de los reportes generados."),
+                    ("Prefijo de archivos", "Texto que se agrega al inicio del nombre de cada archivo generado, p. ej. 'MAYO2026_'. Útil para organizar por periodo."),
+                    ("Empresa activa", "Nombre de la empresa o razón social que aparece en los encabezados de los reportes generados."),
                 ],
             },
             "concilia_sat": {
-                "icono": "ð", "titulo": "ConciliaciÃ³n SAT",
+                "icono": "🔗", "titulo": "Conciliación SAT",
                 "pasos": [
-                    ("Carga el Excel de Control de Despachos", "Arrastra el archivo Excel de Control de Despachos a la zona verde izquierda, o haz clic en ð Seleccionar Excel. Debe contener la columna FolioFiscal (UUID)."),
-                    ("Carga los XMLs del SAT", "Arrastra uno o varios archivos XML (CFDIs del SAT) a la zona verde derecha, o haz clic en ð Seleccionar XMLs. Puedes cargar mÃºltiples XMLs a la vez."),
-                    ("Procesa la conciliaciÃ³n", "Haz clic en ð Procesar ConciliaciÃ³n. La app compara el UUID de cada CFDI contra la columna FolioFiscal del Excel, detectando coincidencias y diferencias de importe."),
-                    ("Revisa el reporte", "Se genera un Excel con 13 columnas:\nâ¸ Folio Fiscal XML y Folio Fiscal Excel\nâ¸ Â¿Coincide? (â SÃ / â NO)\nâ¸ Fecha, Receptor, Concepto\nâ¸ SubTotal, IVA y Total (XML)\nâ¸ Importe Excel y Diferencia\nâ¸ Estado (CONCILIADO / SIN MATCH)"),
-                    ("Abre los resultados", "Al terminar aparecen dos botones:\nâ¸ ð Abrir ConciliaciÃ³n â abre el reporte completo.\nâ¸ ð Abrir Excel con UUID â abre el Control de Despachos original."),
+                    ("Carga el Excel de Control de Despachos", "Arrastra el archivo Excel de Control de Despachos a la zona verde izquierda, o haz clic en 📄 Seleccionar Excel. Debe contener la columna FolioFiscal (UUID)."),
+                    ("Carga los XMLs del SAT", "Arrastra uno o varios archivos XML (CFDIs del SAT) a la zona verde derecha, o haz clic en 📑 Seleccionar XMLs. Puedes cargar múltiples XMLs a la vez."),
+                    ("Procesa la conciliación", "Haz clic en 🔗 Procesar Conciliación. La app compara el UUID de cada CFDI contra la columna FolioFiscal del Excel, detectando coincidencias y diferencias de importe."),
+                    ("Revisa el reporte", "Se genera un Excel con 13 columnas:\n▸ Folio Fiscal XML y Folio Fiscal Excel\n▸ ¿Coincide? (✓ SÍ / ✘ NO)\n▸ Fecha, Receptor, Concepto\n▸ SubTotal, IVA y Total (XML)\n▸ Importe Excel y Diferencia\n▸ Estado (CONCILIADO / SIN MATCH)"),
+                    ("Abre los resultados", "Al terminar aparecen dos botones:\n▸ 📂 Abrir Conciliación — abre el reporte completo.\n▸ 📊 Abrir Excel con UUID — abre el Control de Despachos original."),
                 ],
             },
         }
 
-        # ââ Panel izquierdo: lista de mÃ³dulos (con scrollbar) ââ
+        # ── Panel izquierdo: lista de módulos (con scrollbar) ──
         left_outer = tk.Frame(body, bg=COLOR_FUCSIA_OSCURO, width=190)
         left_outer.pack_propagate(False)
         left_outer.grid(row=0, column=0, sticky="ns", padx=(0, 10))
@@ -1333,7 +1369,7 @@ class WorkspaceWindow(tk.Toplevel):
         left_cv.bind("<Configure>", _left_resize)
         left.bind("<Configure>", lambda e: left_cv.configure(scrollregion=left_cv.bbox("all")))
 
-        # ââ Panel derecho: contenido ââ
+        # ── Panel derecho: contenido ──
         right = tk.Frame(body, bg=COLOR_BLANCO, highlightthickness=1,
                          highlightbackground=COLOR_FUCSIA_SUAVE)
         right.grid(row=0, column=1, sticky="nsew")
@@ -1387,19 +1423,19 @@ class WorkspaceWindow(tk.Toplevel):
         first = next(iter(INSTRUCCIONES))
         mostrar(first)
 
-        ttk.Button(win, text="â  Entendido", command=win.destroy).pack(pady=10)
+        ttk.Button(win, text="✔  Entendido", command=win.destroy).pack(pady=10)
 
     # ---------------------------------------------------------------- #
-    # PESTAÃA 1: CONCILIACIÃN
+    # PESTAÑA 1: CONCILIACIÓN
     # ---------------------------------------------------------------- #
     def _tab_conciliacion(self, nb):
         tab = ttk.Frame(nb)
         nb.add(tab, text="  \U0001f4bc Pagos Bancarios  ")
 
-        # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-        # BARRA INFERIOR â resultado (pack side="bottom" PRIMERO para
+        # ═══════════════════════════════════════════════════════════════
+        # BARRA INFERIOR — resultado (pack side="bottom" PRIMERO para
         # garantizar visibilidad independiente del espacio disponible)
-        # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ═══════════════════════════════════════════════════════════════
         self._conc_resultado_path = None
 
         _bot = tk.Frame(tab, bg=COLOR_FUCSIA)
@@ -1448,10 +1484,10 @@ class WorkspaceWindow(tk.Toplevel):
         self._conc_tv.column("msg", width=500, anchor="center")
         self._conc_tv.insert("", "end", values=("\u2014",))
 
-        # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-        # ÃREA SUPERIOR â configuraciÃ³n + listas + botÃ³n generar
+        # ═══════════════════════════════════════════════════════════════
+        # ÁREA SUPERIOR — configuración + listas + botón generar
         # (pack side="top", expand=True llena el espacio restante)
-        # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ═══════════════════════════════════════════════════════════════
         top = ttk.Frame(tab)
         top.pack(side="top", fill="both", expand=True)
         top.columnconfigure(0, weight=1)
@@ -1459,7 +1495,7 @@ class WorkspaceWindow(tk.Toplevel):
         top.columnconfigure(2, weight=1)
         top.rowconfigure(1, weight=1)
 
-        # ââ Panel de configuraciÃ³n âââââââââââââââââââââââââââââââââ
+        # ── Panel de configuración ─────────────────────────────────
         cfg_pagos = ttk.Frame(top, style="Tarjeta.TFrame")
         cfg_pagos.grid(row=0, column=0, columnspan=3,
                        sticky="ew", padx=6, pady=(6, 2))
@@ -1470,7 +1506,7 @@ class WorkspaceWindow(tk.Toplevel):
                   style="Tarjeta.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Entry(inner_p, textvariable=self.carpeta_pagos).grid(
             row=0, column=1, sticky="ew", padx=6, pady=2)
-        ttk.Button(inner_p, text="ð PDFs...",
+        ttk.Button(inner_p, text="📂 PDFs...",
                    command=self._elegir_carpeta_pagos).grid(
                        row=0, column=2, padx=4)
 
@@ -1487,7 +1523,7 @@ class WorkspaceWindow(tk.Toplevel):
                    style="Grande.TButton",
                    command=self._escanear_pagos).pack(pady=(2, 6))
 
-        # ââ Tres tarjetas con listas âââââââââââââââââââââââââââââââ
+        # ── Tres tarjetas con listas ───────────────────────────────
         self.listboxes = {}
         columnas = [
             ("nomina",       "\U0001f4bc N\xf3mina principal",
@@ -1525,7 +1561,7 @@ class WorkspaceWindow(tk.Toplevel):
                        command=lambda k=key: self._ejecutar(k)).grid(
                 row=3, column=0, sticky="ew", padx=10, pady=(2, 8))
 
-        # ââ BotÃ³n "Generar TODO" âââââââââââââââââââââââââââââââââââ
+        # ── Botón "Generar TODO" ───────────────────────────────────
         ttk.Button(top,
             text="\U0001f4e6  Generar TODO en un solo Excel"
                  "  (usa lo seleccionado en las 3 listas)",
@@ -1539,7 +1575,7 @@ class WorkspaceWindow(tk.Toplevel):
         self.otros_label.grid(
             row=3, column=0, columnspan=3, sticky="w", padx=10)
 
-        # ââ Barra de progreso ââââââââââââââââââââââââââââââââââââââ
+        # ── Barra de progreso ──────────────────────────────────────
         _conc_pb_frame = ttk.Frame(top)
         _conc_pb_frame.grid(row=4, column=0, columnspan=3,
                             sticky="ew", padx=8, pady=(2, 2))
@@ -1555,9 +1591,9 @@ class WorkspaceWindow(tk.Toplevel):
         self._conc_pb_lbl.pack(side="left")
 
     def _conc_set_resultado(self, path):
-        """Registra el archivo generado por ConciliaciÃ³n y actualiza la barra."""
+        """Registra el archivo generado por Conciliación y actualiza la barra."""
         self._conc_resultado_path = path
-        nombre = os.path.basename(path) if path else "â"
+        nombre = os.path.basename(path) if path else "—"
         self._conc_lbl_archivo.config(text=nombre)
 
     def _conc_abrir(self):
@@ -1565,13 +1601,13 @@ class WorkspaceWindow(tk.Toplevel):
         if self._conc_resultado_path and os.path.exists(self._conc_resultado_path):
             os.startfile(self._conc_resultado_path)
         else:
-            # Si no hay resultado aÃºn, permitir elegir un archivo manualmente
+            # Si no hay resultado aún, permitir elegir un archivo manualmente
             self.lift()
             self.focus_force()
             self.update()
             ruta = filedialog.askopenfilename(
                 parent=self,
-                title="Abrir archivo de ConciliaciÃ³n",
+                title="Abrir archivo de Conciliación",
                 filetypes=[("Excel", "*.xlsx *.xls"), ("Todos", "*.*")],
             )
             if ruta:
@@ -1579,18 +1615,18 @@ class WorkspaceWindow(tk.Toplevel):
                 os.startfile(ruta)
 
     def _conc_guardar_como(self):
-        """Guarda una copia del resultado en la ubicaciÃ³n elegida."""
+        """Guarda una copia del resultado en la ubicación elegida."""
         if not self._conc_resultado_path or \
                 not os.path.exists(self._conc_resultado_path):
             messagebox.showwarning(
-                "Sin archivo", "Primero ejecuta una conciliaciÃ³n o abre un archivo.")
+                "Sin archivo", "Primero ejecuta una conciliación o abre un archivo.")
             return
         self.lift()
         self.focus_force()
         self.update()
         destino = filedialog.asksaveasfilename(
             parent=self,
-            title="Guardar conciliaciÃ³n comoâ¦",
+            title="Guardar conciliación como…",
             defaultextension=".xlsx",
             filetypes=[("Excel", "*.xlsx")],
             initialdir=os.path.dirname(self._conc_resultado_path),
@@ -1602,21 +1638,21 @@ class WorkspaceWindow(tk.Toplevel):
             messagebox.showinfo("Guardado", f"Archivo guardado en:\n{destino}")
 
     # ---------------------------------------------------------------- #
-    # PESTAÃA 2: PRÃSTAMOS
+    # PESTAÑA 2: PRÉSTAMOS
     # ---------------------------------------------------------------- #
     def _tab_prestamos(self, nb):
         tab = ttk.Frame(nb)
-        nb.add(tab, text="  ð³ PrÃ©stamos  ")
+        nb.add(tab, text="  💳 Préstamos  ")
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(2, weight=1)
 
-        # ââ Panel de configuraciÃ³n propio de PrÃ©stamos ââââââââââââââââ
+        # ── Panel de configuración propio de Préstamos ────────────────
         cfg_prest = ttk.Frame(tab, style="Tarjeta.TFrame")
         cfg_prest.grid(row=0, column=0, sticky="ew", padx=6, pady=(8, 2))
         inner_pr = ttk.Frame(cfg_prest, style="Tarjeta.TFrame")
         inner_pr.pack(fill="x", padx=10, pady=6)
 
-        ttk.Label(inner_pr, text="ð Carpeta de trabajo:", width=22,
+        ttk.Label(inner_pr, text="📁 Carpeta de trabajo:", width=22,
                   style="Tarjeta.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Entry(inner_pr, textvariable=self.carpeta_prestamos).grid(
             row=0, column=1, sticky="ew", padx=6, pady=2)
@@ -1625,16 +1661,16 @@ class WorkspaceWindow(tk.Toplevel):
 
         inner_pr.columnconfigure(1, weight=1)
 
-        ttk.Button(cfg_prest, text="ð  Escanear carpeta",
+        ttk.Button(cfg_prest, text="🔍  Escanear carpeta",
                    style="Grande.TButton",
                    command=self._escanear_prestamos).pack(pady=(2, 8))
-        # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ─────────────────────────────────────────────────────────────
 
         info = ttk.Frame(tab, style="Tarjeta.TFrame")
         info.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 4))
         ttk.Label(info,
-            text="PDFs de prÃ©stamos detectados en la carpeta. "
-                 "Usa el botÃ³n para exportar el listado a Excel.",
+            text="PDFs de préstamos detectados en la carpeta. "
+                 "Usa el botón para exportar el listado a Excel.",
             style="Tarjeta.TLabel", wraplength=800,
         ).pack(padx=12, pady=8)
 
@@ -1648,29 +1684,29 @@ class WorkspaceWindow(tk.Toplevel):
 
         btn_row = ttk.Frame(card, style="Tarjeta.TFrame")
         btn_row.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
-        ttk.Button(btn_row, text="â Todos",
+        ttk.Button(btn_row, text="✔ Todos",
                    command=lambda: self.lb_prestamos.select_set(0, "end")).pack(side="left", padx=2)
-        ttk.Button(btn_row, text="â Ninguno",
+        ttk.Button(btn_row, text="✘ Ninguno",
                    command=lambda: self.lb_prestamos.select_clear(0, "end")).pack(side="left", padx=2)
-        ttk.Button(btn_row, text="ð  Exportar listado a Excel",
+        ttk.Button(btn_row, text="📄  Exportar listado a Excel",
                    command=self._exportar_prestamos).pack(side="right", padx=2)
 
     # ---------------------------------------------------------------- #
-    # PESTAÃA 3: PROVISIÃN DE NÃMINA (XML â SINUBE)
+    # PESTAÑA 3: PROVISIÓN DE NÓMINA (XML → SINUBE)
     # ---------------------------------------------------------------- #
     def _tab_provision_nomina(self, nb):
         tab = ttk.Frame(nb)
-        nb.add(tab, text="  ð ProvisÃ³n de NÃ³mina  ")
+        nb.add(tab, text="  📋 Provisón de Nómina  ")
         self._prov_resultado_path = None
         self.prov_xmls = getattr(self, "prov_xmls", [])
         tab.columnconfigure(0, weight=1)
 
-        # ââ Panel de configuraciÃ³n: plantilla Excel âââââââââââââââââââââââââââ
+        # ── Panel de configuración: plantilla Excel ───────────────────────────
         cfg = ttk.Frame(tab, style="Tarjeta.TFrame")
         cfg.grid(row=0, column=0, sticky="ew", padx=6, pady=(8, 2))
         inner = ttk.Frame(cfg, style="Tarjeta.TFrame")
         inner.pack(fill="x", padx=10, pady=8)
-        ttk.Label(inner, text="ð  Plantilla Excel:", width=20,
+        ttk.Label(inner, text="📊  Plantilla Excel:", width=20,
                   style="Tarjeta.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Entry(inner, textvariable=self.prov_plantilla).grid(
             row=0, column=1, sticky="ew", padx=6, pady=2)
@@ -1678,14 +1714,14 @@ class WorkspaceWindow(tk.Toplevel):
                    command=self._prov_elegir_plantilla).grid(row=0, column=2, padx=4)
         inner.columnconfigure(1, weight=1)
 
-        # ââ Panel de XMLs âââââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Panel de XMLs ─────────────────────────────────────────────────────
         xml_frame = ttk.Frame(tab, style="Tarjeta.TFrame")
         xml_frame.grid(row=1, column=0, sticky="nsew", padx=6, pady=(4, 2))
         tab.rowconfigure(1, weight=1)
         xml_frame.columnconfigure(0, weight=1)
         xml_frame.rowconfigure(1, weight=1)
 
-        ttk.Label(xml_frame, text="ð  Archivos XML (CFDI de NÃ³mina):",
+        ttk.Label(xml_frame, text="📁  Archivos XML (CFDI de Nómina):",
                   style="Tarjeta.TLabel").grid(
             row=0, column=0, sticky="w", padx=10, pady=(8, 2))
 
@@ -1708,20 +1744,20 @@ class WorkspaceWindow(tk.Toplevel):
 
         btn_bar = ttk.Frame(xml_frame)
         btn_bar.grid(row=2, column=0, sticky="e", padx=10, pady=(0, 8))
-        ttk.Button(btn_bar, text="â  Agregar XMLs",
+        ttk.Button(btn_bar, text="➕  Agregar XMLs",
                    command=self._prov_agregar_xmls).pack(side="left", padx=3)
-        ttk.Button(btn_bar, text="â  Quitar",
+        ttk.Button(btn_bar, text="➖  Quitar",
                    command=self._prov_quitar_xml).pack(side="left", padx=3)
-        ttk.Button(btn_bar, text="ð  Limpiar todo",
+        ttk.Button(btn_bar, text="🗑  Limpiar todo",
                    command=self._prov_limpiar_xmls).pack(side="left", padx=3)
 
-        # ââ BotÃ³n Procesar ââââââââââââââââââââââââââââââââââââââââââââââââââââ
-        ttk.Button(tab, text="âï¸  Procesar ProvisiÃ³n de NÃ³mina",
+        # ── Botón Procesar ────────────────────────────────────────────────────
+        ttk.Button(tab, text="⚙️  Procesar Provisión de Nómina",
                    style="Grande.TButton",
                    command=self._prov_procesar).grid(
             row=2, column=0, pady=(4, 6))
 
-        # ââ Barra de progreso âââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Barra de progreso ─────────────────────────────────────────────────
         _prov_pb_frame = tk.Frame(tab, bg=COLOR_FONDO)
         _prov_pb_frame.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 2))
         _prov_pb_frame.grid_remove()
@@ -1733,26 +1769,26 @@ class WorkspaceWindow(tk.Toplevel):
             foreground=COLOR_FUCSIA_OSCURO, font=("Segoe UI", 8, "bold"))
         self._prov_pb_lbl.pack(side="left")
 
-        # ââ Barra Abrir / Guardar como ââââââââââââââââââââââââââââââââââââââââ
+        # ── Barra Abrir / Guardar como ────────────────────────────────────────
         self._prov_barra_descarga = ttk.Frame(tab, style="Tarjeta.TFrame")
         self._prov_barra_descarga.grid(
             row=4, column=0, sticky="ew", padx=6, pady=(2, 8))
         self._prov_barra_descarga.grid_remove()
         ttk.Label(self._prov_barra_descarga,
-                  text="ð  Resultado:", style="Tarjeta.TLabel").pack(
+                  text="📄  Resultado:", style="Tarjeta.TLabel").pack(
             side="left", padx=(10, 4), pady=8)
         self._prov_lbl_archivo = ttk.Label(
-            self._prov_barra_descarga, text="â",
+            self._prov_barra_descarga, text="—",
             foreground=COLOR_FUCSIA_OSCURO,
             font=("Segoe UI", 9, "bold"),
             background=COLOR_TARJETA)
         self._prov_lbl_archivo.pack(side="left", padx=4, pady=8)
         ttk.Button(self._prov_barra_descarga,
-                   text="ð  Abrir archivo",
+                   text="📂  Abrir archivo",
                    command=self._prov_abrir_resultado).pack(
             side="right", padx=4, pady=6)
         ttk.Button(self._prov_barra_descarga,
-                   text="ð¾  Guardar como...",
+                   text="💾  Guardar como...",
                    command=self._prov_guardar_como).pack(
             side="right", padx=4, pady=6)
 
@@ -1805,11 +1841,11 @@ class WorkspaceWindow(tk.Toplevel):
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudo abrir el archivo:\n{e}")
         else:
-            messagebox.showwarning("Sin archivo", "No hay archivo generado todavÃ­a.")
+            messagebox.showwarning("Sin archivo", "No hay archivo generado todavía.")
 
     def _prov_guardar_como(self):
         if not self._prov_resultado_path or not os.path.exists(self._prov_resultado_path):
-            messagebox.showwarning("Sin archivo", "No hay archivo generado todavÃ­a.")
+            messagebox.showwarning("Sin archivo", "No hay archivo generado todavía.")
             return
         self.lift()
         self.focus_force()
@@ -1820,12 +1856,12 @@ class WorkspaceWindow(tk.Toplevel):
             initialfile=os.path.basename(self._prov_resultado_path),
             defaultextension=".xlsx",
             filetypes=[("Excel", "*.xlsx"), ("Todos los archivos", "*.*")],
-            title="Guardar ProvisiÃ³n de NÃ³mina como...",
+            title="Guardar Provisión de Nómina como...",
         )
         if destino:
             import shutil
             shutil.copy2(self._prov_resultado_path, destino)
-            self._log(f"â Guardado en: {destino}", ok=True)
+            self._log(f"✓ Guardado en: {destino}", ok=True)
             messagebox.showinfo("Guardado", f"Archivo guardado en:\n{destino}")
 
     def _prov_procesar(self):
@@ -1867,10 +1903,10 @@ class WorkspaceWindow(tk.Toplevel):
                 pass
             wb = openpyxl.load_workbook(out_path)
 
-            # ââ Auto-detectar hoja POLIZA âââââââââââââââââââââââââââââââââââââ
+            # ── Auto-detectar hoja POLIZA ─────────────────────────────────────
             ws = None
             for sn in wb.sheetnames:
-                if sn.strip().upper() in ('POLIZA', 'PÃLIZA', 'POLIZA IA'):
+                if sn.strip().upper() in ('POLIZA', 'PÓLIZA', 'POLIZA IA'):
                     ws = wb[sn]
                     break
             if ws is None:
@@ -1880,11 +1916,11 @@ class WorkspaceWindow(tk.Toplevel):
             for r in range(ws.max_row, 3, -1):
                 ws.delete_rows(r)
 
-            # ââ Leer hoja CUENTAS âââââââââââââââââââââââââââââââââââââââââââââ
-            # A/B  â Percepciones (SUELDO, AYUDA DESPENSA, â¦)
-            # G/H  â Empleados regulares  (210-01-xxxx)
-            # J/K  â Asimilados a salarios (210-05-xxxx)
-            # M/N  â Deducciones (ISR, IMSS, â¦)
+            # ── Leer hoja CUENTAS ─────────────────────────────────────────────
+            # A/B  → Percepciones (SUELDO, AYUDA DESPENSA, …)
+            # G/H  → Empleados regulares  (210-01-xxxx)
+            # J/K  → Asimilados a salarios (210-05-xxxx)
+            # M/N  → Deducciones (ISR, IMSS, …)
             ws_c = None
             for sn in wb.sheetnames:
                 if sn.strip().upper() == 'CUENTAS':
@@ -1918,18 +1954,18 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._log,
                 f"  CUENTAS: {len(perc_cat)} percepciones, "
                 f"{len(emp_reg)+len(emp_asim)} empleados, "
-                f"{len(emp_prestamo)} prÃ©stamos, "
+                f"{len(emp_prestamo)} préstamos, "
                 f"{len(ded_cat)} deducciones.")
 
-            # ââ Localizar TOTAL 1 y TOTAL 2 en fila 3 ââââââââââââââââââââââââ
+            # ── Localizar TOTAL 1 y TOTAL 2 en fila 3 ────────────────────────
             col_tot1 = col_tot2 = None
             for c in range(1, ws.max_column + 1):
                 v = norm(ws.cell(3, c).value or '')
                 if 'TOTAL 1' in v:   col_tot1 = c
                 elif 'TOTAL 2' in v: col_tot2 = c
 
-            # ââ Insertar percepciones ANTES de TOTAL 1 âââââââââââââââââââââââ
-            col_perc_start = col_tot1   # posiciÃ³n inicial; TOTAL 1 = SUM(col_perc_start:col_tot1-1)
+            # ── Insertar percepciones ANTES de TOTAL 1 ───────────────────────
+            col_perc_start = col_tot1   # posición inicial; TOTAL 1 = SUM(col_perc_start:col_tot1-1)
             perc_cols = {}   # nombre_upper -> columna
             for i, (cta, nombre) in enumerate(perc_cat):
                 col_ins = col_tot1 + i
@@ -1940,7 +1976,7 @@ class WorkspaceWindow(tk.Toplevel):
             col_tot1 += len(perc_cat)
             col_tot2 += len(perc_cat)
 
-            # ââ Insertar deducciones DESPUÃS de TOTAL 1 ââââââââââââââââââââââ
+            # ── Insertar deducciones DESPUÉS de TOTAL 1 ──────────────────────
             ded_cols = {}   # nombre_upper -> columna
             for i, (cta, nombre) in enumerate(ded_cat):
                 col_ins = col_tot1 + 1 + i
@@ -1953,7 +1989,7 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._log,
                 f"  Estructura: TOTAL 1=col{col_tot1}  |  TOTAL 2=col{col_tot2}")
 
-            # ââ Parsear XMLs ââââââââââââââââââââââââââââââââââââââââââââââââââ
+            # ── Parsear XMLs ──────────────────────────────────────────────────
             self.after(0, self._log,
                 f"Leyendo {len(self.prov_xmls)} archivo(s) XML...")
             filas = []
@@ -1973,10 +2009,10 @@ class WorkspaceWindow(tk.Toplevel):
 
                     if nomina is None:
                         self.after(0, self._log,
-                            f"  â  {os.path.basename(xml_path)} â sin nodo Nomina, se omite.", True)
+                            f"  ⚠ {os.path.basename(xml_path)} — sin nodo Nomina, se omite.", True)
                         continue
 
-                    # CRÃTICO: usar 'is not None' â bool(Element) es False si no tiene hijos
+                    # CRÍTICO: usar 'is not None' — bool(Element) es False si no tiene hijos
                     nombre = (_re.sub(r'\s+', ' ', receptor.get('Nombre', '').strip())
                               if receptor is not None else '')
                     rfc    = (receptor.get('Rfc', '').strip()
@@ -2000,7 +2036,7 @@ class WorkspaceWindow(tk.Toplevel):
                             if c and v:
                                 ded[c] = ded.get(c, 0) + v
 
-                    # OtroPago con PRESTAMO â percepciÃ³n especial (107-01-xxxx, lado percepciones)
+                    # OtroPago con PRESTAMO → percepción especial (107-01-xxxx, lado percepciones)
                     otro_prest = 0.0
                     for el in root.iter():
                         if el.tag.split('}')[-1] == 'OtroPago':
@@ -2009,8 +2045,20 @@ class WorkspaceWindow(tk.Toplevel):
                             if 'PRESTAMO' in c and v:
                                 otro_prest += v
 
-                    # Detectar si es asimilado: tiene percepciÃ³n ASIMILABLES A SALARIOS
-                    es_asimilado = 'ASIMILABLES A SALARIOS' in perc
+                    # Detectar asimilados a salarios:
+                    #  1° texto: clave del concepto contiene 'ASIMIL'
+                    #     cubre 'ASIMILABLES A SALARIOS' y 'ASIMILADOS A SALARIOS'
+                    #  2° fallback: TipoPercepcion SAT 022-028 (asimilados)
+                    #     033=AyudaRenta, 034=Útiles, 035=HorasExtra → NO asimilados
+                    _TIPOS_ASIM_GUI = {'022','023','024','025','026','027','028'}
+                    es_asimilado = (
+                        any('ASIMIL' in k for k in perc) or
+                        any(
+                            _el.tag.split('}')[-1] == 'Percepcion' and
+                            _el.get('TipoPercepcion','') in _TIPOS_ASIM_GUI
+                            for _el in root.iter()
+                        )
+                    )
 
                     filas.append({
                         'fecha':       fecha,
@@ -2026,23 +2074,23 @@ class WorkspaceWindow(tk.Toplevel):
                         'ref':         f"NOMINA DEL {fecha.strftime('%d/%m/%Y')}",
                     })
                     self.after(0, self._log,
-                        f"  â {os.path.basename(xml_path)}  |  {nombre}  |  ${total:,.2f}",
+                        f"  ✓ {os.path.basename(xml_path)}  |  {nombre}  |  ${total:,.2f}",
                         False, True)
 
                 except Exception as e:
                     self.after(0, self._log,
-                        f"  â {os.path.basename(xml_path)}: {e}", True)
+                        f"  ❌ {os.path.basename(xml_path)}: {e}", True)
 
             if not filas:
-                self.after(0, self._log, "No se procesÃ³ ningÃºn XML.", True)
+                self.after(0, self._log, "No se procesó ningún XML.", True)
                 self.after(0, self._pb_error, self._prov_pb, self._prov_pb_lbl)
                 self.after(0, self._prov_pb_frame.grid_remove)
                 return
 
             filas.sort(key=lambda f: f['fecha'])
 
-            # ââ Insertar columnas OtroPago-PRESTAMO en PERCEPCIONES (antes TOTAL 1) ââ
-            # Un empleado con OtroPago PRESTAMO recibe un prÃ©stamo â va en percepciones
+            # ── Insertar columnas OtroPago-PRESTAMO en PERCEPCIONES (antes TOTAL 1) ──
+            # Un empleado con OtroPago PRESTAMO recibe un préstamo → va en percepciones
             # con cuenta 107-01-xxxx (CUENTAS D/E)
             otro_prest_cols = {}   # nombre_upper -> columna
             vistos_otro_prest = []
@@ -2061,18 +2109,18 @@ class WorkspaceWindow(tk.Toplevel):
                 col_tot2 += 1
                 if cta:
                     self.after(0, self._log,
-                        f"  + OtroPago PrÃ©stamo {nu}  â  {cta}  (col {col_ins})")
+                        f"  + OtroPago Préstamo {nu}  →  {cta}  (col {col_ins})")
                 else:
                     self.after(0, self._log,
-                        f"  â  Sin cuenta prÃ©stamo en CUENTAS D/E: '{nu}'", True)
+                        f"  ⚠ Sin cuenta préstamo en CUENTAS D/E: '{nu}'", True)
 
-            # CRÃTICO: insertar OtroPago antes de TOTAL 1 desplaza ded_cols â corregir Ã­ndices
+            # CRÍTICO: insertar OtroPago antes de TOTAL 1 desplaza ded_cols → corregir índices
             if otro_prest_cols:
                 n_shift = len(otro_prest_cols)
                 ded_cols = {k: v + n_shift for k, v in ded_cols.items()}
 
-            # ââ Insertar columnas de PRÃSTAMO por empleado (entre ded y neto) ââ
-            # Se crean sÃ³lo para empleados que tienen alguna deducciÃ³n con "PRESTAMO"
+            # ── Insertar columnas de PRÉSTAMO por empleado (entre ded y neto) ──
+            # Se crean sólo para empleados que tienen alguna deducción con "PRESTAMO"
             prest_cols = {}   # nombre_upper -> columna  (107-01-xxxx)
             vistos_prest = []
             for f in filas:
@@ -2091,12 +2139,12 @@ class WorkspaceWindow(tk.Toplevel):
                 col_tot2 += 1
                 if cta:
                     self.after(0, self._log,
-                        f"  + PrÃ©stamo {nu}  â  {cta}  (col {col_ins})")
+                        f"  + Préstamo {nu}  →  {cta}  (col {col_ins})")
                 else:
                     self.after(0, self._log,
-                        f"  â  Sin cuenta prÃ©stamo en CUENTAS D/E: '{nu}'", True)
+                        f"  ⚠ Sin cuenta préstamo en CUENTAS D/E: '{nu}'", True)
 
-            # ââ Insertar columnas de empleados ANTES de TOTAL 2 ââââââââââââââ
+            # ── Insertar columnas de empleados ANTES de TOTAL 2 ──────────────
             vistos = []
             for f in filas:
                 if f['nombre_up'] and f['nombre_up'] not in vistos:
@@ -2113,16 +2161,16 @@ class WorkspaceWindow(tk.Toplevel):
                 col_tot2 += 1
                 if cta:
                     self.after(0, self._log,
-                        f"  + {nu}  â  {cta}  (col {col_ins})")
+                        f"  + {nu}  →  {cta}  (col {col_ins})")
                 else:
                     self.after(0, self._log,
-                        f"  â  Sin cuenta en CUENTAS: '{nu}'", True)
+                        f"  ⚠ Sin cuenta en CUENTAS: '{nu}'", True)
 
-            # ââ Columna CONCILIACION al final (TOTAL 1 â TOTAL 2) ââââââââââââ
+            # ── Columna CONCILIACION al final (TOTAL 1 − TOTAL 2) ────────────
             col_conc = col_tot2 + 1
             ws.cell(3, col_conc, value='CONCILIACION')
 
-            # ââ Fila 1: numeraciÃ³n 0-based + estilo profesional âââââââââââââââ
+            # ── Fila 1: numeración 0-based + estilo profesional ───────────────
             from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
             _fill_num  = PatternFill("solid", fgColor="1F3864")   # azul marino
             _font_num  = Font(name="Segoe UI", bold=True, color="FFFFFF", size=8)
@@ -2140,18 +2188,18 @@ class WorkspaceWindow(tk.Toplevel):
                 _cell.alignment = _align_ctr
                 _cell.border    = _border_num
 
-            # ââ Reconstruir mapa de encabezados (fila 3) âââââââââââââââââââââ
+            # ── Reconstruir mapa de encabezados (fila 3) ─────────────────────
             col_meta = {}
             for c in range(1, ws.max_column + 1):
                 v = norm(ws.cell(3, c).value or '')
                 if v:
                     col_meta[v] = c
 
-            # ââ Rastrear conceptos sin columna (para diagnÃ³stico) âââââââââââââ
+            # ── Rastrear conceptos sin columna (para diagnóstico) ─────────────
             perc_no_mapeadas = set()
             ded_no_mapeadas  = set()
 
-            # ââ Escribir filas de datos âââââââââââââââââââââââââââââââââââââââ
+            # ── Escribir filas de datos ───────────────────────────────────────
             self.after(0, self._log,
                 f"Escribiendo {len(filas)} fila(s)...")
             nf = 4
@@ -2180,9 +2228,9 @@ class WorkspaceWindow(tk.Toplevel):
 
                 # Deducciones
                 # Reglas especiales:
-                #   PRESTAMO* â columna individual del empleado (107-01-xxxx, prest_cols)
-                #   ISR + asimilado â ISR ASIMILADOS (216-02)
-                _prest_acum = 0.0   # acumula todos los prÃ©stamos del empleado en esta fila
+                #   PRESTAMO* → columna individual del empleado (107-01-xxxx, prest_cols)
+                #   ISR + asimilado → ISR ASIMILADOS (216-02)
+                _prest_acum = 0.0   # acumula todos los préstamos del empleado en esta fila
                 for c_name, c_val in fila['ded'].items():
                     if 'PRESTAMO' in c_name:
                         _prest_acum += c_val
@@ -2195,7 +2243,7 @@ class WorkspaceWindow(tk.Toplevel):
                         ws.cell(nf, _c, value=c_val).number_format = '#,##0.00'
                     elif c_val and not _c:
                         ded_no_mapeadas.add(col_key)
-                # Escribir total de prÃ©stamos en columna del empleado (107-01-xxxx)
+                # Escribir total de préstamos en columna del empleado (107-01-xxxx)
                 if _prest_acum:
                     _cp = prest_cols.get(fila['nombre_up'])
                     if _cp:
@@ -2204,7 +2252,7 @@ class WorkspaceWindow(tk.Toplevel):
                     else:
                         ded_no_mapeadas.add('PRESTAMO (sin col empleado)')
 
-                # OtroPago PRESTAMO â columna percepciÃ³n del empleado (107-01-xxxx)
+                # OtroPago PRESTAMO → columna percepción del empleado (107-01-xxxx)
                 if fila['otro_prest']:
                     _cp_otro = otro_prest_cols.get(fila['nombre_up'])
                     if _cp_otro:
@@ -2218,7 +2266,7 @@ class WorkspaceWindow(tk.Toplevel):
                 if _ce:
                     ws.cell(nf, _ce, value=fila['total']).number_format = '#,##0.00'
 
-                # TOTAL 1 = SUM de TODA la secciÃ³n de percepciones (col_perc_start â col_tot1-1)
+                # TOTAL 1 = SUM de TODA la sección de percepciones (col_perc_start → col_tot1-1)
                 # Incluye percepciones fijas + OtroPago PRESTAMO por empleado
                 p_s = get_column_letter(col_perc_start)
                 p_e = get_column_letter(col_tot1 - 1)
@@ -2231,7 +2279,7 @@ class WorkspaceWindow(tk.Toplevel):
                 ws.cell(nf, col_tot2,
                     value=f"=SUM({d_s}{nf}:{d_e}{nf})").number_format = '#,##0.00'
 
-                # CONCILIACION = TOTAL 1 â TOTAL 2  (debe ser 0)
+                # CONCILIACION = TOTAL 1 − TOTAL 2  (debe ser 0)
                 t1l = get_column_letter(col_tot1)
                 t2l = get_column_letter(col_tot2)
                 ws.cell(nf, col_conc,
@@ -2239,8 +2287,8 @@ class WorkspaceWindow(tk.Toplevel):
 
                 nf += 1
 
-            # ââ Estilos profesionales âââââââââââââââââââââââââââââââââââââââââ
-            # Paleta corporativa azul-Ã¡mbar-verde
+            # ── Estilos profesionales ─────────────────────────────────────────
+            # Paleta corporativa azul-ámbar-verde
             from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 
             def _fill(hex6):
@@ -2252,11 +2300,11 @@ class WorkspaceWindow(tk.Toplevel):
                 s = Side(style="thin", color=color)
                 return Border(left=s, right=s, top=s, bottom=s)
 
-            C_NAVY   = "1F3864"   # azul marino oscuro  (fila 1 â ya hecho)
-            C_MID    = "2F5496"   # azul medio           (fila 2 â cuentas)
+            C_NAVY   = "1F3864"   # azul marino oscuro  (fila 1 — ya hecho)
+            C_MID    = "2F5496"   # azul medio           (fila 2 — cuentas)
             C_BLUE   = "4472C4"   # azul header          (fila 3)
-            C_AMBER  = "FFC000"   # Ã¡mbar TOTAL          (encabezado totales)
-            C_AMBER2 = "FFF2CC"   # Ã¡mbar claro          (datos totales)
+            C_AMBER  = "FFC000"   # ámbar TOTAL          (encabezado totales)
+            C_AMBER2 = "FFF2CC"   # ámbar claro          (datos totales)
             C_GREEN  = "375623"   # verde oscuro         (encabezado conciliacion)
             C_GREEN2 = "E2EFDA"   # verde claro          (datos conciliacion)
             C_ROW1   = "FFFFFF"   # blanco filas impares
@@ -2266,7 +2314,7 @@ class WorkspaceWindow(tk.Toplevel):
 
             brd = _border()
 
-            # ââ Fila 2 (cuentas contables) ââââââââââââââââââââââââââââââââââââ
+            # ── Fila 2 (cuentas contables) ────────────────────────────────────
             ws.row_dimensions[2].height = 14
             for c in range(1, col_conc + 1):
                 cell = ws.cell(2, c)
@@ -2282,7 +2330,7 @@ class WorkspaceWindow(tk.Toplevel):
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 cell.border = brd
 
-            # ââ Fila 3 (encabezados de columnas) âââââââââââââââââââââââââââââ
+            # ── Fila 3 (encabezados de columnas) ─────────────────────────────
             ws.row_dimensions[3].height = 42
             for c in range(1, col_conc + 1):
                 cell = ws.cell(3, c)
@@ -2299,16 +2347,16 @@ class WorkspaceWindow(tk.Toplevel):
                                            wrap_text=True)
                 cell.border = brd
 
-            # ââ Filas de datos (4 â¦ nf-1) âââââââââââââââââââââââââââââââââââââ
+            # ── Filas de datos (4 … nf-1) ─────────────────────────────────────
             for r in range(4, nf):
                 ws.row_dimensions[r].height = 14
                 fondo = _fill(C_ROW1 if r % 2 != 0 else C_ROW2)
                 for c in range(1, col_conc + 1):
                     cell = ws.cell(r, c)
-                    # Formato numÃ©rico a TODAS las columnas desde percepciones
+                    # Formato numérico a TODAS las columnas desde percepciones
                     if c >= col_perc_start:
                         cell.number_format = FMT_NUM
-                    # Fondo segÃºn tipo de columna
+                    # Fondo según tipo de columna
                     if c in (col_tot1, col_tot2):
                         cell.fill = _fill(C_AMBER2)
                         cell.font = _font(bold=True, color=C_NAVY, size=9)
@@ -2325,27 +2373,27 @@ class WorkspaceWindow(tk.Toplevel):
             wb.save(out_path)
             wb.close()
 
-            # ââ DiagnÃ³stico de conceptos no mapeados ââââââââââââââââââââââââââ
+            # ── Diagnóstico de conceptos no mapeados ──────────────────────────
             if perc_no_mapeadas:
                 self.after(0, self._log,
-                    f"â  Percepciones en XML sin columna en CUENTAS A/B "
-                    f"(pueden causar CONCILIACION â  0): "
+                    f"⚠ Percepciones en XML sin columna en CUENTAS A/B "
+                    f"(pueden causar CONCILIACION ≠ 0): "
                     + ", ".join(sorted(perc_no_mapeadas)), True)
             if ded_no_mapeadas:
                 self.after(0, self._log,
-                    f"â  Deducciones en XML sin columna en CUENTAS M/N "
-                    f"(pueden causar CONCILIACION â  0): "
+                    f"⚠ Deducciones en XML sin columna en CUENTAS M/N "
+                    f"(pueden causar CONCILIACION ≠ 0): "
                     + ", ".join(sorted(ded_no_mapeadas)), True)
             emp_sin_cuenta = [nu for nu in vistos
                               if not (emp_reg.get(nu) or emp_asim.get(nu))]
             if emp_sin_cuenta:
                 self.after(0, self._log,
-                    f"â  Empleados sin cuenta en CUENTAS G/H o J/K "
-                    f"(neto no escrito â CONCILIACION â  0): "
+                    f"⚠ Empleados sin cuenta en CUENTAS G/H o J/K "
+                    f"(neto no escrito → CONCILIACION ≠ 0): "
                     + ", ".join(emp_sin_cuenta), True)
 
             self.after(0, self._log,
-                f"â {len(filas)} XML(s) â resultados/{nombre_out}", False, True)
+                f"✓ {len(filas)} XML(s) → resultados/{nombre_out}", False, True)
             self.after(0, self._log, "Listo.", False, True)
             self.after(0, self._pb_detener, self._prov_pb, self._prov_pb_lbl)
             self.after(0, self._prov_pb_frame.grid_remove)
@@ -2356,7 +2404,7 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._pb_error, self._prov_pb, self._prov_pb_lbl)
             self.after(0, self._prov_pb_frame.grid_remove)
             self.after(0, self._log,
-                f"â Error general: {exc}\n{_tb.format_exc()}", True)
+                f"❌ Error general: {exc}\n{_tb.format_exc()}", True)
 
 
     def _prov_mostrar_descarga(self, out_path):
@@ -2366,23 +2414,23 @@ class WorkspaceWindow(tk.Toplevel):
         self._prov_barra_descarga.grid()
 
     # ---------------------------------------------------------------- #
-    # PESTAÃA: ESTADO DE CUENTA
+    # PESTAÑA: ESTADO DE CUENTA
     # ---------------------------------------------------------------- #
     def _tab_estado_cuenta(self, nb):
         outer = ttk.Frame(nb)
-        nb.add(outer, text="  ð¦ Estado de Cuenta  ")
+        nb.add(outer, text="  🏦 Estado de Cuenta  ")
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(0, weight=1)
 
         self._ec_archivo      = tk.StringVar(value="")
         self._ec_resultado    = None
-        self._ec_banco        = tk.StringVar(value="Banorte DÃ©bito")
+        self._ec_banco        = tk.StringVar(value="Banorte Débito")
         self._ec_filas_todas  = []
         self._ec_sort_col     = None
         self._ec_sort_asc     = True
         self._ec_busqueda     = tk.StringVar()
 
-        # ââ Canvas scrollable: todo el mÃ³dulo en una sola Ã¡rea con scroll ââ
+        # ── Canvas scrollable: todo el módulo en una sola área con scroll ──
         _cv = tk.Canvas(outer, bg=COLOR_FONDO, highlightthickness=0)
         _vsb = ttk.Scrollbar(outer, orient="vertical", command=_cv.yview)
         _cv.configure(yscrollcommand=_vsb.set)
@@ -2401,7 +2449,7 @@ class WorkspaceWindow(tk.Toplevel):
             _cv.configure(scrollregion=_cv.bbox("all"))
         inn.bind("<Configure>", _sync_scroll)
 
-        # Scroll con rueda del ratÃ³n â sÃ³lo sobre el canvas y sus hijos directos
+        # Scroll con rueda del ratón — sólo sobre el canvas y sus hijos directos
         def _mw(e):
             _cv.yview_scroll(int(-1 * (e.delta / 120)), "units")
 
@@ -2410,23 +2458,23 @@ class WorkspaceWindow(tk.Toplevel):
             for child in widget.winfo_children():
                 _bind_mw(child)
 
-        # Se llama despuÃ©s de construir todo el contenido
+        # Se llama después de construir todo el contenido
         def _bind_all_children():
             _cv.bind("<MouseWheel>", _mw)
             _bind_mw(inn)
         outer.after(200, _bind_all_children)
 
-        # ââ TÃ­tulo âââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Título ─────────────────────────────────────────────────
         hdr = tk.Frame(inn, bg=COLOR_FONDO)
         hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 6))
-        tk.Label(hdr, text="Convertir PDF Bancario â Excel",
+        tk.Label(hdr, text="Convertir PDF Bancario → Excel",
                  bg=COLOR_FONDO, fg=COLOR_FUCSIA_OSCURO,
                  font=("Segoe UI", 13, "bold")).pack(anchor="w")
         tk.Label(hdr,
                  text="Extrae todas las tablas de estados de cuenta e inversiones con inteligencia artificial",
                  bg=COLOR_FONDO, fg="#888888", font=("Segoe UI", 8)).pack(anchor="w")
 
-        # ââ SecciÃ³n 1: banco ââââââââââââââââââââââââââââââââââââââââ
+        # ── Sección 1: banco ────────────────────────────────────────
         s1 = tk.Frame(inn, bg=COLOR_BLANCO,
                       highlightbackground="#D0D0D0", highlightthickness=1)
         s1.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 6))
@@ -2442,24 +2490,24 @@ class WorkspaceWindow(tk.Toplevel):
 
         _BANCOS_INFO = [
             ("Auto-detectar",     "#1E6FBF"),
-            ("Banorte DÃ©bito",    "#E53935"),
-            ("Banorte CrÃ©dito",   "#E53935"),
-            ("BBVA DÃ©bito",       "#004481"),
-            ("BBVA CrÃ©dito",      "#004481"),
+            ("Banorte Débito",    "#E53935"),
+            ("Banorte Crédito",   "#E53935"),
+            ("BBVA Débito",       "#004481"),
+            ("BBVA Crédito",      "#004481"),
             ("BBVA Pyme",         "#1A6EB5"),
             ("BBVA TDC",          "#004481"),
-            ("BBVA LibretÃ³n",     "#004481"),
-            ("Banamex DÃ©bito",    "#C62828"),
-            ("Banamex CrÃ©dito",   "#C62828"),
-            ("Santander DÃ©bito",  "#EC0000"),
-            ("Santander CrÃ©dito", "#EC0000"),
-            ("HSBC DÃ©bito",       "#DB0011"),
-            ("HSBC CrÃ©dito",      "#DB0011"),
-            ("Scotiabank DÃ©bito", "#EC111A"),
-            ("Scotiabank CrÃ©dito","#EC111A"),
-            ("Banregio DÃ©bito",   "#00875A"),
-            ("Banregio CrÃ©dito",  "#00875A"),
-            ("Inbursa DÃ©bito",    "#1565C0"),
+            ("BBVA Libretón",     "#004481"),
+            ("Banamex Débito",    "#C62828"),
+            ("Banamex Crédito",   "#C62828"),
+            ("Santander Débito",  "#EC0000"),
+            ("Santander Crédito", "#EC0000"),
+            ("HSBC Débito",       "#DB0011"),
+            ("HSBC Crédito",      "#DB0011"),
+            ("Scotiabank Débito", "#EC111A"),
+            ("Scotiabank Crédito","#EC111A"),
+            ("Banregio Débito",   "#00875A"),
+            ("Banregio Crédito",  "#00875A"),
+            ("Inbursa Débito",    "#1565C0"),
             ("American Express",  "#006FCF"),
             ("Afirme",            "#FF6600"),
         ]
@@ -2491,10 +2539,10 @@ class WorkspaceWindow(tk.Toplevel):
             for w in (cell, cv2): w.bind("<Button-1>", lambda e, n=nombre: _sel_banco(n))
             for ch in cell.winfo_children(): ch.bind("<Button-1>", lambda e, n=nombre: _sel_banco(n))
             self._ec_banco_btns[nombre] = cell
-        _sel_banco("Banorte DÃ©bito")
+        _sel_banco("Banorte Débito")
         self._ec_sel_banco = _sel_banco   # accesible desde _ec_elegir_archivo
 
-        # ââ SecciÃ³n 2: archivo ââââââââââââââââââââââââââââââââââââââ
+        # ── Sección 2: archivo ──────────────────────────────────────
         s2 = tk.Frame(inn, bg=COLOR_BLANCO,
                       highlightbackground="#D0D0D0", highlightthickness=1)
         s2.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 6))
@@ -2506,14 +2554,14 @@ class WorkspaceWindow(tk.Toplevel):
         drop_outer = tk.Frame(s2, bg="#F0F6FF",
                               highlightbackground="#B0C8E8", highlightthickness=2, cursor="hand2")
         drop_outer.pack(fill="x", padx=14, pady=(0, 12))
-        self._ec_drop_icon = tk.Label(drop_outer, text="ð",
+        self._ec_drop_icon = tk.Label(drop_outer, text="📄",
             font=("Segoe UI", 20), bg="#F0F6FF", fg="#6090C0")
         self._ec_drop_icon.pack(pady=(14, 2))
         self._ec_drop_lbl = tk.Label(drop_outer, text="Clic para seleccionar PDF",
             font=("Segoe UI", 10, "bold"), bg="#F0F6FF", fg="#2B4A70")
         self._ec_drop_lbl.pack()
         self._ec_drop_sub = tk.Label(drop_outer,
-            text="Arrastra el PDF aquÃ­ o haz clic para seleccionar",
+            text="Arrastra el PDF aquí o haz clic para seleccionar",
             font=("Segoe UI", 8), bg="#F0F6FF", fg="#7090B0")
         self._ec_drop_sub.pack(pady=(2, 14))
 
@@ -2522,7 +2570,7 @@ class WorkspaceWindow(tk.Toplevel):
             ruta = self._ec_archivo.get()
             if ruta:
                 nombre = ruta.split("/")[-1].split("\\")[-1]
-                self._ec_drop_icon.config(text="â")
+                self._ec_drop_icon.config(text="✅")
                 self._ec_drop_lbl.config(text=nombre, fg=COLOR_FUCSIA_OSCURO,
                                           font=("Segoe UI", 9, "bold"))
                 self._ec_drop_sub.config(text="Archivo listo para convertir")
@@ -2548,18 +2596,18 @@ class WorkspaceWindow(tk.Toplevel):
                 if pdf:
                     self._ec_archivo.set(pdf)
                     nombre = pdf.split("/")[-1].split("\\")[-1]
-                    self._ec_drop_icon.config(text="â")
+                    self._ec_drop_icon.config(text="✅")
                     self._ec_drop_lbl.config(text=nombre, fg=COLOR_FUCSIA_OSCURO,
                                               font=("Segoe UI", 9, "bold"))
                     self._ec_drop_sub.config(text="Archivo listo para convertir")
                 else:
-                    self._ec_drop_lbl.config(text="â  Solo archivos PDF", fg="red")
+                    self._ec_drop_lbl.config(text="⚠ Solo archivos PDF", fg="red")
             drop_outer.drop_target_register(DND_FILES)
             drop_outer.dnd_bind("<<Drop>>", _drop_pdf)
 
-        # ââ BotÃ³n convertir âââââââââââââââââââââââââââââââââââââââââ
+        # ── Botón convertir ─────────────────────────────────────────
         tk.Button(inn,
-            text="â  Extraer tablas y generar Excel",
+            text="⊞  Extraer tablas y generar Excel",
             bg="#1B2B4B", fg=COLOR_BLANCO,
             font=("Segoe UI", 10, "bold"), relief="flat",
             padx=16, pady=11, cursor="hand2",
@@ -2567,7 +2615,7 @@ class WorkspaceWindow(tk.Toplevel):
             command=self._ec_convertir,
         ).grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 4))
 
-        # ââ Barra de progreso âââââââââââââââââââââââââââââââââââââââ
+        # ── Barra de progreso ───────────────────────────────────────
         _ec_pb_frame = tk.Frame(inn, bg=COLOR_FONDO)
         _ec_pb_frame.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 2))
         _ec_pb_frame.grid_remove()
@@ -2578,7 +2626,7 @@ class WorkspaceWindow(tk.Toplevel):
             foreground=COLOR_FUCSIA_OSCURO, font=("Segoe UI", 8, "bold"))
         self._ec_pb_lbl.pack(side="left")
 
-        # ââ Zona resultado ââââââââââââââââââââââââââââââââââââââââââ
+        # ── Zona resultado ──────────────────────────────────────────
         bot = tk.Frame(inn, bg=COLOR_FONDO)
         bot.grid(row=5, column=0, sticky="ew", padx=8, pady=(0, 8))
         bot.columnconfigure(0, weight=1)
@@ -2591,29 +2639,29 @@ class WorkspaceWindow(tk.Toplevel):
         def _sep():
             tk.Frame(tb, bg="#D0D0D0", width=1).pack(side="left", fill="y", padx=4, pady=3)
 
-        tk.Label(tb, text="ð Resultado:", bg=COLOR_BLANCO, fg=COLOR_TEXTO,
+        tk.Label(tb, text="📄 Resultado:", bg=COLOR_BLANCO, fg=COLOR_TEXTO,
                  font=("Segoe UI", 8)).pack(side="left", padx=(10, 2), pady=4)
-        self._ec_lbl_archivo = tk.Label(tb, text="â", bg=COLOR_BLANCO,
+        self._ec_lbl_archivo = tk.Label(tb, text="—", bg=COLOR_BLANCO,
             fg=COLOR_FUCSIA_OSCURO, font=("Segoe UI", 8, "bold"))
         self._ec_lbl_archivo.pack(side="left", padx=(0, 6), pady=4)
         _sep()
-        ttk.Button(tb, text="ð Copiar",     command=self._ec_copiar).pack(side="left", padx=2, pady=4)
-        ttk.Button(tb, text="Î£ Autosuma",   command=self._ec_autosuma).pack(side="left", padx=2, pady=4)
+        ttk.Button(tb, text="📋 Copiar",     command=self._ec_copiar).pack(side="left", padx=2, pady=4)
+        ttk.Button(tb, text="Σ Autosuma",   command=self._ec_autosuma).pack(side="left", padx=2, pady=4)
         ttk.Button(tb, text="Quitar dup",   command=self._ec_quitar_dup).pack(side="left", padx=2, pady=4)
         _sep()
-        ttk.Button(tb, text="AâZ", command=lambda: self._ec_ordenar_col(self._ec_sort_col or "Fecha", True)).pack(side="left", padx=2, pady=4)
-        ttk.Button(tb, text="ZâA", command=lambda: self._ec_ordenar_col(self._ec_sort_col or "Fecha", False)).pack(side="left", padx=2, pady=4)
-        ttk.Button(tb, text="ð Buscar",    command=self._ec_toggle_buscar).pack(side="left", padx=2, pady=4)
-        ttk.Button(tb, text="â Filtro",     command=self._ec_limpiar_filtro).pack(side="left", padx=2, pady=4)
+        ttk.Button(tb, text="A→Z", command=lambda: self._ec_ordenar_col(self._ec_sort_col or "Fecha", True)).pack(side="left", padx=2, pady=4)
+        ttk.Button(tb, text="Z→A", command=lambda: self._ec_ordenar_col(self._ec_sort_col or "Fecha", False)).pack(side="left", padx=2, pady=4)
+        ttk.Button(tb, text="🔍 Buscar",    command=self._ec_toggle_buscar).pack(side="left", padx=2, pady=4)
+        ttk.Button(tb, text="✕ Filtro",     command=self._ec_limpiar_filtro).pack(side="left", padx=2, pady=4)
         _sep()
-        ttk.Button(tb, text="ð Abrir Excel", command=self._ec_abrir).pack(side="left", padx=2, pady=4)
+        ttk.Button(tb, text="📂 Abrir Excel", command=self._ec_abrir).pack(side="left", padx=2, pady=4)
 
-        # BÃºsqueda (oculta)
+        # Búsqueda (oculta)
         self._ec_frame_buscar = tk.Frame(bot, bg=COLOR_BLANCO,
                                           highlightbackground="#D0D0D0", highlightthickness=1)
         self._ec_frame_buscar.grid(row=0, column=0, sticky="ew")
         self._ec_frame_buscar.grid_remove()
-        tk.Label(self._ec_frame_buscar, text="ð Buscar:", bg=COLOR_BLANCO,
+        tk.Label(self._ec_frame_buscar, text="🔍 Buscar:", bg=COLOR_BLANCO,
                  font=("Segoe UI", 9, "bold")).pack(side="left", padx=(10, 4), pady=5)
         _e = ttk.Entry(self._ec_frame_buscar, textvariable=self._ec_busqueda, width=36)
         _e.pack(side="left", padx=4, pady=5)
@@ -2622,21 +2670,21 @@ class WorkspaceWindow(tk.Toplevel):
             bg=COLOR_BLANCO, fg=COLOR_FUCSIA_OSCURO, font=("Segoe UI", 8, "bold"))
         self._ec_lbl_filtro.pack(side="left", padx=6)
 
-        # Tabla â altura fija grande; el canvas exterior hace el scroll general
+        # Tabla — altura fija grande; el canvas exterior hace el scroll general
         prev = ttk.Frame(bot)
         prev.grid(row=1, column=0, sticky="ew", pady=(2, 0))
         prev.columnconfigure(0, weight=1)
-        cols = ("Fecha", "DescripciÃ³n", "DepÃ³sito", "Retiro", "Saldo")
+        cols = ("Fecha", "Descripción", "Depósito", "Retiro", "Saldo")
         self._ec_tree = ttk.Treeview(prev, columns=cols, show="headings", height=25)
         for c in cols:
             self._ec_tree.heading(c, text=c, command=lambda _c=c: self._ec_ordenar_col(_c))
-            w = 95 if c in ("DepÃ³sito", "Retiro", "Saldo") else (115 if c == "Fecha" else 0)
+            w = 95 if c in ("Depósito", "Retiro", "Saldo") else (115 if c == "Fecha" else 0)
             self._ec_tree.column(c, width=w,
-                anchor="e" if c in ("DepÃ³sito", "Retiro", "Saldo") else "w",
-                stretch=(c == "DescripciÃ³n"))
+                anchor="e" if c in ("Depósito", "Retiro", "Saldo") else "w",
+                stretch=(c == "Descripción"))
         self._ec_tree.grid(row=0, column=0, sticky="ew")
-        # Sin scrollbar propia â el canvas exterior maneja el scroll
-        # (pero se puede activar si se necesita scroll rÃ¡pido en la tabla)
+        # Sin scrollbar propia — el canvas exterior maneja el scroll
+        # (pero se puede activar si se necesita scroll rápido en la tabla)
 
         # Resumen
         self._ec_resumen = tk.Frame(bot, bg=COLOR_BLANCO,
@@ -2646,7 +2694,7 @@ class WorkspaceWindow(tk.Toplevel):
             bg=COLOR_BLANCO, fg=COLOR_TEXTO, font=("Segoe UI", 9), justify="left")
         self._ec_lbl_resumen.pack(padx=10, pady=6, anchor="w")
 
-        # ââ MenÃº contextual Treeview: guardar correcciÃ³n ââââââââââââââ
+        # ── Menú contextual Treeview: guardar corrección ──────────────
         _ctx_menu = tk.Menu(self._ec_tree, tearoff=0)
         def _ctx_corregir():
             sel = self._ec_tree.selection()
@@ -2656,14 +2704,14 @@ class WorkspaceWindow(tk.Toplevel):
             desc_orig = str(vals[1]) if len(vals) > 1 else ""
             if not desc_orig: return
             top = tk.Toplevel(self)
-            top.title("â Corregir descripciÃ³n")
+            top.title("✏ Corregir descripción")
             top.geometry("520x160")
             top.configure(bg=COLOR_FONDO)
-            tk.Label(top, text="DescripciÃ³n original:", bg=COLOR_FONDO,
+            tk.Label(top, text="Descripción original:", bg=COLOR_FONDO,
                      fg="#9CA3AF", font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(14, 0))
             tk.Label(top, text=desc_orig, bg=COLOR_FONDO,
                      fg=COLOR_BLANCO, font=("Segoe UI", 9, "bold"), wraplength=480).pack(anchor="w", padx=16)
-            tk.Label(top, text="DescripciÃ³n corregida:", bg=COLOR_FONDO,
+            tk.Label(top, text="Descripción corregida:", bg=COLOR_FONDO,
                      fg="#9CA3AF", font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(10, 0))
             _var_corr = tk.StringVar(value=desc_orig)
             _ent = ttk.Entry(top, textvariable=_var_corr, width=64)
@@ -2675,17 +2723,17 @@ class WorkspaceWindow(tk.Toplevel):
                     try:
                         import aprendizaje as _ap
                         _ap.guardar_correccion(desc_orig, nueva)
-                        self._ec_tree.set(sel[0], "DescripciÃ³n", nueva)
-                        self._log(f"ð§  CorrecciÃ³n guardada: '{desc_orig}' â '{nueva}'", False)
+                        self._ec_tree.set(sel[0], "Descripción", nueva)
+                        self._log(f"🧠 Corrección guardada: '{desc_orig}' → '{nueva}'", False)
                     except Exception as _e:
                         messagebox.showerror("Error", str(_e), parent=top)
                 top.destroy()
-            tk.Button(top, text="ð¾ Guardar correcciÃ³n", command=_guardar,
+            tk.Button(top, text="💾 Guardar corrección", command=_guardar,
                       bg="#1E3A8A", fg="white", relief="flat", padx=12, pady=4,
                       font=("Segoe UI", 9, "bold")).pack(pady=10)
             top.bind("<Return>", lambda e: _guardar())
             top.transient(self); top.grab_set()
-        _ctx_menu.add_command(label="â Corregir descripciÃ³n (guardar)", command=_ctx_corregir)
+        _ctx_menu.add_command(label="✏ Corregir descripción (guardar)", command=_ctx_corregir)
         def _ctx_popup(event):
             if self._ec_tree.identify_row(event.y):
                 self._ec_tree.selection_set(self._ec_tree.identify_row(event.y))
@@ -2693,48 +2741,48 @@ class WorkspaceWindow(tk.Toplevel):
         self._ec_tree.bind("<Button-3>", _ctx_popup)
         self._ec_tree.bind("<Double-1>", lambda e: _ctx_corregir())
 
-        # ââ SecciÃ³n Aprendizaje ââââââââââââââââââââââââââââââââââââââ
+        # ── Sección Aprendizaje ──────────────────────────────────────
         s_ap = tk.Frame(inn, bg=COLOR_BLANCO,
                         highlightbackground="#D0D0D0", highlightthickness=1)
         s_ap.grid(row=6, column=0, sticky="ew", padx=16, pady=(6, 14))
         s_ap.columnconfigure(0, weight=1)
-        tk.Label(s_ap, text="ð§  Sistema de Aprendizaje",
+        tk.Label(s_ap, text="🧠 Sistema de Aprendizaje",
                  bg=COLOR_BLANCO, fg=COLOR_TEXTO,
                  font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=14, pady=(10, 2))
         tk.Label(s_ap,
-                 text="A: corrige descripciones con clic derecho  â¢  B: memoriza bancos automÃ¡ticamente  â¢  C: IA cuando el parser falla",
+                 text="A: corrige descripciones con clic derecho  •  B: memoriza bancos automáticamente  •  C: IA cuando el parser falla",
                  bg=COLOR_BLANCO, fg="#888888", font=("Segoe UI", 8)).pack(anchor="w", padx=14, pady=(0, 8))
 
-        # API Key (OpciÃ³n C)
+        # API Key (Opción C)
         api_row = tk.Frame(s_ap, bg=COLOR_BLANCO)
         api_row.pack(fill="x", padx=14, pady=(0, 6))
-        tk.Label(api_row, text="API Key Claude (OpciÃ³n C):", bg=COLOR_BLANCO,
+        tk.Label(api_row, text="API Key Claude (Opción C):", bg=COLOR_BLANCO,
                  fg=COLOR_TEXTO, font=("Segoe UI", 8, "bold")).pack(side="left")
         self._ec_api_var = tk.StringVar()
         try:
             import aprendizaje as _ap0
             _k0 = _ap0.obtener_api_key()
-            if _k0: self._ec_api_var.set("â¢â¢â¢â¢" + _k0[-4:])
+            if _k0: self._ec_api_var.set("••••" + _k0[-4:])
         except Exception: pass
         _api_entry = ttk.Entry(api_row, textvariable=self._ec_api_var, width=44)
         _api_entry.pack(side="left", padx=8)
         def _mostrar_api(e):
-            if "â¢" in self._ec_api_var.get():
+            if "•" in self._ec_api_var.get():
                 self._ec_api_var.set("")
         def _guardar_api():
             val = self._ec_api_var.get().strip()
-            if not val or "â¢" in val: return
+            if not val or "•" in val: return
             try:
                 import aprendizaje as _apm
                 _apm.guardar_api_key(val)
-                self._ec_api_var.set("â¢â¢â¢â¢" + val[-4:])
-                messagebox.showinfo("API Key", "â API Key guardada.", parent=self)
+                self._ec_api_var.set("••••" + val[-4:])
+                messagebox.showinfo("API Key", "✅ API Key guardada.", parent=self)
             except Exception as _e2:
                 messagebox.showerror("Error", str(_e2), parent=self)
         _api_entry.bind("<FocusIn>", _mostrar_api)
         ttk.Button(api_row, text="Guardar", command=_guardar_api).pack(side="left")
 
-        # Botones de gestiÃ³n
+        # Botones de gestión
         btn_ap = tk.Frame(s_ap, bg=COLOR_BLANCO)
         btn_ap.pack(fill="x", padx=14, pady=(0, 10))
         def _ver_corr():
@@ -2747,18 +2795,18 @@ class WorkspaceWindow(tk.Toplevel):
             try:
                 import aprendizaje as _apm
                 st = _apm.obtener_estadisticas()
-                messagebox.showinfo("EstadÃ­sticas de aprendizaje",
+                messagebox.showinfo("Estadísticas de aprendizaje",
                     f"Correcciones guardadas : {st.get('num_correcciones', 0)}\n"
                     f"Patrones de banco      : {st.get('num_patrones_banco', 0)}\n"
                     f"Archivos procesados    : {st.get('total_archivos_procesados', 0)}\n"
-                    f"IA configurada         : {'â SÃ­' if st.get('ia_configurada') else 'â No'}\n"
-                    f"Ãltima actualizaciÃ³n   : {st.get('ultima_actualizacion', 'â')}",
+                    f"IA configurada         : {'✅ Sí' if st.get('ia_configurada') else '❌ No'}\n"
+                    f"Última actualización   : {st.get('ultima_actualizacion', '—')}",
                     parent=self)
             except Exception as _e4:
                 messagebox.showerror("Error", str(_e4), parent=self)
-        ttk.Button(btn_ap, text="â Ver / Editar correcciones",
+        ttk.Button(btn_ap, text="✏ Ver / Editar correcciones",
                    command=_ver_corr).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_ap, text="ð EstadÃ­sticas",
+        ttk.Button(btn_ap, text="📊 Estadísticas",
                    command=_ver_stats).pack(side="left")
 
 
@@ -2778,7 +2826,7 @@ class WorkspaceWindow(tk.Toplevel):
         )
         if ruta:
             self._ec_archivo.set(ruta)
-            # OpciÃ³n B: sugerir banco por nombre de archivo
+            # Opción B: sugerir banco por nombre de archivo
             try:
                 import aprendizaje as _ap
                 sug = _ap.sugerir_banco(ruta)
@@ -2791,7 +2839,7 @@ class WorkspaceWindow(tk.Toplevel):
                     )
                     if _match:
                         self._ec_sel_banco(_match)
-                        self._log(f"ð§  Banco detectado automÃ¡ticamente: {_match}", False)
+                        self._log(f"🧠 Banco detectado automáticamente: {_match}", False)
             except Exception:
                 pass
 
@@ -2800,7 +2848,7 @@ class WorkspaceWindow(tk.Toplevel):
             os.startfile(self._ec_resultado)
 
     def _ec_status(self, msg, color=None):
-        """Actualiza la etiqueta de estado dentro del tab (thread-safe vÃ­a after)."""
+        """Actualiza la etiqueta de estado dentro del tab (thread-safe vía after)."""
         color = color or COLOR_FUCSIA_OSCURO
         self._ec_lbl_archivo.config(text=msg, foreground=color)
 
@@ -2812,12 +2860,12 @@ class WorkspaceWindow(tk.Toplevel):
             return
         if not os.path.exists(ruta):
             messagebox.showwarning("Archivo no encontrado",
-                f"No se encontrÃ³ el archivo:\n{ruta}", parent=self)
+                f"No se encontró el archivo:\n{ruta}", parent=self)
             return
         saldo_ini = 0.0
         saldo_esp = None
 
-        self.after(0, self._ec_status, "â³ Procesando...", COLOR_AZUL)
+        self.after(0, self._ec_status, "⏳ Procesando...", COLOR_AZUL)
         self._ec_pb_frame.grid()
         self._pb_iniciar(self._ec_pb, self._ec_pb_lbl)
         import threading
@@ -2830,11 +2878,11 @@ class WorkspaceWindow(tk.Toplevel):
     def _ec_hilo(self, ruta, saldo_ini, saldo_esp):
         import traceback as _tb2
         try:
-            # ââ Instalar pdfplumber si falta ââ
+            # ── Instalar pdfplumber si falta ──
             try:
                 import pdfplumber
             except ImportError:
-                self.after(0, self._ec_status, "â³ Instalando pdfplumber...", COLOR_AZUL)
+                self.after(0, self._ec_status, "⏳ Instalando pdfplumber...", COLOR_AZUL)
                 import subprocess, sys as _sys
                 subprocess.check_call(
                     [_sys.executable, "-m", "pip", "install", "pdfplumber"],
@@ -2845,7 +2893,7 @@ class WorkspaceWindow(tk.Toplevel):
             try:
                 import xlsxwriter
             except ImportError:
-                self.after(0, self._ec_status, "â³ Instalando xlsxwriter...", COLOR_AZUL)
+                self.after(0, self._ec_status, "⏳ Instalando xlsxwriter...", COLOR_AZUL)
                 import subprocess, sys as _sys
                 subprocess.check_call(
                     [_sys.executable, "-m", "pip", "install", "xlsxwriter"],
@@ -2858,61 +2906,104 @@ class WorkspaceWindow(tk.Toplevel):
             ext = os.path.splitext(ruta)[1].lower()
             movimientos = []
 
+            # Auto-deteccion saldo inicial desde el PDF (3 estrategias)
+            if ext == ".pdf" and abs(saldo_ini) < 0.01:
+                try:
+                    import sys as _sys2, os as _os2
+                    _app_dir = _os2.path.dirname(_os2.path.abspath(__file__))
+                    if _app_dir not in _sys2.path:
+                        _sys2.path.insert(0, _app_dir)
+                    _sys2.modules.pop("ec_parser", None)
+                    import ec_parser as _ec_mod2
+                    _banco_key = getattr(self, "_ec_dbg_banco", "")
+                    with pdfplumber.open(ruta) as _ppdf2:
+                        # Estrategia 1: extract_text() de TODAS las paginas
+                        _txt2 = "\n".join((pg.extract_text() or "") for pg in _ppdf2.pages)
+                        if _txt2.strip():
+                            _det2 = _ec_mod2.extraer_saldo_ini(_txt2, _banco_key)
+                            if _det2 is not None:
+                                saldo_ini = _det2
+                        # Estrategia 2: extract_words() para PDFs posicionales (BBVA CM)
+                        if abs(saldo_ini) < 0.01:
+                            _lines_w2 = []
+                            for _pg2 in _ppdf2.pages[:4]:
+                                _ws2 = _pg2.extract_words(x_tolerance=3, y_tolerance=3) or []
+                                if _ws2:
+                                    _rw2 = {}
+                                    for _w2 in _ws2:
+                                        _ky2 = round(_w2["top"], 0)
+                                        _rw2.setdefault(_ky2, []).append(_w2["text"])
+                                    for _ky2 in sorted(_rw2.keys()):
+                                        _lines_w2.append(" ".join(_rw2[_ky2]))
+                            if _lines_w2:
+                                _det3 = _ec_mod2.extraer_saldo_ini("\n".join(_lines_w2), _banco_key)
+                                if _det3 is not None:
+                                    saldo_ini = _det3
+                except Exception:
+                    pass
+
             if ext == ".pdf":
                 movimientos = self._ec_leer_pdf(ruta, pdfplumber)
             else:
                 movimientos = self._ec_leer_excel(ruta, openpyxl)
 
-            # ââ OpciÃ³n A: aplicar correcciones aprendidas ââââââââââââââ
+            # Estrategia 3: back-calc desde primer movimiento 5-tupla (ej. BBVA CM)
+            if movimientos and len(movimientos[0]) == 5 and abs(saldo_ini) < 0.01:
+                _f0 = movimientos[0]
+                _back = round(_f0[4] - _f0[2] + _f0[3], 2)
+                if _back > 0:
+                    saldo_ini = _back
+
+            # ── Opción A: aplicar correcciones aprendidas ──────────────
             if movimientos:
                 try:
                     import aprendizaje as _ap
                     movimientos, _n_corr = _ap.aplicar_correcciones(movimientos)
                     if _n_corr:
                         self.after(0, self._log,
-                            f"ð§  Aprendizaje: {_n_corr} correcciÃ³n(es) aplicada(s) automÃ¡ticamente.", False)
+                            f"🧠 Aprendizaje: {_n_corr} corrección(es) aplicada(s) automáticamente.", False)
                 except Exception:
                     pass
 
-            # ââ OpciÃ³n C: fallback con IA si parser no encontrÃ³ nada âââ
+            # ── Opción C: fallback con IA si parser no encontró nada ───
             if not movimientos:
                 try:
                     import aprendizaje as _ap
                     if _ap.obtener_api_key():
                         self.after(0, self._ec_status,
-                            "ð¤ Parser fallÃ³ â intentando con IA...", COLOR_AZUL)
+                            "🤖 Parser falló — intentando con IA...", COLOR_AZUL)
                         self.after(0, self._log,
-                            "ð¤ Parser convencional sin resultados. Llamando a la API de Claude...", False)
+                            "🤖 Parser convencional sin resultados. Llamando a la API de Claude...", False)
                         _texto_ia = getattr(self, "_ec_dbg_texto", "")
                         _banco_ia = getattr(self, "_ec_dbg_banco", "")
                         movimientos = _ap.parsear_con_ia(_texto_ia, _banco_ia)
                         if movimientos:
                             self.after(0, self._log,
-                                f"ð¤ IA extrajo {len(movimientos)} movimientos.", False)
+                                f"🤖 IA extrajo {len(movimientos)} movimientos.", False)
                 except Exception as _ia_e:
-                    self.after(0, self._log, f"â  IA error: {_ia_e}", True)
+                    self.after(0, self._log, f"⚠ IA error: {_ia_e}", True)
 
             if not movimientos:
                 _dbg_banco = getattr(self, "_ec_dbg_banco", "?")
                 _dbg_pags  = getattr(self, "_ec_dbg_paginas", 0)
                 _dbg_txt   = getattr(self, "_ec_dbg_texto", "")
-                _muestra   = _dbg_txt[:800].replace("\n", " | ") if _dbg_txt else "(vacÃ­o)"
+                _muestra   = _dbg_txt[:800].replace("\n", " | ") if _dbg_txt else "(vacío)"
                 self.after(0, self._pb_error, self._ec_pb, self._ec_pb_lbl)
                 self.after(0, self._ec_pb_frame.grid_remove)
                 self.after(0, self._log,
-                    f"â  Sin movimientos. Banco={_dbg_banco!r}  PÃ¡ginas={_dbg_pags}\n"
-                    f"   Texto extraÃ­do (primeros 800 chars):\n   {_muestra}", True)
-                self.after(0, self._ec_status, "â  Sin movimientos detectados", COLOR_ERROR)
+                    f"⚠ Sin movimientos. Banco={_dbg_banco!r}  Páginas={_dbg_pags}\n"
+                    f"   Texto extraído (primeros 800 chars):\n   {_muestra}", True)
+                self.after(0, self._ec_status, "⚠ Sin movimientos detectados", COLOR_ERROR)
                 self.after(0, messagebox.showwarning,
                     "Sin movimientos",
                     f"No se encontraron movimientos.\n\n"
                     f"Banco: {_dbg_banco}\n"
-                    f"PÃ¡ginas con texto: {_dbg_pags}\n\n"
-                    "Revisa el Log de actividad para ver el texto extraÃ­do.\n"
+                    f"Páginas con texto: {_dbg_pags}\n\n"
+                    "Revisa el Log de actividad para ver el texto extraído.\n"
                     "(Puede ser un PDF escaneado sin texto seleccionable)")
                 return
 
-            # ââ Calcular saldos acumulados ââ
+            # ── Calcular saldos acumulados ──
             saldo = saldo_ini
             filas = []
             total_dep = 0.0
@@ -2928,12 +3019,12 @@ class WorkspaceWindow(tk.Toplevel):
                 total_ret += ret
                 filas.append((fecha, desc, dep, ret, saldo))
 
-            # ââ Escribir Excel ââ
+            # ── Escribir Excel ──
             import datetime as _dt
             base = os.path.splitext(os.path.basename(ruta))[0]
             out_dir = self._resultados_dir()
             out_path = os.path.join(out_dir, f"{base}_conciliacion.xlsx")
-            # Si el archivo estÃ¡ abierto (Permission denied), usar nombre con timestamp
+            # Si el archivo está abierto (Permission denied), usar nombre con timestamp
             if os.path.exists(out_path):
                 try:
                     with open(out_path, 'ab'):
@@ -2944,7 +3035,7 @@ class WorkspaceWindow(tk.Toplevel):
 
             wb = xlsxwriter.Workbook(out_path)
             ws = wb.add_worksheet("Movimientos")
-            ws_conc = wb.add_worksheet("ConciliaciÃ³n")
+            ws_conc = wb.add_worksheet("Conciliación")
 
             # Formatos
             fmt_h  = wb.add_format({"bold": True, "bg_color": "#1E6FBF",
@@ -2967,7 +3058,7 @@ class WorkspaceWindow(tk.Toplevel):
             fmt_ttl = wb.add_format({"bold": True, "bg_color": "#CFE7F8",
                                       "num_format": "#,##0.00", "border": 1})
 
-            # ââ Formatos adicionales ââ
+            # ── Formatos adicionales ──
             fmt_titulo = wb.add_format({
                 "bold": True, "font_size": 14, "font_color": "#1E6FBF",
                 "align": "center", "valign": "vcenter",
@@ -2996,24 +3087,24 @@ class WorkspaceWindow(tk.Toplevel):
                 "bg_color": "#FDE8E4", "font_color": "#E14B3D", "align": "right",
             })
 
-            # ââ Hoja Movimientos ââ
+            # ── Hoja Movimientos ──
             n_filas = len(filas)
             tot_row = n_filas + 1          # fila 0 = encabezado, 1..n = datos
 
-            # TÃ­tulo
+            # Título
             ws.merge_range(0, 0, 0, 4,
-                f"Estado de Cuenta â {base}  ({n_filas} movimientos)", fmt_titulo)
+                f"Estado de Cuenta — {base}  ({n_filas} movimientos)", fmt_titulo)
             ws.set_row(0, 24)
 
             # Encabezados (fila 1)
-            hdrs = ["Fecha", "DescripciÃ³n", "DepÃ³sito", "Retiro", "Saldo"]
+            hdrs = ["Fecha", "Descripción", "Depósito", "Retiro", "Saldo"]
             ws.set_column(0, 0, 14)
             ws.set_column(1, 1, 55)
             ws.set_column(2, 4, 17)
             for c, h in enumerate(hdrs):
                 ws.write(1, c, h, fmt_h)
 
-            # Fijar filas de tÃ­tulo + encabezado
+            # Fijar filas de título + encabezado
             ws.freeze_panes(2, 0)
 
             # Auto-filtro en fila de encabezados
@@ -3030,7 +3121,7 @@ class WorkspaceWindow(tk.Toplevel):
                 ws.write(r, 3, ret if ret else "", fmt_ret if ret else fmt_t)
                 ws.write(r, 4, sal, fmt_sal)
 
-            # Fila totales con fÃ³rmulas SUMA
+            # Fila totales con fórmulas SUMA
             tot_row = n_filas + 2           # debajo de los datos
             ws.write(tot_row, 1, "TOTALES", fmt_lbl)
             ws.write_formula(tot_row, 2,
@@ -3040,28 +3131,28 @@ class WorkspaceWindow(tk.Toplevel):
             ws.write(tot_row, 4,
                 filas[-1][4] if filas else saldo_ini, fmt_ttl)
 
-            # ConfiguraciÃ³n de impresiÃ³n
-            ws.set_header(f"&C&B Estado de Cuenta â {base}")
-            ws.set_footer("&L&D &T&R PÃ¡gina &P de &N")
+            # Configuración de impresión
+            ws.set_header(f"&C&B Estado de Cuenta — {base}")
+            ws.set_footer("&L&D &T&R Página &P de &N")
             ws.repeat_rows(1)               # repetir encabezado al imprimir
             ws.set_landscape()
-            ws.fit_to_pages(1, 0)           # 1 pÃ¡gina de ancho, alto libre
+            ws.fit_to_pages(1, 0)           # 1 página de ancho, alto libre
 
-            # ââ Hoja ConciliaciÃ³n ââ
+            # ── Hoja Conciliación ──
             saldo_fin_real = filas[-1][4] if filas else saldo_ini
             diferencia = (saldo_fin_real - saldo_esp) if saldo_esp is not None else None
 
             ws_conc.set_column(0, 0, 36)
             ws_conc.set_column(1, 1, 20)
 
-            # TÃ­tulo
-            ws_conc.merge_range(0, 0, 0, 1, "ConciliaciÃ³n Bancaria", fmt_titulo)
+            # Título
+            ws_conc.merge_range(0, 0, 0, 1, "Conciliación Bancaria", fmt_titulo)
             ws_conc.set_row(0, 24)
             ws_conc.merge_range(1, 0, 1, 1, base, fmt_subtit)
 
             conc_data = [
                 ("Saldo inicial",               saldo_ini,      fmt_conc_val),
-                ("(+) Total depÃ³sitos",          total_dep,      fmt_conc_val),
+                ("(+) Total depósitos",          total_dep,      fmt_conc_val),
                 ("(-) Total retiros",            total_ret,      fmt_conc_val),
                 ("= Saldo final calculado",      saldo_fin_real, fmt_conc_tot),
             ]
@@ -3069,7 +3160,7 @@ class WorkspaceWindow(tk.Toplevel):
                 conc_data.append(("Saldo final esperado (banco)", saldo_esp, fmt_conc_val))
                 f_dif = fmt_conc_ok if (diferencia is not None and abs(diferencia) < 0.01) \
                         else fmt_conc_err
-                conc_data.append(("Diferencia (calculado â esperado)", diferencia, f_dif))
+                conc_data.append(("Diferencia (calculado − esperado)", diferencia, f_dif))
 
             for i, (lbl, val, fmt_v) in enumerate(conc_data, start=2):
                 ws_conc.write(i, 0, lbl, fmt_conc_lbl)
@@ -3088,12 +3179,12 @@ class WorkspaceWindow(tk.Toplevel):
             estado = ""
             if saldo_esp is not None:
                 if abs(diferencia) < 0.01:
-                    estado = "â CONCILIA â diferencia: $0.00"
+                    estado = "✅ CONCILIA — diferencia: $0.00"
                 else:
-                    estado = f"â   NO CONCILIA â diferencia: ${diferencia:,.2f}"
+                    estado = f"⚠  NO CONCILIA — diferencia: ${diferencia:,.2f}"
             resumen = (
                 f"Movimientos: {len(filas)}   |   "
-                f"DepÃ³sitos: ${total_dep:,.2f}   |   "
+                f"Depósitos: ${total_dep:,.2f}   |   "
                 f"Retiros: ${total_ret:,.2f}   |   "
                 f"Saldo final: ${saldo_fin_real:,.2f}"
                 + (f"\n{estado}" if estado else "")
@@ -3103,12 +3194,12 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._ec_pb_frame.grid_remove)
             self.after(0, self._ec_mostrar_resultado, filas, resumen, out_path)
             self.after(0, self._ec_status,
-                f"â {os.path.basename(out_path)}", COLOR_OK)
+                f"✅ {os.path.basename(out_path)}", COLOR_OK)
 
-            # ââ OpciÃ³n B: memorizar banco + registrar uso ââââââââââââââ
+            # ── Opción B: memorizar banco + registrar uso ──────────────
             try:
                 import aprendizaje as _ap
-                _banco_str = self._ec_banco.get().strip().lstrip("ð â").strip()
+                _banco_str = self._ec_banco.get().strip().lstrip("🔍 ─").strip()
                 _ap.registrar_uso(_banco_str, len(filas), ruta)
                 _ap.recordar_banco(ruta, _banco_str)
             except Exception:
@@ -3118,25 +3209,25 @@ class WorkspaceWindow(tk.Toplevel):
             det = _tb2.format_exc()
             self.after(0, self._pb_error, self._ec_pb, self._ec_pb_lbl)
             self.after(0, self._ec_pb_frame.grid_remove)
-            self.after(0, self._ec_status, f"â Error: {exc}", COLOR_ERROR)
+            self.after(0, self._ec_status, f"❌ Error: {exc}", COLOR_ERROR)
             self.after(0, messagebox.showerror,
                 "Error al procesar",
-                f"OcurriÃ³ un error:\n\n{exc}\n\n{det[:600]}")
+                f"Ocurrió un error:\n\n{exc}\n\n{det[:600]}")
 
     def _ec_leer_pdf(self, ruta, pdfplumber):
         """Extrae movimientos de un PDF de estado de cuenta.
-        Despacha al parser especÃ­fico segÃºn el banco seleccionado,
-        o auto-detecta si no se especificÃ³.
+        Despacha al parser específico según el banco seleccionado,
+        o auto-detecta si no se especificó.
         """
         import re
 
         banco = getattr(self, "_ec_banco", None)
         banco_sel = banco.get().strip() if banco else ""
-        # Quitar prefijos de secciÃ³n ("ââ X ââ", "ð ...")
-        self._ec_dbg_banco = banco_sel   # para diagnÃ³stico
-        banco_key = banco_sel.lstrip("ð â").strip()
+        # Quitar prefijos de sección ("── X ──", "🔍 ...")
+        self._ec_dbg_banco = banco_sel   # para diagnóstico
+        banco_key = banco_sel.lstrip("🔍 ─").strip()
 
-        # ââ Recolectar texto completo ââââââââââââââââââââââââââââââââââ
+        # ── Recolectar texto completo ──────────────────────────────────
         paginas_texto = []
         paginas_tablas = []
         with pdfplumber.open(ruta) as pdf:
@@ -3148,10 +3239,10 @@ class WorkspaceWindow(tk.Toplevel):
                 paginas_tablas.extend(tbls)
 
         texto_total = "\n".join(paginas_texto)
-        self._ec_dbg_texto   = texto_total        # para diagnÃ³stico
-        self._ec_dbg_paginas = len(paginas_texto)  # para diagnÃ³stico
+        self._ec_dbg_texto   = texto_total        # para diagnóstico
+        self._ec_dbg_paginas = len(paginas_texto)  # para diagnóstico
 
-        # ââ Dispatch por banco âââââââââââââââââââââââââââââââââââââââââ
+        # ── Dispatch por banco ─────────────────────────────────────────
         if banco_key.startswith("Banorte"):
             return self._ec_parsear_banorte(texto_total, ruta=ruta, pdfplumber=pdfplumber)
 
@@ -3174,7 +3265,7 @@ class WorkspaceWindow(tk.Toplevel):
                 movs = self._ec_parsear_bbva_pyme(texto_total)
                 if movs:
                     return movs
-            # BBVA genÃ©rico: tablas o texto DD/MM/YYYY
+            # BBVA genérico: tablas o texto DD/MM/YYYY
             if banco_key.startswith("BBVA"):
                 movs = self._ec_parsear_bbva(texto_total, paginas_tablas, banco_key)
                 if movs:
@@ -3220,11 +3311,11 @@ class WorkspaceWindow(tk.Toplevel):
             if movs:
                 return movs
 
-        if banco_key.startswith(("BajÃ­o", "Azteca", "Bancoppel", "Bx+", "CiBanco")):
-            pass  # caen al auto-detect genÃ©rico
+        if banco_key.startswith(("Bajío", "Azteca", "Bancoppel", "Bx+", "CiBanco")):
+            pass  # caen al auto-detect genérico
 
-        # ââ Auto-detecciÃ³n (o banco desconocido) ââââââââââââââââââââââ
-        # 1) Banorte por patrÃ³n DD-MMM-YY
+        # ── Auto-detección (o banco desconocido) ──────────────────────
+        # 1) Banorte por patrón DD-MMM-YY
         BANORTE_PAT = re.compile(
             r"\d{2}-(?:ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)-\d{2}")
         if BANORTE_PAT.search(texto_total):
@@ -3244,7 +3335,7 @@ class WorkspaceWindow(tk.Toplevel):
             if movs:
                 return movs
 
-        # 2c) PDF sin texto extraÃ­ble â intentar TDC vÃ­a OCR
+        # 2c) PDF sin texto extraíble → intentar TDC vía OCR
         if not texto_total.strip():
             movs = self._ec_parsear_bbva_tdc("", ruta=ruta)
             if movs:
@@ -3252,11 +3343,11 @@ class WorkspaceWindow(tk.Toplevel):
 
         # 3) BBVA por tablas con columnas conocidas
         if any("CARGO" in str(t) or "ABONO" in str(t) for t in paginas_tablas):
-            movs = self._ec_parsear_bbva(texto_total, paginas_tablas, "BBVA DÃ©bito")
+            movs = self._ec_parsear_bbva(texto_total, paginas_tablas, "BBVA Débito")
             if movs:
                 return movs
 
-        # 3) GenÃ©rico: lÃ­neas con fecha numÃ©rica
+        # 3) Genérico: líneas con fecha numérica
         patron_fecha = re.compile(r"\b(\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4})\b")
         patron_monto = re.compile(r"[\d,]+\.\d{2}")
         movimientos = []
@@ -3268,15 +3359,15 @@ class WorkspaceWindow(tk.Toplevel):
                 movimientos.append(mov)
         return movimientos
 
-    # ââ Parsers por banco ââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Parsers por banco ──────────────────────────────────────────────
 
     def _ec_parsear_bbva_tdc(self, texto, ruta=None):
         """
-        Parser BBVA T Negoc / LCDigital (Tarjeta de CrÃ©dito Digital).
+        Parser BBVA T Negoc / LCDigital (Tarjeta de Crédito Digital).
         Soporta PDFs digitales y PDFs imagen (OCR via pdf2image + pytesseract).
 
-        dep = abonos (pagos) â reducen la deuda
-        ret = cargos (compras) â aumentan la deuda
+        dep = abonos (pagos) → reducen la deuda
+        ret = cargos (compras) → aumentan la deuda
         """
         import re
 
@@ -3302,8 +3393,8 @@ class WorkspaceWindow(tk.Toplevel):
 
         def _limpiar(raw):
             desc = raw
-            desc = re.sub(r'\s*\$\s*[ââ]?\s*-?\s*$', '', desc)
-            desc = re.sub(r'\s*[SÂ§s]\$?\s*$', '', desc)
+            desc = re.sub(r'\s*\$\s*[—–]?\s*-?\s*$', '', desc)
+            desc = re.sub(r'\s*[S§s]\$?\s*$', '', desc)
             desc = re.sub(r'\s*\$\s*$', '', desc)
             desc = re.sub(r'\s+[#H*]{2,}\w*', '', desc)
             desc = re.sub(r'\s+\w{8,}\s*$', '', desc)
@@ -3311,22 +3402,22 @@ class WorkspaceWindow(tk.Toplevel):
             desc = re.sub(r'\s+[a-z]{2,6}\s*$', '', desc)
             desc = re.sub(r'\s+[a-zA-Z/\\|]{1,2}\s*$', '', desc)
             desc = re.sub(r'\s+', ' ', desc).strip()
-            return desc or "â"
+            return desc or "—"
 
-        # search (no match) â tolera basura OCR al inicio de lÃ­nea
+        # search (no match) → tolera basura OCR al inicio de línea
         pat_tx  = re.compile(r"(\d{2}/\d{2}/\d{2})\s+(\d{2}/\d{2}/\d{2})\s+(.+)$")
-        # Abono si: hay signo menos precedido de $/$S/Â§, O si la lÃ­nea termina en "s" sola
-        # (s minÃºscula = $ subrayado en la columna ABONOS sin guiÃ³n explÃ­cito)
-        pat_neg = re.compile(r'[$SÂ§]\s*[ââ]?\s*-|\b[sSÂ§]\s*$')
+        # Abono si: hay signo menos precedido de $/$S/§, O si la línea termina en "s" sola
+        # (s minúscula = $ subrayado en la columna ABONOS sin guión explícito)
+        pat_neg = re.compile(r'[$S§]\s*[—–]?\s*-|\b[sS§]\s*$')
         pat_amt = re.compile(r'([\d,]+\.\d{2})')
 
         def _normalizar_y_unir(lineas):
-            """Normaliza lÃ­neas OCR y une lÃ­neas partidas (fecha sin monto + monto sin fecha)."""
+            """Normaliza líneas OCR y une líneas partidas (fecha sin monto + monto sin fecha)."""
             raw = []
             for l in lineas:
                 ls = l.strip()
                 ls = re.sub(r'(\d{1,3}(?:,\d{3})+)\s(\d{2})(?=\s|$)', r'\1.\2', ls)
-                ls = re.sub(r',(?=\.\d)', '', ls)   # "3,339,.54" â "3,339.54"
+                ls = re.sub(r',(?=\.\d)', '', ls)   # "3,339,.54" → "3,339.54"
                 if ls:
                     raw.append(ls)
             joined = []
@@ -3356,7 +3447,7 @@ class WorkspaceWindow(tk.Toplevel):
                     if len(pat_amt.findall(ls)) >= 2:
                         return movs, True
                     continue
-                # Saltar solo si NO tiene patrÃ³n de fecha â ruido OCR de columnas adyacentes
+                # Saltar solo si NO tiene patrón de fecha — ruido OCR de columnas adyacentes
                 if any(sk in lu for sk in _TDC_SKIP) and not pat_tx.search(ls):
                     continue
                 m = pat_tx.search(ls)
@@ -3384,7 +3475,7 @@ class WorkspaceWindow(tk.Toplevel):
                 movs.append((fecha, _limpiar(prefix), dep, ret))
             return movs, False
 
-        # Primero intentar texto extraÃ­ble (PDF digital)
+        # Primero intentar texto extraíble (PDF digital)
         if texto.strip():
             movs, _ = _procesar_lineas(texto.splitlines())
             if movs:
@@ -3412,17 +3503,17 @@ class WorkspaceWindow(tk.Toplevel):
                 break
         return movimientos
 
-    def _ec_parsear_bbva(self, texto, tablas, variante="BBVA DÃ©bito"):
+    def _ec_parsear_bbva(self, texto, tablas, variante="BBVA Débito"):
         """Parser BBVA: usa tablas pdfplumber cuando existen,
-        cae a texto si no hay tablas Ãºtiles.
-        Columnas tÃ­picas: FECHA | DESCRIPCIÃN | CARGO(-) | ABONO(+) | SALDO
+        cae a texto si no hay tablas útiles.
+        Columnas típicas: FECHA | DESCRIPCIÓN | CARGO(-) | ABONO(+) | SALDO
         """
         import re
         from datetime import date as _date
 
         movimientos = []
 
-        # ââ Intentar extraer de tablas ââââââââââââââââââââââââââââââââ
+        # ── Intentar extraer de tablas ────────────────────────────────
         for tbl in tablas:
             if not tbl or len(tbl) < 2:
                 continue
@@ -3436,8 +3527,8 @@ class WorkspaceWindow(tk.Toplevel):
                 return -1
             i_fecha = col_idx(["FECHA"])
             i_desc  = col_idx(["DESCRIPCI", "CONCEPTO", "MOVIMIENTO"])
-            i_cargo = col_idx(["CARGO", "RETIRO", "DÃBITO", "DEBITO"])
-            i_abono = col_idx(["ABONO", "DEPÃSITO", "DEPOSITO", "CRÃDITO", "CREDITO"])
+            i_cargo = col_idx(["CARGO", "RETIRO", "DÉBITO", "DEBITO"])
+            i_abono = col_idx(["ABONO", "DEPÓSITO", "DEPOSITO", "CRÉDITO", "CREDITO"])
             i_saldo = col_idx(["SALDO"])
             if i_fecha < 0 or i_desc < 0:
                 continue
@@ -3469,7 +3560,7 @@ class WorkspaceWindow(tk.Toplevel):
             if movimientos:
                 return movimientos
 
-        # ââ Fallback texto: DD/MM/YYYY o DD-MM-YYYY ââââââââââââââââââ
+        # ── Fallback texto: DD/MM/YYYY o DD-MM-YYYY ──────────────────
         pat_f = re.compile(r"(\d{2}[/\-]\d{2}[/\-]\d{4})")
         pat_n = re.compile(r"[\d,]+\.\d{2}")
         for linea in texto.splitlines():
@@ -3481,7 +3572,7 @@ class WorkspaceWindow(tk.Toplevel):
             if not montos:
                 continue
             desc = linea[:m.start()].strip() + " " + linea[m.end():].strip()
-            desc = re.sub(r"[\d,]+\.\d{2}", "", desc).strip() or "â"
+            desc = re.sub(r"[\d,]+\.\d{2}", "", desc).strip() or "—"
             if len(montos) >= 3:
                 cargo, abono, saldo = montos[-3], montos[-2], montos[-1]
                 dep = abono; ret = cargo
@@ -3496,8 +3587,8 @@ class WorkspaceWindow(tk.Toplevel):
 
     def _ec_parsear_bbva_cashmanagement(self, ruta, pdfplumber):
         """Parser BBVA Cash Management (M.N. S INT y similares).
-        Formato: DD/ABR DD/ABR COD DESCRIPCIÃN  [monto_cargo | monto_abono]  saldo_op  saldo_liq
-        Usa posiciÃ³n X de cada monto para determinar si es CARGO o ABONO,
+        Formato: DD/ABR DD/ABR COD DESCRIPCIÓN  [monto_cargo | monto_abono]  saldo_op  saldo_liq
+        Usa posición X de cada monto para determinar si es CARGO o ABONO,
         comparando contra las coordenadas X de los encabezados CARGOS/ABONOS.
         """
         import re
@@ -3521,9 +3612,9 @@ class WorkspaceWindow(tk.Toplevel):
                 if not words:
                     continue
 
-                # ââ Detectar X de columnas CARGOS / ABONOS / SALDO ââââââ
+                # ── Detectar X de columnas CARGOS / ABONOS / SALDO ──────
                 # Buscamos la FILA que contenga AMBOS "CARGOS" y "ABONOS"
-                # para no confundir con el resumen financiero que tambiÃ©n los menciona.
+                # para no confundir con el resumen financiero que también los menciona.
                 rows_tmp = defaultdict(list)
                 for w in words:
                     rows_tmp[round(w["top"])].append(w)
@@ -3541,30 +3632,30 @@ class WorkspaceWindow(tk.Toplevel):
                                 x_cargo_hdr = w["x0"]
                             elif t == "ABONOS" and x_abono_hdr is None:
                                 x_abono_hdr = w["x0"]
-                            elif t in ("OPERACIÃN", "OPERACION",
-                                       "LIQUIDACIÃN", "LIQUIDACION") \
+                            elif t in ("OPERACIÓN", "OPERACION",
+                                       "LIQUIDACIÓN", "LIQUIDACION") \
                                  and x_saldo_hdr is None:
                                 x_saldo_hdr = w["x0"]  # primer col. de saldo (menor x)
                         break   # solo la primera fila encabezado
 
                 if x_cargo_hdr is None or x_abono_hdr is None:
-                    continue  # pÃ¡gina sin tabla de movimientos
+                    continue  # página sin tabla de movimientos
 
                 # Umbral: mitad entre encabezados
                 x_sep   = (x_cargo_hdr + x_abono_hdr) / 2
                 x_saldo = x_saldo_hdr if x_saldo_hdr else x_abono_hdr + 50
 
-                # ââ Reusar agrupaciÃ³n por fila ya construida ââââââââââ
+                # ── Reusar agrupación por fila ya construida ──────────
                 rows = rows_tmp
 
-                # ââ Detectar aÃ±o del estado (buscar "AL DD/MM/YYYY") ââ
+                # ── Detectar año del estado (buscar "AL DD/MM/YYYY") ──
                 anio = _date.today().year
                 texto_pag = page.extract_text() or ""
                 m_anio = re.search(r"/(\d{4})", texto_pag)
                 if m_anio:
                     anio = int(m_anio.group(1))
 
-                # ââ Iterar filas en orden, acumulando continuaciones â
+                # ── Iterar filas en orden, acumulando continuaciones ─
                 pat_solo_num = re.compile(r"^[\d\s]+$")
                 pat_hex      = re.compile(r"^[0-9A-Fa-f]{8,}$")
                 pat_clabe    = re.compile(r"^\d{10,}$")
@@ -3576,19 +3667,19 @@ class WorkspaceWindow(tk.Toplevel):
                 )
 
                 def _util_cont(tok):
-                    """True si el token de continuaciÃ³n aporta info legible."""
+                    """True si el token de continuación aporta info legible."""
                     t = tok.strip()
                     if not t or len(t) < 3:                      return False
-                    if pat_clabe.match(t):                        return False  # CLABE pura (solo dÃ­gitos â¥10)
+                    if pat_clabe.match(t):                        return False  # CLABE pura (solo dígitos ≥10)
                     if pat_hex.match(t):                          return False  # ID hexadecimal puro
-                    if pat_solo_num.match(t):                     return False  # solo dÃ­gitos/espacios
+                    if pat_solo_num.match(t):                     return False  # solo dígitos/espacios
                     if len(t) > 100:                              return False  # texto legal largo
-                    # Si empieza con dÃ­gitos pero contiene letras Ãºtiles â incluir
+                    # Si empieza con dígitos pero contiene letras útiles → incluir
                     # (ej. "0130622KIMBERLY-CLARK..." tiene nombre del emisor)
                     letters = sum(1 for c in t if c.isalpha())
                     if letters < 4:                               return False  # casi sin texto
                     tu = t.upper()
-                    if any(s in tu for s in _SKIP_CONT):         return False  # pie de pÃ¡gina
+                    if any(s in tu for s in _SKIP_CONT):         return False  # pie de página
                     return True
 
                 cur_fecha  = None
@@ -3596,12 +3687,12 @@ class WorkspaceWindow(tk.Toplevel):
                 cur_dep    = 0.0
                 cur_ret    = 0.0
                 cur_saldo  = None
-                cur_conts  = []   # lÃ­neas de continuaciÃ³n acumuladas
+                cur_conts  = []   # líneas de continuación acumuladas
 
                 def _flush():
                     if cur_fecha is None or cur_desc is None:
                         return
-                    # Filtrar y anexar continuaciones Ãºtiles
+                    # Filtrar y anexar continuaciones útiles
                     utiles = [c for c in cur_conts if _util_cont(c)]
                     desc_final = cur_desc
                     if utiles:
@@ -3619,12 +3710,12 @@ class WorkspaceWindow(tk.Toplevel):
                     if len(tokens) < 2:
                         continue
 
-                    # Â¿Es fila de transacciÃ³n? (primeros 2 tokens = DD/MMM)
+                    # ¿Es fila de transacción? (primeros 2 tokens = DD/MMM)
                     m1 = pat_fecha.match(tokens[0])
                     m2 = pat_fecha.match(tokens[1]) if len(tokens) > 1 else None
 
                     if m1 and m2:
-                        # Guardar la transacciÃ³n anterior
+                        # Guardar la transacción anterior
                         _flush()
                         cur_conts = []
 
@@ -3653,7 +3744,7 @@ class WorkspaceWindow(tk.Toplevel):
                             cur_fecha = None
                             continue
 
-                        # DescripciÃ³n principal: tokens[3..] hasta el primer monto
+                        # Descripción principal: tokens[3..] hasta el primer monto
                         desc_tokens = []
                         for tok in tokens[3:]:
                             if pat_monto.match(tok):
@@ -3662,20 +3753,20 @@ class WorkspaceWindow(tk.Toplevel):
                         cur_desc = " ".join(desc_tokens).strip() or (tokens[2] if len(tokens) > 2 else "")
 
                     elif cur_fecha is not None:
-                        # LÃ­nea de continuaciÃ³n â concatenar todos los tokens
+                        # Línea de continuación — concatenar todos los tokens
                         line = " ".join(tokens).strip()
                         if line:
                             cur_conts.append(line)
 
-                _flush()  # Ãºltima transacciÃ³n de la pÃ¡gina
+                _flush()  # última transacción de la página
 
         return movimientos
 
     def _ec_parsear_bbva_pyme(self, texto):
         """Parser BBVA Maestra PYME.
-        Formato: DD/MMM DD/MMM COD DESCRIPCIÃN [CARGO|ABONO] [saldo_op saldo_liq]
-        COD V45 = VENTAS CREDITO â abono; todos los demÃ¡s â cargo.
-        Saldo aparece al final de cada grupo de fecha (no en cada lÃ­nea).
+        Formato: DD/MMM DD/MMM COD DESCRIPCIÓN [CARGO|ABONO] [saldo_op saldo_liq]
+        COD V45 = VENTAS CREDITO → abono; todos los demás → cargo.
+        Saldo aparece al final de cada grupo de fecha (no en cada línea).
         """
         import re
         from datetime import date as _date
@@ -3691,10 +3782,10 @@ class WorkspaceWindow(tk.Toplevel):
             r"\s+\d{2}/[A-Z]{3}\s+(\w+)\s+(.*?)$", re.IGNORECASE)
         pat_monto = re.compile(r"([\d,]+\.\d{2})")
 
-        # LÃ­neas de cabecera/pie que aparecen en saltos de pÃ¡gina
+        # Líneas de cabecera/pie que aparecen en saltos de página
         _BBVA_SKIP = (
             "BBVA MEXICO", "MAESTRA PYME BBVA", "ESTADO DE CUENTA",
-            "PAGINA ", "PÃGINA ", "NO. CUENTA", "NO. CLIENTE",
+            "PAGINA ", "PÁGINA ", "NO. CUENTA", "NO. CLIENTE",
             "FECHA SALDO", "OPER LIQ COD", "AV. PASEO DE LA REFORMA",
             "R.F.C. BBA", "ALCALDIA", "CIUDAD DE MEXICO",
         )
@@ -3706,25 +3797,25 @@ class WorkspaceWindow(tk.Toplevel):
         cur_dep    = 0.0
         cur_ret    = 0.0
         cur_saldo  = None
-        cur_conts  = []   # lÃ­neas de continuaciÃ³n
+        cur_conts  = []   # líneas de continuación
 
         def _flush_bbva():
             if cur_fecha is None or cur_desc is None:
                 return
             desc = cur_desc
-            # Para SPEI: agregar beneficiario de lÃ­neas de continuaciÃ³n
+            # Para SPEI: agregar beneficiario de líneas de continuación
             if cur_conts:
-                # Filtrar refs numÃ©ricas, CVE RASTREO y texto legal/promo (>120 chars)
+                # Filtrar refs numéricas, CVE RASTREO y texto legal/promo (>120 chars)
                 utiles = []
-                for cl in cur_conts[:6]:   # mÃ¡x 6 lÃ­neas de continuaciÃ³n
+                for cl in cur_conts[:6]:   # máx 6 líneas de continuación
                     if len(cl) > 120: continue              # texto legal/promo
-                    if re.match(r"^\d{6,}", cl): continue   # CLABE / ref numÃ©rica
+                    if re.match(r"^\d{6,}", cl): continue   # CLABE / ref numérica
                     if re.match(r"^BNET", cl, re.I): continue  # CVE RASTREO
                     if re.match(r"^\d+TRANSFERENCIA", cl, re.I): continue
                     utiles.append(cl.strip())
                 if utiles:
                     desc = desc + " | " + " ".join(utiles)
-            desc = re.sub(r"\s+", " ", desc).strip() or "â"
+            desc = re.sub(r"\s+", " ", desc).strip() or "—"
             if cur_saldo is not None:
                 movimientos.append((cur_fecha, desc, cur_dep, cur_ret, cur_saldo))
             else:
@@ -3732,7 +3823,7 @@ class WorkspaceWindow(tk.Toplevel):
 
         for line in texto.splitlines():
             lu = line.strip().upper()
-            # Ignorar cabeceras de pÃ¡gina
+            # Ignorar cabeceras de página
             if any(s in lu for s in _BBVA_SKIP):
                 continue
 
@@ -3767,11 +3858,11 @@ class WorkspaceWindow(tk.Toplevel):
 
         return movimientos
 
-    def _ec_parsear_banamex(self, texto, variante="Banamex DÃ©bito"):
+    def _ec_parsear_banamex(self, texto, variante="Banamex Débito"):
         """Parser Citibanamex MiCuenta.
-        Formato: DD MMM (sin aÃ±o) con descripciÃ³n multi-lÃ­nea.
-        Los montos aparecen al final de la Ãºltima lÃ­nea del bloque: monto saldo
-        o solo saldo. El aÃ±o se extrae del encabezado del PDF.
+        Formato: DD MMM (sin año) con descripción multi-línea.
+        Los montos aparecen al final de la última línea del bloque: monto saldo
+        o solo saldo. El año se extrae del encabezado del PDF.
         Dep vs ret se determina por cambio de saldo.
         """
         import re
@@ -3789,13 +3880,13 @@ class WorkspaceWindow(tk.Toplevel):
         pat_fecha = re.compile(
             r"^(\d{1,2})\s+(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\s+(.*?)$",
             re.IGNORECASE)
-        # Dos nÃºmeros al final de lÃ­nea: monto saldo
+        # Dos números al final de línea: monto saldo
         pat_fin = re.compile(r"([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$")
         pat_num = re.compile(r"([\d,]+\.\d{2})")
-        # Encabezados de pÃ¡gina a omitir
+        # Encabezados de página a omitir
         pat_skip = re.compile(
-            r"^ESTADO DE CUENTA|^CLIENTE:|^P[aÃ¡]gina\s*\d|^IRVING|"
-            r"Centro de Atenci|^Ciudad de M[eÃ©]xico|^Resto del pa[iÃ­]s|"
+            r"^ESTADO DE CUENTA|^CLIENTE:|^P[aá]gina\s*\d|^IRVING|"
+            r"Centro de Atenci|^Ciudad de M[eé]xico|^Resto del pa[ií]s|"
             r"^DETALLE DE OPERACIONES|^FECHA\s+CONCEPTO|^\d{6}\.",
             re.IGNORECASE)
         # Fin del detalle de operaciones
@@ -3838,7 +3929,7 @@ class WorkspaceWindow(tk.Toplevel):
                 i += 1
                 continue
 
-            # Recopilar bloque multi-lÃ­nea
+            # Recopilar bloque multi-línea
             j = i + 1
             bloque_lines = [linea]
             while j < len(lineas):
@@ -3854,7 +3945,7 @@ class WorkspaceWindow(tk.Toplevel):
                     bloque_lines.append(nl)
                 j += 1
 
-            # Ãltima lÃ­nea con dos nÃºmeros al final = monto + saldo
+            # Última línea con dos números al final = monto + saldo
             monto = None
             saldo_nuevo = None
             for bl in reversed(bloque_lines):
@@ -3872,7 +3963,7 @@ class WorkspaceWindow(tk.Toplevel):
                 ret = 0.0 if diff >= 0 else monto
                 saldo_act = saldo_nuevo
                 desc = re.sub(r"\s*([\d,]+\.\d{2})\s*", " ", desc_ini).strip()
-                desc = re.sub(r"\s+", " ", desc).strip() or "â"
+                desc = re.sub(r"\s+", " ", desc).strip() or "—"
                 movimientos.append((fecha, desc, dep, ret, saldo_nuevo))
             i = j
 
@@ -3880,8 +3971,8 @@ class WorkspaceWindow(tk.Toplevel):
 
     def _ec_parsear_santander(self, texto):
         """Parser Santander: DD-MMM-YYYY FOLIO DESCRIPCION dep_o_ret saldo.
-        Maneja entradas de una lÃ­nea y entradas SPEI multi-lÃ­nea donde los
-        montos aparecen en el Ãºltimo renglÃ³n del bloque.
+        Maneja entradas de una línea y entradas SPEI multi-línea donde los
+        montos aparecen en el último renglón del bloque.
         """
         import re
         from datetime import date as _date
@@ -3926,7 +4017,7 @@ class WorkspaceWindow(tk.Toplevel):
                 i += 1
                 continue
 
-            # Recoger lÃ­neas de continuaciÃ³n hasta la siguiente fecha
+            # Recoger líneas de continuación hasta la siguiente fecha
             j = i + 1
             bloque = desc_ini
             while j < len(lineas) and not pat_fecha.match(lineas[j].strip()):
@@ -3945,12 +4036,12 @@ class WorkspaceWindow(tk.Toplevel):
                 else:
                     dep, ret = monto, 0.0
                 desc = pat_monto.sub("", desc_ini).strip()
-                desc = re.sub(r"\s+", " ", desc).strip() or "â"
+                desc = re.sub(r"\s+", " ", desc).strip() or "—"
                 saldo_ant = saldo
                 movimientos.append((fecha, desc, dep, ret, saldo))
             i = j
 
-        # Fallback: fechas DD/MM/YYYY (algunos PDFs Santander mÃ¡s antiguos)
+        # Fallback: fechas DD/MM/YYYY (algunos PDFs Santander más antiguos)
         if not movimientos:
             pat_f2 = re.compile(r"(\d{2}/\d{2}/\d{4})")
             for linea in texto.splitlines():
@@ -3969,7 +4060,7 @@ class WorkspaceWindow(tk.Toplevel):
                 else:
                     dep, ret = monto, 0.0
                 desc = pat_f2.sub("", linea)
-                desc = pat_monto.sub("", desc).strip() or "â"
+                desc = pat_monto.sub("", desc).strip() or "—"
                 saldo_ant = saldo
                 movimientos.append((fecha, desc, dep, ret, saldo))
 
@@ -3980,9 +4071,9 @@ class WorkspaceWindow(tk.Toplevel):
         return self._ec_parsear_santander(texto)
 
     def _ec_parsear_scotiabank(self, texto, tablas=None):
-        """Parser Scotiabank: DD MMM CONCEPTO multi-lÃ­nea, montos con $.
-        Formato real: fecha 'DD MMM', descripciÃ³n en mÃºltiples renglones,
-        Ãºltimo renglÃ³n tiene '$monto' y '$saldo'.
+        """Parser Scotiabank: DD MMM CONCEPTO multi-línea, montos con $.
+        Formato real: fecha 'DD MMM', descripción en múltiples renglones,
+        último renglón tiene '$monto' y '$saldo'.
         """
         import re
         from datetime import date as _date
@@ -3991,7 +4082,7 @@ class WorkspaceWindow(tk.Toplevel):
                  "JUL":7,"AGO":8,"SEP":9,"OCT":10,"NOV":11,"DIC":12,
                  "JAN":1,"APR":4,"AUG":8,"OCT":10,"NOV":11,"DEC":12}
 
-        # AÃ±o desde encabezado: "01-OCT-18" â 2018, o "Fecha de corte 31-OCT-18"
+        # Año desde encabezado: "01-OCT-18" → 2018, o "Fecha de corte 31-OCT-18"
         anio = 2024
         y4 = re.search(r"\b(20\d{2})\b", texto)
         if y4:
@@ -4036,7 +4127,7 @@ class WorkspaceWindow(tk.Toplevel):
                 i += 1
                 continue
 
-            # Recoger continuaciÃ³n hasta siguiente lÃ­nea de fecha
+            # Recoger continuación hasta siguiente línea de fecha
             j = i + 1
             bloque_lines = [desc_ini]
             while j < len(lineas) and not pat_fecha.match(lineas[j].strip()):
@@ -4060,8 +4151,8 @@ class WorkspaceWindow(tk.Toplevel):
                 else:
                     dep, ret = monto, 0.0
                 desc = pat_monto_d.sub("", desc_ini)
-                desc = pat_monto.sub("", desc).strip() or desc_ini or "â"
-                desc = re.sub(r"\s+", " ", desc).strip() or "â"
+                desc = pat_monto.sub("", desc).strip() or desc_ini or "—"
+                desc = re.sub(r"\s+", " ", desc).strip() or "—"
                 saldo_ant = saldo
                 movimientos.append((fecha, desc, dep, ret, saldo))
             i = j
@@ -4076,7 +4167,7 @@ class WorkspaceWindow(tk.Toplevel):
         """Parser para estados de cuenta Inbursa.
         Formato: MMM. DD <referencia> <CONCEPTO> <monto> <saldo>
         Ejemplo:  MAY. 04 ansaccion_ DEPOSITO INBURED 718.48 2,596,167.41
-        El saldo viene explÃ­cito en el PDF; se detecta dep vs ret por cambio de saldo.
+        El saldo viene explícito en el PDF; se detecta dep vs ret por cambio de saldo.
         """
         import re
         from datetime import date as _date
@@ -4084,7 +4175,7 @@ class WorkspaceWindow(tk.Toplevel):
         MESES = {"ENE": 1, "FEB": 2, "MAR": 3, "ABR": 4, "MAY": 5, "JUN": 6,
                  "JUL": 7, "AGO": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DIC": 12}
 
-        # Detectar aÃ±o del encabezado (ej. "Del 01 May. 2026")
+        # Detectar año del encabezado (ej. "Del 01 May. 2026")
         year_m = re.search(r"\b(20\d{2})\b", texto)
         anio = int(year_m.group(1)) if year_m else 2026
 
@@ -4122,7 +4213,7 @@ class WorkspaceWindow(tk.Toplevel):
 
             saldo = montos[-1]
 
-            # LÃ­nea de saldo inicial
+            # Línea de saldo inicial
             if "BALANCE INICIAL" in resto.upper():
                 saldo_ant = saldo
                 continue
@@ -4136,10 +4227,10 @@ class WorkspaceWindow(tk.Toplevel):
             else:
                 dep, ret = monto, 0.0
 
-            # DescripciÃ³n: quitar montos y referencia inicial
+            # Descripción: quitar montos y referencia inicial
             desc = pat_monto.sub("", resto).strip()
             desc = re.sub(r"^\S+\s+", "", desc).strip()   # quitar referencia
-            desc = re.sub(r"\s+", " ", desc).strip() or "â"
+            desc = re.sub(r"\s+", " ", desc).strip() or "—"
 
             saldo_ant = saldo
             movimientos.append((fecha, desc, dep, ret, saldo))
@@ -4148,9 +4239,9 @@ class WorkspaceWindow(tk.Toplevel):
 
     def _ec_parsear_amex(self, texto):
         """Parser American Express Business Gold Card.
-        Formato: DD deMES DESCRIPCION importe [CR en lÃ­nea siguiente o misma]
-        CR = pago/abono (depÃ³sito); sin CR = cargo (retiro).
-        Sin columna de saldo â retorna 4-tuplas (fecha, desc, dep, ret).
+        Formato: DD deMES DESCRIPCION importe [CR en línea siguiente o misma]
+        CR = pago/abono (depósito); sin CR = cargo (retiro).
+        Sin columna de saldo — retorna 4-tuplas (fecha, desc, dep, ret).
         """
         import re
         from datetime import date as _date
@@ -4166,11 +4257,11 @@ class WorkspaceWindow(tk.Toplevel):
         anio = int(year_m.group(1)) if year_m else 2026
 
         pat_fecha = re.compile(
-            r"^(\d{1,2})\s+de\s*([A-Za-zÃ¡Ã©Ã­Ã³ÃºÃÃÃÃÃ]+)\s+(.*?)$", re.IGNORECASE)
+            r"^(\d{1,2})\s+de\s*([A-Za-záéíóúÁÉÍÓÚ]+)\s+(.*?)$", re.IGNORECASE)
         pat_monto = re.compile(r"([\d,]+\.\d{2})")
         pat_corte = re.compile(
-            r"Total de las|Estado de Cuenta P[aÃ¡]g|Este no es un|"
-            r"Resumen de|Abreviaci[oÃ³]n|N[uÃº]mero de Cuenta", re.I)
+            r"Total de las|Estado de Cuenta P[aá]g|Este no es un|"
+            r"Resumen de|Abreviaci[oó]n|N[uú]mero de Cuenta", re.I)
         MAX_CONT = 4  # RFC + REF + 1 extra max
 
         movimientos = []
@@ -4193,7 +4284,7 @@ class WorkspaceWindow(tk.Toplevel):
                 i += 1
                 continue
 
-            # Recopilar lÃ­neas de continuaciÃ³n (RFC, REF, CARGO X DE Y)
+            # Recopilar líneas de continuación (RFC, REF, CARGO X DE Y)
             j = i + 1
             cont = 0
             bloque_lines = [desc_ini]
@@ -4221,7 +4312,7 @@ class WorkspaceWindow(tk.Toplevel):
 
             desc = pat_monto.sub("", desc_ini).strip()
             desc = re.sub(r"\bCR\b", "", desc).strip()
-            desc = re.sub(r"\s+", " ", desc).strip() or "â"
+            desc = re.sub(r"\s+", " ", desc).strip() or "—"
 
             movimientos.append((fecha, desc, dep, ret))
             i += 1
@@ -4241,7 +4332,7 @@ class WorkspaceWindow(tk.Toplevel):
         MESES = {"ENE": 1, "FEB": 2, "MAR": 3, "ABR": 4, "MAY": 5, "JUN": 6,
                  "JUL": 7, "AGO": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DIC": 12}
 
-        per_m = re.search(r'Per[iÃ­]odo\s+de\s+(\d{2})([A-Z]{3})(\d{4})AL', texto, re.IGNORECASE)
+        per_m = re.search(r'Per[ií]odo\s+de\s+(\d{2})([A-Z]{3})(\d{4})AL', texto, re.IGNORECASE)
         if not per_m:
             per_m = re.search(r'(\d{2})([A-Z]{3})(\d{4})AL', texto)
         if per_m:
@@ -4303,7 +4394,7 @@ class WorkspaceWindow(tk.Toplevel):
 
         movimientos = []
 
-        # ââ Extraccion posicional con pdfplumber âââââââââââââââââââââââââ
+        # ── Extraccion posicional con pdfplumber ─────────────────────────
         if ruta is not None and pdfplumber is not None:
             X_DIA_MAX = 50
 
@@ -4372,7 +4463,7 @@ class WorkspaceWindow(tk.Toplevel):
                 desc = re.sub(r"\$\s*", "", desc)
                 desc = re.sub(r"^\d{1,2}\s+", "", desc)
                 desc = re.sub(r"\s+\d{1,6}\s*$", "", desc)
-                desc = re.sub(r"\s+", " ", desc).strip() or u"â"
+                desc = re.sub(r"\s+", " ", desc).strip() or u"—"
 
                 # DESTINATARIO
                 dest_m = re.search(
@@ -4387,7 +4478,7 @@ class WorkspaceWindow(tk.Toplevel):
 
                 # CONCEPTO (maximo 80 chars para evitar arrastrar CFDI/firmas)
                 conc_m = re.search(
-                    r"CONCEPTO\s*[:\|]\s*(.+?)(?=\s*(?:HORA|CVE\s+RASTREO|M[eÃ©]todo|RFC|$))",
+                    r"CONCEPTO\s*[:\|]\s*(.+?)(?=\s*(?:HORA|CVE\s+RASTREO|M[eé]todo|RFC|$))",
                     bt, re.IGNORECASE)
                 concepto = conc_m.group(1).strip()[:80] if conc_m else ""
 
@@ -4411,7 +4502,7 @@ class WorkspaceWindow(tk.Toplevel):
             if movimientos:
                 return movimientos
 
-        # ââ Fallback: parser de texto (sin pdfplumber) âââââââââââââââââââ
+        # ── Fallback: parser de texto (sin pdfplumber) ───────────────────
         pat_tx = re.compile(r"^(\d{1,2})\s+([^\n]+)", re.MULTILINE)
         saldo_ant2 = None
         ini_m2 = re.search(r"Saldo\s+inicial\s+\$\s*([\d,]+\.\d{2})", texto)
@@ -4437,7 +4528,7 @@ class WorkspaceWindow(tk.Toplevel):
             desc = pat_monto.sub("", resto)
             desc = re.sub(r"\$\s*", "", desc)
             desc = re.sub(r"\s+\d{4,}\s*$", "", desc)
-            desc = re.sub(r"\s+", " ", desc).strip() or u"â"
+            desc = re.sub(r"\s+", " ", desc).strip() or u"—"
             if saldo_ant2 is not None:
                 diff = round(saldo - saldo_ant2, 2)
                 dep = round(diff,  2) if diff > 0 else 0.0
@@ -4451,9 +4542,9 @@ class WorkspaceWindow(tk.Toplevel):
 
 
     def _ec_parsear_banorte(self, texto, ruta=None, pdfplumber=None):
-        """Parser especÃ­fico para estados de cuenta Banorte.
-        Usa extracciÃ³n por palabras agrupadas (Y) para capturar descripciones
-        multi-lÃ­nea (SPEI con BENEF: y RFC:).
+        """Parser específico para estados de cuenta Banorte.
+        Usa extracción por palabras agrupadas (Y) para capturar descripciones
+        multi-línea (SPEI con BENEF: y RFC:).
         """
         import re
         from datetime import date as _date
@@ -4466,7 +4557,7 @@ class WorkspaceWindow(tk.Toplevel):
             r"^(\d{2}-(?:ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)-\d{2})")
         pat_monto = re.compile(r"(?<!\S)([\d,]+\.\d{2})(?!\S|\d)")
 
-        # ââ ExtracciÃ³n de lÃ­neas ââââââââââââââââââââââââââââââââââââââââââ
+        # ── Extracción de líneas ──────────────────────────────────────────
         # Preferimos word-based (Y-agrupado) si tenemos acceso al PDF
         if ruta is not None and pdfplumber is not None:
             lineas = []
@@ -4483,28 +4574,28 @@ class WorkspaceWindow(tk.Toplevel):
         else:
             lineas = texto.splitlines()
 
-        # ââ Tokens a ignorar (pies de pÃ¡gina, encabezados) âââââââââââââââ
-        # LÃ­neas a ignorar (cabeceras/pies de pÃ¡gina, NO quitar RFC de transacciones)
+        # ── Tokens a ignorar (pies de página, encabezados) ───────────────
+        # Líneas a ignorar (cabeceras/pies de página, NO quitar RFC de transacciones)
         _SKIP_HDR = (
             "FECHA DESCRIPCI", "MONTO DEL", "DETALLE DE MOVIMIENTOS",
-            "ESTADO DE CUENTA", "ENLACE GLOBAL", "LINEA DIRECTA", "LÃNEA DIRECTA",
+            "ESTADO DE CUENTA", "ENLACE GLOBAL", "LINEA DIRECTA", "LÍNEA DIRECTA",
             "BANCO MERCANTIL", "CIUDAD DE MEXICO", "NUEVO LEON",
-            "PAGINA ", "PÃGINA ", "TIPO DE ENVIO", "INFORMACION DEL",
+            "PAGINA ", "PÁGINA ", "TIPO DE ENVIO", "INFORMACION DEL",
             "NO. DE CLIENTE", "DATOS DE SUCURSAL",
             "PLAZA:", "TELEFONO:", "RESUMEN INTEGRAL", "RESUMEN DEL PERIODO",
             "BANCO MERCANTIL DEL NORTE", "/63", "5140 5640", "3669 9040",
         )
-        # Cabeceras que sÃ­ usan RFC: pero deben ignorarse (solo en contexto de inicio de pÃ¡gina)
+        # Cabeceras que sí usan RFC: pero deben ignorarse (solo en contexto de inicio de página)
         _SKIP_HDR_RFC = ("SUCURSAL:", "NO. DE CUENTA", "CLABE INTERBANCARIA")
 
-        # ââ Construir transacciones con lÃ­neas de continuaciÃ³n âââââââââââ
+        # ── Construir transacciones con líneas de continuación ───────────
         movimientos = []
         saldo_anterior = None
         cur_fecha_str  = None
-        cur_lineas     = []   # lÃ­neas de descripciÃ³n (sin fecha)
+        cur_lineas     = []   # líneas de descripción (sin fecha)
 
         def _flush(fecha_str, lineas_desc):
-            """Procesa la transacciÃ³n acumulada y la agrega a movimientos."""
+            """Procesa la transacción acumulada y la agrega a movimientos."""
             nonlocal saldo_anterior
             if not fecha_str or not lineas_desc:
                 return
@@ -4516,7 +4607,7 @@ class WorkspaceWindow(tk.Toplevel):
             except Exception:
                 return
 
-            # LÃ­nea 1 contiene los montos; lÃ­neas 2+ son continuaciÃ³n de descripciÃ³n
+            # Línea 1 contiene los montos; líneas 2+ son continuación de descripción
             linea1    = lineas_desc[0] if lineas_desc else ""
             continuas = lineas_desc[1:] if len(lineas_desc) > 1 else []
 
@@ -4534,11 +4625,11 @@ class WorkspaceWindow(tk.Toplevel):
 
             # Saltamos encabezados
             if any(s in tu for s in ("DETALLE DE MOVIMIENTOS", "MONTO DEL",
-                                      "DESCRIPCIÃN", "FECHA DESCRIPCI",
+                                      "DESCRIPCIÓN", "FECHA DESCRIPCI",
                                       "SALDO FINAL", "TOTAL DE")):
                 return
 
-            # Montos y saldo vienen siempre en la primera lÃ­nea
+            # Montos y saldo vienen siempre en la primera línea
             montos_raw = pat_monto.findall(" " + linea1)
             montos = []
             for s in montos_raw:
@@ -4565,7 +4656,7 @@ class WorkspaceWindow(tk.Toplevel):
                 else:
                     dep, ret = 0.0, monto
 
-            # ââ DescripciÃ³n: limpiar montos de lÃ­nea1, agregar continuaciones ââ
+            # ── Descripción: limpiar montos de línea1, agregar continuaciones ──
             desc1 = linea1.strip()
             for s in montos_raw[-2:]:
                 idx = desc1.rfind(s)
@@ -4573,14 +4664,14 @@ class WorkspaceWindow(tk.Toplevel):
                     desc1 = desc1[:idx].rstrip()
             desc1 = re.sub(r"\s+", " ", desc1).strip()
 
-            # Unir con continuaciones (excluir lÃ­neas que son solo refs numÃ©ricas)
+            # Unir con continuaciones (excluir líneas que son solo refs numéricas)
             extras = []
             for cl in continuas:
                 cl = cl.strip()
-                # Saltar lÃ­neas de solo nÃºmeros/referencias cortas
+                # Saltar líneas de solo números/referencias cortas
                 if re.match(r"^[\d\s]{1,20}$", cl):
                     continue
-                # Saltar CVE RASTREO largo y hora de liquidaciÃ³n
+                # Saltar CVE RASTREO largo y hora de liquidación
                 if "CVE RAST" in cl.upper() or "HORA LIQ" in cl.upper():
                     continue
                 extras.append(cl)
@@ -4597,18 +4688,18 @@ class WorkspaceWindow(tk.Toplevel):
                 if _benef:
                     desc = desc1 + " | " + _benef + (" RFC:" + _rfc if _rfc else "")
                 else:
-                    desc = (desc1 + " " + desc_extra).strip() or "â"
+                    desc = (desc1 + " " + desc_extra).strip() or "—"
             else:
-                desc = (desc1 + (" " + desc_extra if desc_extra else "")).strip() or "â"
+                desc = (desc1 + (" " + desc_extra if desc_extra else "")).strip() or "—"
 
-            desc = re.sub(r"\s+", " ", desc).strip() or "â"
+            desc = re.sub(r"\s+", " ", desc).strip() or "—"
 
             saldo_anterior = saldo
             movimientos.append((fecha, desc, dep, ret, saldo))
 
         for linea in lineas:
             lu = linea.upper()
-            # Ignorar pies de pÃ¡gina y encabezados de secciÃ³n
+            # Ignorar pies de página y encabezados de sección
             if any(s in lu for s in _SKIP_HDR):
                 continue
 
@@ -4616,16 +4707,16 @@ class WorkspaceWindow(tk.Toplevel):
             if m:
                 _flush(cur_fecha_str, cur_lineas)
                 cur_fecha_str = m.group(1)
-                # La primera letra de la descripciÃ³n puede quedar pegada a la fecha
-                # (ej: "01-MAY-26C OMPRA" â "COMPRA"). La reunimos.
+                # La primera letra de la descripción puede quedar pegada a la fecha
+                # (ej: "01-MAY-26C OMPRA" → "COMPRA"). La reunimos.
                 _resto = linea[m.end():]
-                _resto = re.sub(r"^([A-ZÃÃÃÃÃÃ]) ([A-ZÃÃÃÃÃÃ])", r"\1\2", _resto)
+                _resto = re.sub(r"^([A-ZÁÉÍÓÚÑ]) ([A-ZÁÉÍÓÚÑ])", r"\1\2", _resto)
                 cur_lineas = [_resto.strip()]
             else:
                 if cur_fecha_str is not None:
                     cur_lineas.append(linea.strip())
 
-        # Ãltima transacciÃ³n pendiente
+        # Última transacción pendiente
         _flush(cur_fecha_str, cur_lineas)
 
         return movimientos
@@ -4660,7 +4751,7 @@ class WorkspaceWindow(tk.Toplevel):
             return None
 
         fecha = self._ec_parse_fecha(fecha_str)
-        desc  = " ".join(desc_parts).strip() or "â"
+        desc  = " ".join(desc_parts).strip() or "—"
 
         dep = ret = 0.0
         if len(montos) == 1:
@@ -4678,7 +4769,7 @@ class WorkspaceWindow(tk.Toplevel):
         return (fecha, desc, dep, ret)
 
     def _ec_parsear_linea(self, linea, patron_fecha, patron_monto):
-        """Parsea una lÃ­nea de texto libre. Retorna (fecha,desc,dep,ret) o None."""
+        """Parsea una línea de texto libre. Retorna (fecha,desc,dep,ret) o None."""
         m_fecha = patron_fecha.search(linea)
         if not m_fecha:
             return None
@@ -4693,10 +4784,10 @@ class WorkspaceWindow(tk.Toplevel):
             except ValueError:
                 pass
 
-        # DescripciÃ³n: texto entre fecha y primer monto
+        # Descripción: texto entre fecha y primer monto
         pos_fecha_fin = m_fecha.end()
         primer_monto_pos = linea.find(montos_raw[0]) if montos_raw else len(linea)
-        desc = linea[pos_fecha_fin:primer_monto_pos].strip(" |-\t") or "â"
+        desc = linea[pos_fecha_fin:primer_monto_pos].strip(" |-\t") or "—"
 
         dep = ret = 0.0
         if len(montos) == 1:
@@ -4756,7 +4847,7 @@ class WorkspaceWindow(tk.Toplevel):
                     if dep_raw not in (None, "", "None") else 0.0
                 ret = float(str(ret_raw).replace(",", "")) \
                     if ret_raw not in (None, "", "None") else 0.0
-                desc = str(desc_raw or "â").strip()
+                desc = str(desc_raw or "—").strip()
 
                 if dep == 0.0 and ret == 0.0:
                     continue
@@ -4804,14 +4895,14 @@ class WorkspaceWindow(tk.Toplevel):
                 f"${sal:,.2f}",
             ))
 
-    # ââ Toolbar: Copiar ââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Toolbar: Copiar ──────────────────────────────────────────────
     def _ec_copiar(self):
         sel = self._ec_tree.selection()
         items = sel if sel else self._ec_tree.get_children()
         if not items:
             messagebox.showinfo("Sin datos", "No hay movimientos para copiar.", parent=self)
             return
-        hdrs = ["Fecha", "DescripciÃ³n", "DepÃ³sito", "Retiro", "Saldo"]
+        hdrs = ["Fecha", "Descripción", "Depósito", "Retiro", "Saldo"]
         lineas = ["\t".join(hdrs)]
         for iid in items:
             lineas.append("\t".join(str(v) for v in self._ec_tree.item(iid, "values")))
@@ -4820,7 +4911,7 @@ class WorkspaceWindow(tk.Toplevel):
         messagebox.showinfo("Copiado",
             f"{len(lineas)-1} fila(s) copiadas al portapapeles.", parent=self)
 
-    # ââ Toolbar: Autosuma ââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Toolbar: Autosuma ────────────────────────────────────────────
     def _ec_autosuma(self):
         sel = self._ec_tree.selection()
         items = sel if sel else self._ec_tree.get_children()
@@ -4830,7 +4921,7 @@ class WorkspaceWindow(tk.Toplevel):
         total_dep = total_ret = 0.0
         for iid in items:
             v = self._ec_tree.item(iid, "values")
-            for i, col in enumerate(("DepÃ³sito", "Retiro")):
+            for i, col in enumerate(("Depósito", "Retiro")):
                 try:
                     val = float(str(v[2 + i]).replace("$", "").replace(",", "") or "0")
                     if i == 0: total_dep += val
@@ -4841,13 +4932,13 @@ class WorkspaceWindow(tk.Toplevel):
         scope = "seleccionadas" if sel else "todas"
         messagebox.showinfo("Autosuma",
             f"Filas {scope}: {n}\n\n"
-            f"Total depÃ³sitos:  ${total_dep:>14,.2f}\n"
+            f"Total depósitos:  ${total_dep:>14,.2f}\n"
             f"Total retiros:    ${total_ret:>14,.2f}\n"
-            f"âââââââââââââââââââââââââââââ\n"
+            f"─────────────────────────────\n"
             f"Diferencia neta:  ${total_dep - total_ret:>14,.2f}",
             parent=self)
 
-    # ââ Toolbar: Ordenar por columna âââââââââââââââââââââââââââââââââ
+    # ── Toolbar: Ordenar por columna ─────────────────────────────────
     def _ec_ordenar_col(self, col, ascending=None):
         if not self._ec_filas_todas:
             return
@@ -4856,7 +4947,7 @@ class WorkspaceWindow(tk.Toplevel):
             ascending = not self._ec_sort_asc if col == self._ec_sort_col else True
         self._ec_sort_col = col
         self._ec_sort_asc = ascending
-        idx_map = {"Fecha": 0, "DescripciÃ³n": 1, "DepÃ³sito": 2, "Retiro": 3, "Saldo": 4}
+        idx_map = {"Fecha": 0, "Descripción": 1, "Depósito": 2, "Retiro": 3, "Saldo": 4}
         idx = idx_map.get(col, 0)
 
         def key(fila):
@@ -4873,11 +4964,11 @@ class WorkspaceWindow(tk.Toplevel):
         vista = [f for f in sorted_filas if self._ec_fila_match(f, q)] if q else sorted_filas
         self._ec_refrescar_tree(vista)
         # Actualizar indicador en encabezado
-        for c in ("Fecha", "DescripciÃ³n", "DepÃ³sito", "Retiro", "Saldo"):
-            arrow = (" â²" if ascending else " â¼") if c == col else ""
+        for c in ("Fecha", "Descripción", "Depósito", "Retiro", "Saldo"):
+            arrow = (" ▲" if ascending else " ▼") if c == col else ""
             self._ec_tree.heading(c, text=c + arrow)
 
-    # ââ Toolbar: Buscar ââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Toolbar: Buscar ──────────────────────────────────────────────
     def _ec_toggle_buscar(self):
         if self._ec_frame_buscar.winfo_ismapped():
             self._ec_frame_buscar.grid_remove()
@@ -4904,7 +4995,7 @@ class WorkspaceWindow(tk.Toplevel):
         if hasattr(self, "_ec_lbl_filtro"):
             self._ec_lbl_filtro.config(text="")
 
-    # ââ Toolbar: Quitar duplicados âââââââââââââââââââââââââââââââââââ
+    # ── Toolbar: Quitar duplicados ───────────────────────────────────
     def _ec_quitar_dup(self):
         if not self._ec_filas_todas:
             messagebox.showinfo("Sin datos", "No hay movimientos cargados.", parent=self)
@@ -4912,7 +5003,7 @@ class WorkspaceWindow(tk.Toplevel):
         vistos = set()
         unicos = []
         for fila in self._ec_filas_todas:
-            key = (str(fila[0]), fila[1].strip())   # fecha + descripciÃ³n
+            key = (str(fila[0]), fila[1].strip())   # fecha + descripción
             if key not in vistos:
                 vistos.add(key)
                 unicos.append(fila)
@@ -4922,19 +5013,19 @@ class WorkspaceWindow(tk.Toplevel):
                 "No se encontraron filas duplicadas.", parent=self)
             return
         res = messagebox.askyesno("Quitar duplicados",
-            f"Se encontraron {removed} filas duplicadas (misma fecha + descripciÃ³n).\n"
-            "Â¿Eliminarlas de la vista?", parent=self)
+            f"Se encontraron {removed} filas duplicadas (misma fecha + descripción).\n"
+            "¿Eliminarlas de la vista?", parent=self)
         if res:
             self._ec_filas_todas = unicos
             self._ec_refrescar_tree(unicos)
 
 
     # ---------------------------------------------------------------- #
-    # PESTAÃA RECONCILIACIÃN â CSV â Excel plantilla
+    # PESTAÑA RECONCILIACIÓN — CSV → Excel plantilla
     # ---------------------------------------------------------------- #
     def _tab_reconciliacion(self, nb):
         outer = ttk.Frame(nb)
-        nb.add(outer, text="  ð ReconciliaciÃ³n  ")
+        nb.add(outer, text="  📑 Reconciliación  ")
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(0, weight=0)   # controles: altura fija
         outer.rowconfigure(1, weight=1)   # tabla: ocupa el resto
@@ -4946,7 +5037,7 @@ class WorkspaceWindow(tk.Toplevel):
         self._rec_wb_name    = ""
         self._rec_wb_dir     = ""
 
-        # ââ Zona superior: controles compactos ââââââââââââââââââââââââââââ
+        # ── Zona superior: controles compactos ────────────────────────────
         ctrl = tk.Frame(outer, bg=COLOR_FONDO)
         ctrl.grid(row=0, column=0, sticky="ew")
         ctrl.columnconfigure(0, weight=1)
@@ -4954,11 +5045,11 @@ class WorkspaceWindow(tk.Toplevel):
         # Titulo
         hdr = tk.Frame(ctrl, bg=COLOR_FONDO)
         hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(8, 4))
-        tk.Label(hdr, text="ReconciliaciÃ³n CSV â Excel",
+        tk.Label(hdr, text="Reconciliación CSV → Excel",
                  bg=COLOR_FONDO, fg="#2E7D32",
                  font=("Segoe UI", 12, "bold")).pack(side="left")
 
-        # Fila de controles: plantilla + CSVs + botÃ³n en una sola lÃ­nea
+        # Fila de controles: plantilla + CSVs + botón en una sola línea
         row_ctrl = tk.Frame(ctrl, bg=COLOR_FONDO)
         row_ctrl.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 4))
         row_ctrl.columnconfigure(1, weight=1)
@@ -4972,7 +5063,7 @@ class WorkspaceWindow(tk.Toplevel):
             bg=COLOR_BLANCO, fg="#999999", font=("Segoe UI", 9),
             relief="sunken", padx=6, pady=2)
         self._rec_lbl_plantilla.grid(row=0, column=1, sticky="ew", padx=(0, 6))
-        ttk.Button(row_ctrl, text="ð Plantilla",
+        ttk.Button(row_ctrl, text="📂 Plantilla",
                    command=self._rec_elegir_plantilla).grid(
                    row=0, column=2, padx=(0, 14))
 
@@ -4997,7 +5088,7 @@ class WorkspaceWindow(tk.Toplevel):
                 nombres = ", ".join(os.path.basename(r) for r in rutas[:3])
                 if n > 3: nombres += f" (+{n-3} mas)"
                 self._rec_csv_lbl.config(
-                    text=f"â {n} archivo(s): {nombres}",
+                    text=f"✓ {n} archivo(s): {nombres}",
                     fg="#2E7D32", font=("Segoe UI", 8, "bold"))
                 self._rec_csv_sub.config(text=f"{n} archivo(s) seleccionado(s)")
 
@@ -5008,14 +5099,14 @@ class WorkspaceWindow(tk.Toplevel):
         self._rec_csv_sub.grid(row=2, column=0, sticky="w", padx=16)
 
         self._rec_csv_lbl.bind("<Button-1>", _abrir_csv)
-        ttk.Button(row_ctrl, text="ð CSV(s)",
+        ttk.Button(row_ctrl, text="📂 CSV(s)",
                    command=_abrir_csv).grid(row=0, column=5, padx=(0, 0))
 
-        # BotÃ³n generar + barra progreso
+        # Botón generar + barra progreso
         btn_row = tk.Frame(ctrl, bg=COLOR_FONDO)
         btn_row.grid(row=3, column=0, sticky="ew", padx=16, pady=(2, 4))
         btn_row.columnconfigure(0, weight=1)
-        tk.Button(btn_row, text="â  Generar Excel Reconciliado",
+        tk.Button(btn_row, text="⚙  Generar Excel Reconciliado",
             bg="#1B5E20", fg=COLOR_BLANCO,
             font=("Segoe UI", 10, "bold"), relief="flat",
             padx=16, pady=8, cursor="hand2",
@@ -5052,7 +5143,7 @@ class WorkspaceWindow(tk.Toplevel):
         ttk.Separator(outer, orient="horizontal").grid(
             row=0, column=0, sticky="ew", pady=0)
 
-        # ââ Zona inferior: tabla de resultados (Ã¡rea de trabajo) ââââââââââ
+        # ── Zona inferior: tabla de resultados (área de trabajo) ──────────
         work = tk.Frame(outer, bg=COLOR_FONDO)
         work.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
         work.columnconfigure(0, weight=1)
@@ -5060,7 +5151,7 @@ class WorkspaceWindow(tk.Toplevel):
 
         lbl_area = tk.Frame(work, bg="#1B5E20")
         lbl_area.grid(row=0, column=0, columnspan=2, sticky="ew")
-        tk.Label(lbl_area, text="  Ãrea de Trabajo â Reporte de ReconciliaciÃ³n",
+        tk.Label(lbl_area, text="  Área de Trabajo — Reporte de Reconciliación",
                  bg="#1B5E20", fg=COLOR_BLANCO,
                  font=("Segoe UI", 9, "bold")).pack(side="left", pady=4)
         self._rec_lbl_resumen = tk.Label(lbl_area, text="",
@@ -5150,11 +5241,11 @@ class WorkspaceWindow(tk.Toplevel):
                     "Formato no soportado",
                     f"La plantilla debe ser un archivo Excel (.xlsx).\n"
                     f"El archivo seleccionado es '{os.path.basename(plantilla)}'.\n\n"
-                    f"Puedes dejar la plantilla vacÃ­a para generar con estructura automÃ¡tica."
+                    f"Puedes dejar la plantilla vacía para generar con estructura automática."
                 )
                 return
         else:
-            plantilla = None   # sin plantilla â estructura automÃ¡tica
+            plantilla = None   # sin plantilla → estructura automática
         if not self._rec_csvs:
             messagebox.showwarning("CSV", "Selecciona al menos un archivo CSV.")
             return
@@ -5193,7 +5284,7 @@ class WorkspaceWindow(tk.Toplevel):
                 self.after(0, self._rec_pb_frame.grid_remove)
                 return
 
-            # ââ Leer hoja CUENTAS âââââââââââââââââââââââââââââââââââââââââ
+            # ── Leer hoja CUENTAS ─────────────────────────────────────────
             cuentas_ing_list    = []
             cuentas_vta_list    = []
             cuentas_ing_by_acct = {}
@@ -5201,7 +5292,7 @@ class WorkspaceWindow(tk.Toplevel):
             cuentas_ing_names   = {}
             cuentas_vta_names   = {}
             cuentas_vta_acct_set = set()
-            # Buscar hoja CUENTAS â abrir copia data_only para leer valores reales
+            # Buscar hoja CUENTAS — abrir copia data_only para leer valores reales
             # (maneja formulas ="...", texto forzado y cualquier otro formato)
             _cuentas_sheet = next((s for s in wb.sheetnames if s.strip().upper() == "CUENTAS"), None)
             if _cuentas_sheet:
@@ -5217,20 +5308,20 @@ class WorkspaceWindow(tk.Toplevel):
                     """Devuelve string limpio del valor de celda"""
                     if v is None: return ""
                     s = str(v).strip()
-                    # Formato fÃ³rmula texto sin resolver: ="101-01-0001" â 101-01-0001
+                    # Formato fórmula texto sin resolver: ="101-01-0001" → 101-01-0001
                     import re as _re_acct
                     _m = _re_acct.match(r'^=?"?([^"=]+)"?$', s)
                     if _m: s = _m.group(1).strip()
-                    # Quitar apÃ³strofo de prefijo Excel ('101-01-0001)
+                    # Quitar apóstrofo de prefijo Excel ('101-01-0001)
                     if s.startswith("'"): s = s[1:].strip()
                     return s
 
                 def _es_cuenta_real(s):
-                    """True si parece nÃºmero de cuenta (empieza con dÃ­gito)"""
+                    """True si parece número de cuenta (empieza con dígito)"""
                     return bool(s) and s[0].isdigit()
 
                 # Filtrar por NOMBRE para permitir que dos productos compartan
-                # el mismo nÃºmero de cuenta (ej. ACEITE y COMBUSTIBLES)
+                # el mismo número de cuenta (ej. ACEITE y COMBUSTIBLES)
                 _seen_ing = set(); _seen_vta = set()
                 for r in range(1, (wc.max_row or 50) + 1):
                     a = wc.cell(r, 1).value; n = wc.cell(r, 2).value
@@ -5254,7 +5345,7 @@ class WorkspaceWindow(tk.Toplevel):
                 self.after(0, self._log,
                     f"CUENTAS: {len(cuentas_ing_list)} ING, {len(cuentas_vta_list)} VTA")
 
-            # ââ Agregar productos CSV que no estÃ©n en CUENTAS (con cuenta vacÃ­a) ââ
+            # ── Agregar productos CSV que no estén en CUENTAS (con cuenta vacía) ──
             # Aplica cuando hay CUENTAS cargado pero el CSV tiene productos extra
             if cuentas_ing_by_acct or cuentas_vta_by_acct:
                 _pre_skip_x = {"descripcion","islas","total islas","total estacion",
@@ -5293,7 +5384,7 @@ class WorkspaceWindow(tk.Toplevel):
                     self.after(0, self._log,
                         f"Productos CSV extra: +{len(_csv_ing_extra)} ING, +{len(_csv_vta_extra)} VTA")
 
-            # ââ DetecciÃ³n dinÃ¡mica de columnas desde fila 3 âââââââââââââââ
+            # ── Detección dinámica de columnas desde fila 3 ───────────────
             col_to_name  = {}
             col_to_acct  = {}
             proc_col = 8
@@ -5331,7 +5422,7 @@ class WorkspaceWindow(tk.Toplevel):
             vta_ltr_s = _gcl(vta_start); vta_ltr_e = _gcl(vta_end)
             tig_ltr = _gcl(tot_ig_col); tva_ltr = _gcl(tot_vta_col)
 
-            # ââ Si simplificada sin CUENTAS: pre-escanear CSV para descubrir cuentas ââ
+            # ── Si simplificada sin CUENTAS: pre-escanear CSV para descubrir cuentas ──
             if _simplificada and not (cuentas_ing_by_acct or cuentas_vta_by_acct):
                 _pre_skip2 = {"descripcion","islas","total islas","total estacion",
                               "total impuestos","total ingresos","impuestos",""}
@@ -5364,7 +5455,7 @@ class WorkspaceWindow(tk.Toplevel):
                 self.after(0, self._log,
                     f"CUENTAS desde CSV: {len(_csv_ing)} ING, {len(_csv_vta)} VTA")
 
-            # ââ Expandir si simplificada pero hay CUENTAS âââââââââââââââââ
+            # ── Expandir si simplificada pero hay CUENTAS ─────────────────
             if _simplificada and (cuentas_ing_by_acct or cuentas_vta_by_acct):
                 n_ing = len(cuentas_ing_list); n_vta = len(cuentas_vta_list)
                 if n_ing > 0:
@@ -5395,7 +5486,7 @@ class WorkspaceWindow(tk.Toplevel):
                 f"Modo={modo}  INGRESOS {ing_ltr_s}-{ing_ltr_e}  TOTAL_IG={tig_ltr}  "
                 f"VENTAS {vta_ltr_s}-{vta_ltr_e}  TOTAL_VTA={tva_ltr}")
 
-            # ââ Insertar columna BAL_ACCT ââââââââââââââââââââââââââââââââââ
+            # ── Insertar columna BAL_ACCT ──────────────────────────────────
             _BAL_ACCT = '101-01-0003-0001'
             _bal_col = next((c for c in range(ing_start, tot_ig_col)
                              if col_to_acct.get(c) == _BAL_ACCT), None)
@@ -5419,7 +5510,7 @@ class WorkspaceWindow(tk.Toplevel):
                     f"Col BAL insertada en {_gcl(_bal_col)}")
 
         else:
-            # ââ AUTO MODE: estructura generada desde los CSV âââââââââââââââ
+            # ── AUTO MODE: estructura generada desde los CSV ───────────────
             # Pre-escanear todos los CSV para descubrir cuentas
             _pre_skip = {"descripcion", "islas", "total islas", "total estacion",
                          "total impuestos", "total ingresos", "impuestos", ""}
@@ -5490,13 +5581,13 @@ class WorkspaceWindow(tk.Toplevel):
             cuentas_vta_acct_set = set()
             _simplificada = False; _bal_col = None
 
-        # ââ Renumerar fila 1 secuencialmente tras todas las inserciones ââââ
+        # ── Renumerar fila 1 secuencialmente tras todas las inserciones ────
         # Asegura que fila 1 tenga 0,1,2,3... sin huecos en columnas nuevas
         _last_col = max(conc_col, tot_vta_col + 1)
         for _c in range(1, _last_col + 1):
             ws.cell(1, _c).value = _c - 1   # 0-indexed
 
-        # ââ Asegurar header CONCILIACION y colorear fila 3 ââââââââââââââââ
+        # ── Asegurar header CONCILIACION y colorear fila 3 ────────────────
         from openpyxl.styles import Font as _Fnt
         ws.cell(3, conc_col).value = "CONCILIACION"
         def _hdr(col, bg):
@@ -5511,7 +5602,7 @@ class WorkspaceWindow(tk.Toplevel):
         _hdr(tot_vta_col, "833C00")
         _hdr(conc_col,    "7030A0")
 
-        # ââ Mapa fecha â fila existente (evitar duplicados) ââââââââââââââ
+        # ── Mapa fecha → fila existente (evitar duplicados) ──────────────
         fecha_fila = {}
         for r in range(4, (ws.max_row or 4) + 1):
             v = ws.cell(r, 2).value
@@ -5522,7 +5613,7 @@ class WorkspaceWindow(tk.Toplevel):
                 elif isinstance(v, str) and "/" in v:
                     fecha_fila[v.strip()] = r
 
-        # Primera fila vacÃ­a despuÃ©s de las existentes
+        # Primera fila vacía después de las existentes
         next_empty = (max(fecha_fila.values()) + 1) if fecha_fila else 4
 
         SKIP = {"descripcion", "estacion gas122 s.a. de c.v.", "islas",
@@ -5543,7 +5634,7 @@ class WorkspaceWindow(tk.Toplevel):
             _s(ws.cell(r, tot_vta_col), "FAD7AC")
             _s(ws.cell(r, conc_col), "EAD1DC")
 
-        # Encabezados del Ã¡rbol: cuentas ING + TOTAL IG + cuentas VTA + TOTAL VTA + CONCILIACION
+        # Encabezados del árbol: cuentas ING + TOTAL IG + cuentas VTA + TOTAL VTA + CONCILIACION
         _tree_ing_hdrs = [col_to_name.get(c, f"ING{c}") for c in range(ing_start, tot_ig_col)
                           if col_to_acct.get(c) != _BAL_ACCT]
         _tree_vta_hdrs = [col_to_name.get(c, f"VTA{c}") for c in range(vta_start, tot_vta_col)
@@ -5553,7 +5644,7 @@ class WorkspaceWindow(tk.Toplevel):
         _tree_all_cols = (["Fecha"] + _tree_ing_hdrs + ["TOTAL IG"] +
                           _tree_vta_hdrs + ["TOTAL VTA", "CONCILIACION", "Estado"])
 
-        # ââ Sistema de aprendizaje: alias CSV â CUENTAS âââââââââââââââââ
+        # ── Sistema de aprendizaje: alias CSV → CUENTAS ─────────────────
         import json as _json, unicodedata as _ud
         _aliases_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "reconciliacion_aliases.json")
@@ -5565,29 +5656,29 @@ class WorkspaceWindow(tk.Toplevel):
         # _alias_data formato: {"ing": {"CSV_NAME_UP": "CUENTAS_NAME"}, "vta": {...}}
         _aliases_ing = _alias_data.get("ing", {})
         _aliases_vta = _alias_data.get("vta", {})
-        _new_aliases = False  # marcar si se aprendiÃ³ algo nuevo
+        _new_aliases = False  # marcar si se aprendió algo nuevo
 
         def _norm(s):
-            """Normaliza: sin acentos, sin espacios extra, mayÃºsculas"""
+            """Normaliza: sin acentos, sin espacios extra, mayúsculas"""
             return _ud.normalize("NFD", s.upper().strip()).encode("ascii", "ignore").decode()
 
         def _buscar_alias(vals_dict, header, aliases_dict, tipo):
             """Busca valor en vals_dict por header de CUENTAS.
-            Orden: exacto â case-insensitive (auto-aprende) â normalizado (auto-aprende) â alias guardado"""
+            Orden: exacto → case-insensitive (auto-aprende) → normalizado (auto-aprende) → alias guardado"""
             nonlocal _new_aliases
             hU = header.upper()
             hN = _norm(header)
             # 1. Exacto
             if header in vals_dict: return vals_dict[header]
-            # 2. Case-insensitive â auto-aprende
+            # 2. Case-insensitive → auto-aprende
             for k, kv in vals_dict.items():
                 if k.upper() == hU:
-                    if k != header:  # diferente capitalizaciÃ³n â guardar alias
+                    if k != header:  # diferente capitalización → guardar alias
                         if k.upper() not in aliases_dict:
                             aliases_dict[k.upper()] = header
                             _new_aliases = True
                     return kv
-            # 3. Normalizado (sin acentos) â auto-aprende
+            # 3. Normalizado (sin acentos) → auto-aprende
             for k, kv in vals_dict.items():
                 if _norm(k) == hN:
                     if k.upper() not in aliases_dict:
@@ -5624,12 +5715,12 @@ class WorkspaceWindow(tk.Toplevel):
                         if not fecha_str:
                             m = _re.search(r"(\d{2}/\d{2}/\d{4})", row[0])
                             if m: fecha_str = m.group(1); continue
-                        # Detectar secciÃ³n ANTES del SKIP
+                        # Detectar sección ANTES del SKIP
                         if nl == "ingresos":
                             _seccion = "ING"; continue
                         if nl in ("islas", "impuestos"):
                             _seccion = "VTA"; continue
-                        # Saltar vacÃ­os, encabezados SKIP y cualquier fila "total â¦"
+                        # Saltar vacíos, encabezados SKIP y cualquier fila "total …"
                         if not nl or nl in SKIP or nl.startswith("total"):
                             continue
                         if len(row) > 3 and row[3].strip():
@@ -5652,7 +5743,7 @@ class WorkspaceWindow(tk.Toplevel):
             fecha_dt  = _dt(int(y_p), int(mo_p), int(d_p))
             ref_text  = f"VENTA DEL {fecha_str}"
 
-            # Usar fila existente si la fecha ya estÃ¡, si no la siguiente vacÃ­a
+            # Usar fila existente si la fecha ya está, si no la siguiente vacía
             wr = fecha_fila.get(fecha_str, data_row)
             if wr == data_row:
                 data_row += 1   # avanzar solo si es fila nueva
@@ -5679,8 +5770,8 @@ class WorkspaceWindow(tk.Toplevel):
                 ws.cell(wr, conc_col).value = round(tot_ig - tot_vta, 2)
                 ws.cell(wr, conc_col).number_format = "General"
             else:
-                # Plantilla con detalle: mapear individualmente + fÃ³rmulas
-                # Usa sistema de aprendizaje: exacto â case-insensitive â normalizado â alias
+                # Plantilla con detalle: mapear individualmente + fórmulas
+                # Usa sistema de aprendizaje: exacto → case-insensitive → normalizado → alias
                 def _get_ing(col):
                     hdr = col_to_name.get(col, "")
                     if not hdr: return None
@@ -5690,7 +5781,7 @@ class WorkspaceWindow(tk.Toplevel):
                     hdr = col_to_name.get(col, "")
                     acct = col_to_acct.get(col, "")
                     if not hdr: return None
-                    # Solo escribir si la cuenta estÃ¡ en CUENTAS VTA
+                    # Solo escribir si la cuenta está en CUENTAS VTA
                     if cuentas_vta_acct_set and acct and acct not in cuentas_vta_acct_set:
                         return None
                     return _buscar_alias(vta_vals, hdr, _aliases_vta, "vta")
@@ -5719,13 +5810,13 @@ class WorkspaceWindow(tk.Toplevel):
                 tot_ig  = round(sum(ing_vals.values()), 2)
                 tot_vta = round(sum(vta_vals.values()), 2)
 
-                # ââ Escribir PROCESADO en secciÃ³n AZUL con signo contrario ââ
+                # ── Escribir PROCESADO en sección AZUL con signo contrario ──
                 if _bal_col is not None:
                     _dif = round(tot_ig - tot_vta, 2)
-                    _adj = round(-_dif, 2)   # signo contrario â cuadra CONCILIACION a 0
+                    _adj = round(-_dif, 2)   # signo contrario → cuadra CONCILIACION a 0
                     ws.cell(wr, _bal_col).value = _adj if abs(_adj) >= 0.01 else 0
                     ws.cell(wr, _bal_col).number_format = "General"
-                    tot_ig = round(tot_vta, 2)  # tot_ig ajustado para el Ã¡rbol
+                    tot_ig = round(tot_vta, 2)  # tot_ig ajustado para el árbol
 
 
 
@@ -5733,7 +5824,7 @@ class WorkspaceWindow(tk.Toplevel):
             conc_v  = tot_ig - tot_vta
             estado  = "OK" if abs(conc_v) < 1 else f"Dif {conc_v:+,.2f}"
 
-            # Valores por cuenta para el Ã¡rbol
+            # Valores por cuenta para el árbol
             _ing_row = []
             for _th in _tree_ing_hdrs:
                 _v = ing_vals.get(_th) or next((kv for k,kv in ing_vals.items() if k.upper()==_th.upper()), None)
@@ -5769,7 +5860,7 @@ class WorkspaceWindow(tk.Toplevel):
         except Exception:
             self._rec_resultado = None
 
-        # Guardar aliases aprendidos en esta sesiÃ³n
+        # Guardar aliases aprendidos en esta sesión
         if _new_aliases:
             try:
                 _alias_data["ing"] = _aliases_ing
@@ -5777,7 +5868,7 @@ class WorkspaceWindow(tk.Toplevel):
                 with open(_aliases_path, "w", encoding="utf-8") as _af:
                     _json.dump(_alias_data, _af, ensure_ascii=False, indent=2)
                 _n_new = sum(1 for k in _aliases_ing) + sum(1 for k in _aliases_vta)
-                self.after(0, self._log, f"â Sistema aprendiÃ³ {_n_new} equivalencia(s) de nombres")
+                self.after(0, self._log, f"✓ Sistema aprendió {_n_new} equivalencia(s) de nombres")
             except Exception as _ae:
                 self.after(0, self._log, f"Alias: no se pudo guardar ({_ae})")
 
@@ -5787,7 +5878,7 @@ class WorkspaceWindow(tk.Toplevel):
         def _ui_done():
             self._pb_detener(self._rec_pb, self._rec_pb_lbl)
             self.after(1200, self._rec_pb_frame.grid_remove)
-            self._rec_lbl_arch.config(text="Listo  â  clic en Guardar Excel")
+            self._rec_lbl_arch.config(text="Listo  —  clic en Guardar Excel")
             self._rec_btn_guardar.config(state="normal")
             # Reconfigurar columnas del arbol con todas las cuentas
             self._rec_tree.config(columns=_tree_all_cols)
@@ -5811,7 +5902,7 @@ class WorkspaceWindow(tk.Toplevel):
             dias = len(resultados)
             self._rec_lbl_resumen.config(
                 text="Dias procesados: " + str(dias) + "  |  pendiente de guardar")
-            # Enviar al Visor de Resultados automÃ¡ticamente
+            # Enviar al Visor de Resultados automáticamente
             _tmp_r = getattr(self, "_rec_resultado", None)
             if _tmp_r and os.path.exists(_tmp_r):
                 self._visor_abrir_directo(_tmp_r)
@@ -5819,16 +5910,16 @@ class WorkspaceWindow(tk.Toplevel):
 
 
     def _visor_abrir_directo(self, ruta):
-        """Carga un archivo directamente en el Visor sin necesidad de que estÃ© en la carpeta."""
+        """Carga un archivo directamente en el Visor sin necesidad de que esté en la carpeta."""
         if not hasattr(self, "_visor_lb"):
             return
-        # Abrir la pestaÃ±a Visor si estÃ¡ disponible
+        # Abrir la pestaña Visor si está disponible
         if "visor" in self._tab_frames:
             try:
                 self.nb.select(self._tab_frames["visor"])
             except Exception:
                 pass
-        # Insertar al inicio de la lista si no estÃ¡ ya
+        # Insertar al inicio de la lista si no está ya
         if ruta not in self._visor_archivos:
             self._visor_archivos.insert(0, ruta)
             self._visor_lb.insert(0, os.path.basename(ruta))
@@ -5839,7 +5930,7 @@ class WorkspaceWindow(tk.Toplevel):
         self._visor_cargar_archivo()
 
     # ---------------------------------------------------------------- #
-    # PESTAÃA VISOR DE RESULTADOS
+    # PESTAÑA VISOR DE RESULTADOS
     # ---------------------------------------------------------------- #
     def _tab_visor(self, nb):
         tab = ttk.Frame(nb)
@@ -5850,9 +5941,9 @@ class WorkspaceWindow(tk.Toplevel):
             ("#FFEB3B","#5F4400"), ("#FF9800","#FFFFFF"),
             ("#F44336","#FFFFFF"), ("#9C27B0","#FFFFFF"),
         ]
-        # Slots de colores personalizados (None = vacÃ­o)
+        # Slots de colores personalizados (None = vacío)
         self._PALETA_CUSTOM = [None, None, None, None, None, None]
-        self._PALETA_CUSTOM_IDX = 0   # prÃ³ximo slot a rellenar
+        self._PALETA_CUSTOM_IDX = 0   # próximo slot a rellenar
         self._visor_cell_colors  = {}   # {(iid, col_id): (bg, fg)}
         self._visor_color_widgets = {}  # {(iid, col_id): tk.Label}
         self._visor_cell_fonts   = {}   # {(iid, col_id): {'bold','italic','underline','textcolor'}}
@@ -5869,12 +5960,12 @@ class WorkspaceWindow(tk.Toplevel):
         ttk.Button(top, text="Elegir...", command=self._visor_elegir_carpeta).pack(side="left")
         ttk.Button(top, text="Actualizar", command=self._visor_refrescar).pack(side="left", padx=(8, 0))
         ttk.Button(top, text="Guardar cambios", command=self._visor_guardar_cambios).pack(side="right")
-        tk.Button(top, text="ð Borrar reporte", command=self._visor_borrar_reporte,
+        tk.Button(top, text="🗑 Borrar reporte", command=self._visor_borrar_reporte,
                   bg=COLOR_FUCSIA_OSCURO, fg=COLOR_BLANCO, relief="flat", cursor="hand2",
                   font=("Segoe UI", 9), padx=10, pady=3,
                   activebackground="#5a0a28", activeforeground=COLOR_BLANCO).pack(side="right", padx=(0, 6))
 
-        # ââ Toolbar Ãºnica âââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Toolbar única ─────────────────────────────────────────────────
         tb = tk.Frame(tab, bg=COLOR_TARJETA, pady=3)
         tb.pack(fill="x", padx=10, pady=(0, 4))
 
@@ -5908,31 +5999,31 @@ class WorkspaceWindow(tk.Toplevel):
             self._visor_custom_btns.append(b)
 
         _sep()
-        tk.Button(tb, text="ð¨", bg=COLOR_TARJETA, fg=COLOR_FUCSIA_OSCURO,
+        tk.Button(tb, text="🎨", bg=COLOR_TARJETA, fg=COLOR_FUCSIA_OSCURO,
                   relief="flat", cursor="hand2", font=("Segoe UI", 10),
                   command=self._visor_color_picker, padx=4, pady=1).pack(side="left", padx=1)
-        tbtn("â Color", self._visor_quitar_color)
+        tbtn("✖ Color", self._visor_quitar_color)
         _sep()
         # Fuente
         tbtn("N", self._visor_toggle_bold,      bold=True, padx=5)
         tbtn("K", self._visor_toggle_italic,     padx=5)
         tbtn("S", self._visor_toggle_underline,  padx=5)
-        tk.Button(tb, text="Aâ¾", bg=COLOR_TARJETA, fg=COLOR_TEXTO,
+        tk.Button(tb, text="A▾", bg=COLOR_TARJETA, fg=COLOR_TEXTO,
                   relief="flat", cursor="hand2", font=("Segoe UI", 9, "bold"),
                   command=self._visor_color_texto, padx=4, pady=1).pack(side="left", padx=1)
         _sep()
         # Ordenar
-        tbtn("â AZ", lambda: self._visor_ordenar(asc=True))
-        tbtn("â ZA", lambda: self._visor_ordenar(asc=False))
+        tbtn("↑ AZ", lambda: self._visor_ordenar(asc=True))
+        tbtn("↓ ZA", lambda: self._visor_ordenar(asc=False))
         _sep()
         # Filtro
-        tbtn("â² Filtrar", self._visor_filtrar)
-        tbtn("â Filtro",  self._visor_quitar_filtro)
+        tbtn("⚲ Filtrar", self._visor_filtrar)
+        tbtn("✖ Filtro",  self._visor_quitar_filtro)
         _sep()
-        # EdiciÃ³n
-        tbtn("â Editar", self._visor_editar_celda_manual)
+        # Edición
+        tbtn("✏ Editar", self._visor_editar_celda_manual)
         tbtn("+ Fila",   self._visor_agregar_fila)
-        tbtn("â Fila",   self._visor_borrar_fila)
+        tbtn("✖ Fila",   self._visor_borrar_fila)
 
         paned = tk.PanedWindow(tab, orient="horizontal", sashwidth=5,
                                bg=COLOR_FUCSIA_SUAVE, relief="flat")
@@ -6120,7 +6211,7 @@ class WorkspaceWindow(tk.Toplevel):
             text=f"{len(filas)-1} filas  |  {len(encabezados)} columnas  |  Doble clic para editar")
 
 
-    # ââ Color picker âââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Color picker ─────────────────────────────────────────────────
     def _visor_color_picker(self):
         from tkinter import colorchooser
         resultado = colorchooser.askcolor(title="Elige color de celda", parent=self)
@@ -6130,11 +6221,11 @@ class WorkspaceWindow(tk.Toplevel):
         r, g, b = int(bg[1:3], 16), int(bg[3:5], 16), int(bg[5:7], 16)
         lum = 0.299*r + 0.587*g + 0.114*b
         fg = "#FFFFFF" if lum < 128 else "#000000"
-        # Guardar en prÃ³ximo slot personalizado
+        # Guardar en próximo slot personalizado
         idx = self._PALETA_CUSTOM_IDX % len(self._PALETA_CUSTOM)
         self._PALETA_CUSTOM[idx] = (bg, fg)
         self._PALETA_CUSTOM_IDX = (idx + 1) % len(self._PALETA_CUSTOM)
-        # Actualizar botÃ³n del slot
+        # Actualizar botón del slot
         try:
             btn = self._visor_custom_btns[idx]
             btn.config(bg=bg, activebackground=bg,
@@ -6144,12 +6235,12 @@ class WorkspaceWindow(tk.Toplevel):
         self._visor_aplicar_color(bg, fg)
 
     def _visor_aplicar_custom(self, idx):
-        """Aplica el color del slot personalizado si estÃ¡ definido."""
+        """Aplica el color del slot personalizado si está definido."""
         slot = self._PALETA_CUSTOM[idx]
         if slot:
             self._visor_aplicar_color(slot[0], slot[1])
         else:
-            # Slot vacÃ­o: abrir picker y guardar en este slot
+            # Slot vacío: abrir picker y guardar en este slot
             from tkinter import colorchooser
             resultado = colorchooser.askcolor(title="Elige color para este slot", parent=self)
             if not resultado or not resultado[1]:
@@ -6180,7 +6271,7 @@ class WorkspaceWindow(tk.Toplevel):
         est["textcolor"] = color
         self._visor_refresh_cell_labels()
 
-    # ââ Fuente âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Fuente ───────────────────────────────────────────────────────
     def _visor_toggle_bold(self):
         iid, col_id = self._visor_celda_actual()
         if not iid:
@@ -6205,7 +6296,7 @@ class WorkspaceWindow(tk.Toplevel):
         est["underline"] = not est.get("underline", False)
         self._visor_refresh_cell_labels()
 
-    # ââ Ordenar ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Ordenar ──────────────────────────────────────────────────────
     def _visor_ordenar(self, asc=True):
         _, col_id = self._visor_celda_actual()
         if not col_id:
@@ -6220,7 +6311,7 @@ class WorkspaceWindow(tk.Toplevel):
             self._visor_tree.move(iid, "", idx)
         self.after(20, self._visor_refresh_cell_labels)
 
-    # ââ Filtrar ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Filtrar ──────────────────────────────────────────────────────
     def _visor_filtrar(self):
         _, col_id = self._visor_celda_actual()
         if not col_id:
@@ -6233,7 +6324,7 @@ class WorkspaceWindow(tk.Toplevel):
         except Exception:
             col_name = col_id
 
-        # Recolectar todos los valores Ãºnicos (incluyendo filas ocultas)
+        # Recolectar todos los valores únicos (incluyendo filas ocultas)
         todos_iids = list(self._visor_tree.get_children()) + list(self._visor_filas_ocultas)
         valores_unicos = sorted(
             {self._visor_tree.set(i, col_id) for i in todos_iids},
@@ -6257,7 +6348,7 @@ class WorkspaceWindow(tk.Toplevel):
         buscar_var = tk.StringVar()
         buscar_frame = tk.Frame(dlg, bg=COLOR_FONDO)
         buscar_frame.pack(fill="x", padx=12, pady=(10, 4))
-        tk.Label(buscar_frame, text="ð", bg=COLOR_FONDO, font=("Segoe UI", 10)).pack(side="left")
+        tk.Label(buscar_frame, text="🔍", bg=COLOR_FONDO, font=("Segoe UI", 10)).pack(side="left")
         buscar_entry = tk.Entry(buscar_frame, textvariable=buscar_var,
                                 font=("Segoe UI", 10), bg=COLOR_BLANCO, fg=COLOR_TEXTO,
                                 relief="solid", bd=1)
@@ -6278,8 +6369,8 @@ class WorkspaceWindow(tk.Toplevel):
         inner_frame = tk.Frame(canvas_chk, bg=COLOR_BLANCO)
         canvas_win = canvas_chk.create_window((0, 0), window=inner_frame, anchor="nw")
 
-        checks = {}   # valor â BooleanVar
-        chk_widgets = {}  # valor â (Frame, Checkbutton)
+        checks = {}   # valor → BooleanVar
+        chk_widgets = {}  # valor → (Frame, Checkbutton)
 
         def _rebuild_lista(filtro=""):
             for w in inner_frame.winfo_children():
@@ -6293,7 +6384,7 @@ class WorkspaceWindow(tk.Toplevel):
                 checks[val] = var
                 row = tk.Frame(inner_frame, bg=COLOR_BLANCO)
                 row.pack(fill="x", pady=1)
-                cb = tk.Checkbutton(row, text=val if val != "" else "(vacÃ­o)",
+                cb = tk.Checkbutton(row, text=val if val != "" else "(vacío)",
                                     variable=var, bg=COLOR_BLANCO, fg=COLOR_TEXTO,
                                     selectcolor=COLOR_FUCSIA_SUAVE,
                                     activebackground=COLOR_FONDO,
@@ -6309,10 +6400,10 @@ class WorkspaceWindow(tk.Toplevel):
         def _ninguno():
             for v in checks.values(): v.set(False)
 
-        tk.Button(ctrl_frame, text="â Todo", command=_todo,
+        tk.Button(ctrl_frame, text="✔ Todo", command=_todo,
                   bg=COLOR_TARJETA, fg=COLOR_FUCSIA_OSCURO, relief="flat",
                   font=("Segoe UI", 8), cursor="hand2", padx=8, pady=2).pack(side="left")
-        tk.Button(ctrl_frame, text="â Ninguno", command=_ninguno,
+        tk.Button(ctrl_frame, text="✖ Ninguno", command=_ninguno,
                   bg=COLOR_TARJETA, fg=COLOR_FUCSIA_OSCURO, relief="flat",
                   font=("Segoe UI", 8), cursor="hand2", padx=8, pady=2).pack(side="left", padx=(4, 0))
 
@@ -6334,10 +6425,10 @@ class WorkspaceWindow(tk.Toplevel):
                 self._visor_tree.detach(iid)
             self._visor_filas_ocultas = ocultar
             self._visor_label_info.config(
-                text=f"Filtro activo en '{col_name}' â "
+                text=f"Filtro activo en '{col_name}' — "
                      f"{len(self._visor_tree.get_children())} filas visibles")
 
-        # BotÃ³n Aplicar
+        # Botón Aplicar
         tk.Button(dlg, text="Aplicar filtro", command=aplicar,
                   bg=COLOR_FUCSIA, fg=COLOR_BLANCO, font=("Segoe UI", 10, "bold"),
                   relief="flat", padx=16, pady=8, cursor="hand2",
@@ -6354,7 +6445,7 @@ class WorkspaceWindow(tk.Toplevel):
         self.after(20, self._visor_refresh_cell_labels)
 
 
-    # ââ Teclado visor âââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ── Teclado visor ───────────────────────────────────────────────────
 
     def _visor_celda_actual(self):
         """Devuelve (iid, col_id) de la celda seleccionada o None."""
@@ -6492,7 +6583,7 @@ class WorkspaceWindow(tk.Toplevel):
                              relief="flat", bd=0,
                              underline=0 if underline else -1)
             inner.place(x=bw, y=bw, width=w, height=h)
-            # Reenviar eventos desde el borde al Ã¡rbol
+            # Reenviar eventos desde el borde al árbol
             for widget in (outer, inner):
                 widget.bind("<Button-1>",
                     lambda e, i=iid, c=col_id: self._visor_click_desde_label(e, i, c))
@@ -6516,7 +6607,7 @@ class WorkspaceWindow(tk.Toplevel):
         col_id = self._visor_tree.identify_column(event.x)
         self._visor_iid_sel = iid
         self._visor_col_sel = col_id
-        # Quitar selecciÃ³n visual de tkinter (ya desactivada por estilo)
+        # Quitar selección visual de tkinter (ya desactivada por estilo)
         self._visor_tree.selection_set(iid)
         # Mostrar referencia de celda (ej: B3)
         try:
@@ -6555,7 +6646,7 @@ class WorkspaceWindow(tk.Toplevel):
             except Exception:
                 pass
         self._visor_color_widgets.clear()
-        # UniÃ³n de celdas con color O con formato de fuente
+        # Unión de celdas con color O con formato de fuente
         todas = set(self._visor_cell_colors) | set(self._visor_cell_fonts)
         for (iid, col_id) in todas:
             try:
@@ -6720,14 +6811,14 @@ class WorkspaceWindow(tk.Toplevel):
             rutas = [self._visor_ruta_actual]
         else:
             messagebox.showinfo("Borrar reporte",
-                "Selecciona uno o mÃ¡s reportes de la lista primero.", parent=self)
+                "Selecciona uno o más reportes de la lista primero.", parent=self)
             return
 
         n = len(rutas)
-        msg = (f"Â¿Eliminar permanentemente {n} reporte(s)?\n"
+        msg = (f"¿Eliminar permanentemente {n} reporte(s)?\n"
                + "\n".join(os.path.basename(r) for r in rutas[:5])
                + ("\n..." if n > 5 else "")
-               + "\n\nEsta acciÃ³n no se puede deshacer.")
+               + "\n\nEsta acción no se puede deshacer.")
         if not messagebox.askyesno("Borrar reporte", msg, parent=self):
             return
 
@@ -6756,7 +6847,7 @@ class WorkspaceWindow(tk.Toplevel):
             except Exception as e:
                 errores.append(f"{os.path.basename(ruta)}: {e}")
 
-        # Eliminar de la lista de mayor a menor Ã­ndice para no desplazar
+        # Eliminar de la lista de mayor a menor índice para no desplazar
         indices_a_borrar = sorted(
             [self._visor_archivos.index(r) for r in borrados if r in self._visor_archivos],
             reverse=True
@@ -6812,23 +6903,23 @@ class WorkspaceWindow(tk.Toplevel):
             messagebox.showerror("Error al guardar", str(e), parent=self)
 
     # ---------------------------------------------------------------- #
-    # PESTAÃA: VENTAS DEL DÃA
+    # PESTAÑA: VENTAS DEL DÍA
     # ---------------------------------------------------------------- #
     def _tab_ventas_dia(self, nb):
         tab = ttk.Frame(nb)
-        nb.add(tab, text="  â½ Ventas del DÃ­a  ")
+        nb.add(tab, text="  ⛽ Ventas del Día  ")
         tab.columnconfigure(0, weight=1)
 
-        # ââ Instrucciones ââ
+        # ── Instrucciones ──
         info = ttk.Frame(tab, style="Tarjeta.TFrame")
         info.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
         ttk.Label(info,
-            text="Genera la pÃ³liza de Ventas del DÃ­a en formato Excel. "
+            text="Genera la póliza de Ventas del Día en formato Excel. "
                  "Selecciona el archivo de control de despachos y la plantilla de cuentas.",
             style="Tarjeta.TLabel", wraplength=900,
         ).pack(padx=12, pady=8)
 
-        # ââ SelecciÃ³n de archivos ââ
+        # ── Selección de archivos ──
         card = ttk.Frame(tab, style="Tarjeta.TFrame")
         card.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 4))
         card.columnconfigure(1, weight=1)
@@ -6837,7 +6928,7 @@ class WorkspaceWindow(tk.Toplevel):
         self._vd_plantilla   = tk.StringVar(value="")
         self._vd_resultado_path = None
 
-        ttk.Label(card, text="ð Control de despachos (.xlsx):", width=30,
+        ttk.Label(card, text="📊 Control de despachos (.xlsx):", width=30,
                   style="Tarjeta.TLabel").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 4))
         ttk.Entry(card, textvariable=self._vd_despachos).grid(
             row=0, column=1, sticky="ew", padx=6, pady=(10, 4))
@@ -6845,7 +6936,7 @@ class WorkspaceWindow(tk.Toplevel):
             command=lambda: self._vd_elegir_archivo(self._vd_despachos)).grid(
             row=0, column=2, padx=6, pady=(10, 4))
 
-        ttk.Label(card, text="ð Plantilla de cuentas (.xlsx):", width=30,
+        ttk.Label(card, text="📋 Plantilla de cuentas (.xlsx):", width=30,
                   style="Tarjeta.TLabel").grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
         ttk.Entry(card, textvariable=self._vd_plantilla).grid(
             row=1, column=1, sticky="ew", padx=6, pady=(0, 10))
@@ -6858,14 +6949,14 @@ class WorkspaceWindow(tk.Toplevel):
         self._vd_ieps_gp = tk.StringVar(value="401-01-0001-0006-0002")
         self._vd_ieps_gd = tk.StringVar(value="401-01-0001-0006-0003")
 
-        # ââ BotÃ³n generar ââ
+        # ── Botón generar ──
         ttk.Button(tab,
-            text="â½  Generar PÃ³liza Ventas del DÃ­a",
+            text="⛽  Generar Póliza Ventas del Día",
             style="Grande.TButton",
             command=self._vd_generar,
         ).grid(row=3, column=0, sticky="ew", padx=8, pady=(6, 2))
 
-        # ââ Barra de progreso VD ââ
+        # ── Barra de progreso VD ──
         _vd_pb_frame = tk.Frame(tab, bg=COLOR_FONDO)
         _vd_pb_frame.grid(row=4, column=0, sticky="ew", padx=8, pady=(2, 2))
         _vd_pb_frame.grid_remove()
@@ -6876,29 +6967,29 @@ class WorkspaceWindow(tk.Toplevel):
             foreground=COLOR_FUCSIA_OSCURO, font=("Segoe UI", 8, "bold"))
         self._vd_pb_lbl.pack(side="left")
 
-        # ââ Barra de descarga ââ
+        # ── Barra de descarga ──
         self._vd_barra = ttk.Frame(tab, style="Tarjeta.TFrame")
         self._vd_barra.grid(row=5, column=0, sticky="ew", padx=8, pady=(0, 6))
 
-        ttk.Label(self._vd_barra, text="ð Resultado:", style="Tarjeta.TLabel").pack(
+        ttk.Label(self._vd_barra, text="📄 Resultado:", style="Tarjeta.TLabel").pack(
             side="left", padx=(10, 4), pady=8)
-        self._vd_lbl_archivo = ttk.Label(self._vd_barra, text="â",
+        self._vd_lbl_archivo = ttk.Label(self._vd_barra, text="—",
             foreground=COLOR_FUCSIA_OSCURO, font=("Segoe UI", 9, "bold"),
             background=COLOR_TARJETA)
         self._vd_lbl_archivo.pack(side="left", padx=4, pady=8)
 
-        ttk.Button(self._vd_barra, text="ð  Abrir",
+        ttk.Button(self._vd_barra, text="📂  Abrir",
             command=self._vd_abrir).pack(side="right", padx=4, pady=6)
-        ttk.Button(self._vd_barra, text="ð¾  Guardar como...",
+        ttk.Button(self._vd_barra, text="💾  Guardar como...",
             command=self._vd_guardar_como).pack(side="right", padx=4, pady=6)
 
-        # ââ Vista previa inline ââ
+        # ── Vista previa inline ──
         tab.rowconfigure(6, weight=1)
         vd_visor_wrap = ttk.Frame(tab, style="Tarjeta.TFrame")
         vd_visor_wrap.grid(row=6, column=0, sticky="nsew", padx=8, pady=(0, 8))
         vd_visor_wrap.columnconfigure(0, weight=1)
         vd_visor_wrap.rowconfigure(1, weight=1)
-        ttk.Label(vd_visor_wrap, text="ð  Vista previa del resultado",
+        ttk.Label(vd_visor_wrap, text="👁  Vista previa del resultado",
                   style="Tarjeta.TLabel",
                   font=("Segoe UI", 9, "bold")).grid(
             row=0, column=0, sticky="w", padx=10, pady=(6, 2))
@@ -6940,7 +7031,7 @@ class WorkspaceWindow(tk.Toplevel):
                 vals = [str(c) if c is not None else "" for c in row]
                 tv.insert("", "end", values=vals)
         except Exception as _e:
-            self._log(f"  â  Vista previa: {_e}", True)
+            self._log(f"  ⚠ Vista previa: {_e}", True)
 
     def _vd_elegir_archivo(self, var):
         init = self.carpeta.get() or os.getcwd()
@@ -6962,18 +7053,18 @@ class WorkspaceWindow(tk.Toplevel):
         if self._vd_resultado_path and os.path.exists(self._vd_resultado_path):
             os.startfile(self._vd_resultado_path)
         else:
-            messagebox.showwarning("Sin archivo", "Primero genera la pÃ³liza.")
+            messagebox.showwarning("Sin archivo", "Primero genera la póliza.")
 
     def _vd_guardar_como(self):
         if not self._vd_resultado_path or not os.path.exists(self._vd_resultado_path):
-            messagebox.showwarning("Sin archivo", "Primero genera la pÃ³liza.")
+            messagebox.showwarning("Sin archivo", "Primero genera la póliza.")
             return
         self.lift()
         self.focus_force()
         self.update()
         destino = filedialog.asksaveasfilename(
             parent=self,
-            title="Guardar pÃ³liza como...",
+            title="Guardar póliza como...",
             defaultextension=".xlsx",
             filetypes=[("Excel", "*.xlsx")],
             initialfile=os.path.basename(self._vd_resultado_path),
@@ -6984,17 +7075,17 @@ class WorkspaceWindow(tk.Toplevel):
             messagebox.showinfo("Guardado", f"Guardado en:\n{destino}")
 
     def _vd_abrir_en_visor(self, ruta_xlsx, carpeta):
-        """Tras generar, carga el archivo automÃ¡ticamente en el Visor de Resultados."""
+        """Tras generar, carga el archivo automáticamente en el Visor de Resultados."""
         try:
             # 1. Cambiar al tab Visor de Resultados
             for i in range(self.nb.index("end")):
                 if "Visor" in self.nb.tab(i, "text"):
                     self.nb.select(i)
                     break
-            # 2. Apuntar la carpeta del visor a donde se guardÃ³
+            # 2. Apuntar la carpeta del visor a donde se guardó
             self._visor_carpeta.set(carpeta)
             self._visor_refrescar()
-            # 3. Seleccionar el archivo reciÃ©n generado en la lista
+            # 3. Seleccionar el archivo recién generado en la lista
             nombre = os.path.basename(ruta_xlsx)
             for idx, arch in enumerate(self._visor_archivos):
                 if os.path.basename(arch) == nombre:
@@ -7004,7 +7095,7 @@ class WorkspaceWindow(tk.Toplevel):
                     self._visor_cargar_archivo()
                     break
         except Exception:
-            pass  # No crÃ­tico â el archivo ya fue generado
+            pass  # No crítico — el archivo ya fue generado
 
     def _vd_generar(self):
         try:
@@ -7023,21 +7114,21 @@ class WorkspaceWindow(tk.Toplevel):
         except Exception as _e:
             import traceback as _tb
             messagebox.showerror("Error al iniciar",
-                f"No se pudo iniciar la generaciÃ³n:\n{_e}\n\n{_tb.format_exc()[-600:]}")
+                f"No se pudo iniciar la generación:\n{_e}\n\n{_tb.format_exc()[-600:]}")
 
     def _vd_generar_hilo(self, despachos_path, plantilla_path):
         try:
-            # ââ Verificar xlsxwriter ââââââââââââââââââââââââââââââââââââââââââ
+            # ── Verificar xlsxwriter ──────────────────────────────────────────
             try:
                 import xlsxwriter
             except ImportError:
                 self.after(0, self._pb_error, self._vd_pb, self._vd_pb_lbl)
                 self.after(0, self._vd_pb_frame.grid_remove)
-                self.after(0, messagebox.showerror, "LibrerÃ­a faltante",
-                    "Falta la librerÃ­a 'xlsxwriter'.\n\n"
-                    "InstÃ¡lala ejecutando en la terminal:\n"
+                self.after(0, messagebox.showerror, "Librería faltante",
+                    "Falta la librería 'xlsxwriter'.\n\n"
+                    "Instálala ejecutando en la terminal:\n"
                     "    pip install xlsxwriter\n\n"
-                    "Luego reinicia la aplicaciÃ³n.")
+                    "Luego reinicia la aplicación.")
                 self.after(0, self._vd_lbl_archivo.config, {"text": "Error"})
                 return
 
@@ -7046,7 +7137,7 @@ class WorkspaceWindow(tk.Toplevel):
 
             import re as _re
 
-            # âââ Helpers match/detecciÃ³n (equivalentes al mÃ³dulo Streamlit) ââââââ
+            # ─── Helpers match/detección (equivalentes al módulo Streamlit) ──────
             def _vd_norm(s):
                 return str(s or "").replace("\n", " ").strip().upper()
             def _vd_clean(s):
@@ -7097,8 +7188,8 @@ class WorkspaceWindow(tk.Toplevel):
                 }
                 return {k: col_map.get(k, v) for k, v in defaults.items()}
 
-            # ââ Leer despachos (soporta .xls y .xlsx) ââââââââââââââââââââââââ
-            self.after(0, self._log, "â½ Leyendo control de despachos...")
+            # ── Leer despachos (soporta .xls y .xlsx) ────────────────────────
+            self.after(0, self._log, "⛽ Leyendo control de despachos...")
             ext = os.path.splitext(despachos_path)[1].lower()
             if ext == '.xls':
                 # Formato antiguo: intentar con xlrd
@@ -7112,15 +7203,15 @@ class WorkspaceWindow(tk.Toplevel):
                     ]
                     _col_map = _vd_detectar_columnas(_rows_raw[0])
                     data = _rows_raw[1:]  # saltar encabezado
-                    self.after(0, self._log, f"  {len(data):,} registros leÃ­dos (.xls vÃ­a xlrd).")
+                    self.after(0, self._log, f"  {len(data):,} registros leídos (.xls vía xlrd).")
                 except ImportError:
                     self.after(0, self._pb_error, self._vd_pb, self._vd_pb_lbl)
                     self.after(0, self._vd_pb_frame.grid_remove)
                     self.after(0, messagebox.showerror, "Formato .xls no soportado",
-                        "El archivo de despachos estÃ¡ en formato antiguo .xls\n"
-                        "y la librerÃ­a 'xlrd' no estÃ¡ instalada.\n\n"
+                        "El archivo de despachos está en formato antiguo .xls\n"
+                        "y la librería 'xlrd' no está instalada.\n\n"
                         "Soluciones:\n"
-                        "  1. Abre el archivo en Excel y guÃ¡rdalo como .xlsx\n"
+                        "  1. Abre el archivo en Excel y guárdalo como .xlsx\n"
                         "  2. O instala xlrd:  pip install xlrd==1.2.0")
                     self.after(0, self._vd_lbl_archivo.config, {"text": "Error"})
                     return
@@ -7130,9 +7221,9 @@ class WorkspaceWindow(tk.Toplevel):
                 wb_desp.close()
                 _col_map = _vd_detectar_columnas(_all_rows[0])
                 data = _all_rows[1:]
-                self.after(0, self._log, f"  {len(data):,} registros leÃ­dos (.xlsx).")
+                self.after(0, self._log, f"  {len(data):,} registros leídos (.xlsx).")
 
-            self.after(0, self._log, "â½ Leyendo plantilla de cuentas...")
+            self.after(0, self._log, "⛽ Leyendo plantilla de cuentas...")
             wb_tpl = openpyxl.load_workbook(plantilla_path, data_only=True)
 
             cuentas_map = {
@@ -7147,7 +7238,7 @@ class WorkspaceWindow(tk.Toplevel):
                     hoja_cuentas = wb_tpl[sn]
                     break
             if hoja_cuentas is None:
-                self.after(0, self._log, "  â  No se encontrÃ³ hoja 'cuentas' en la plantilla.", True)
+                self.after(0, self._log, "  ⚠ No se encontró hoja 'cuentas' en la plantilla.", True)
 
             # ── Extraer listas dinámicas de la hoja CUENTAS ──────────────────
             _dyn_clientes = []   # [(num_cuenta, nombre)] — columnas H/I (7,8)
@@ -7175,7 +7266,7 @@ class WorkspaceWindow(tk.Toplevel):
                 "M Y T INTEGRALES PARA LA SALUD","T AMERICAN EXPRESS",
                 "CENTRO DE DISTRIBUCION ORIENTE","T ULTRAGAS","T PLUXEE MEXICO",
                 "JUAN ANTONIO CRUZ MONDRAGON","T INBURSA","V EFECTIVALE",
-                "ETIQUETAS CCL","MARIA DEL CARMEN PEÃALOZA PEIMBERT",
+                "ETIQUETAS CCL","MARIA DEL CARMEN PEÑALOZA PEIMBERT",
                 "ROTULACIONES E IMPRESIONES MEXICANAS SA DE CV",
                 "ALMACENAJE Y DISTRIBUCION TRANSGALLA","PETRO ASFALTOS DEL SURESTE",
                 "GRAFIARTE DELA","MARICELA GONZALEZ RODRIGUEZ","ADEPT SERVICES MEXICO",
@@ -7214,7 +7305,7 @@ class WorkspaceWindow(tk.Toplevel):
                 CTAS_PROD = _CTAS_PROD_FB
             NOMS_PROD = [cuentas_map.get(c, p) for c, p in zip(CTAS_PROD, PRODS)]
 
-            # ââ Columnas detectadas ââââââââââââââââââââââââââââ
+            # ── Columnas detectadas ────────────────────────────
             C_FECHA    = _col_map["FechaHora"]
             C_PROD     = _col_map["Producto"]
             C_SUBTOTAL = _col_map["Subtotal"]
@@ -7390,7 +7481,7 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._pb_detener, self._vd_pb, self._vd_pb_lbl)
             self.after(0, self._vd_pb_frame.grid_remove)
             self.after(0, self._vd_lbl_archivo.config, {"text": nombre})
-            self.after(0, self._log, f"â PÃ³liza generada: {nombre}", True)
+            self.after(0, self._log, f"✅ Póliza generada: {nombre}", True)
             self.after(0, self._vd_abrir_en_visor, OUT, carpeta_sal)
             self.after(0, self._vd_cargar_visor_inline, OUT)
 
@@ -7398,47 +7489,47 @@ class WorkspaceWindow(tk.Toplevel):
             import traceback as _tb2
             self.after(0, self._pb_error, self._vd_pb, self._vd_pb_lbl)
             self.after(0, self._vd_pb_frame.grid_remove)
-            self.after(0, self._log, f"â Error al generar pÃ³liza: {e}", True)
+            self.after(0, self._log, f"❌ Error al generar póliza: {e}", True)
             self.after(0, self._vd_lbl_archivo.config, {"text": "Error"})
-            self.after(0, messagebox.showerror, "Error al generar pÃ³liza",
+            self.after(0, messagebox.showerror, "Error al generar póliza",
                 f"{e}\n\n{_tb2.format_exc()[-500:]}")
 
 
-    # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    # MÃDULO: VENTAS DEL DÃA (grupo: PÃ³liza + ConciliaciÃ³n)
-    # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ─────────────────────────────────────────────────────────────────────────
+    # MÓDULO: VENTAS DEL DÍA (grupo: Póliza + Conciliación)
+    # ─────────────────────────────────────────────────────────────────────────
     def _tab_ventas_grupo(self, nb):
-        """PestaÃ±a contenedora: une Ventas del DÃ­a y Control de Despacho vs Ventas."""
+        """Pestaña contenedora: une Ventas del Día y Control de Despacho vs Ventas."""
         outer = ttk.Frame(nb)
-        nb.add(outer, text="  â½ Ventas del DÃ­a  ")
+        nb.add(outer, text="  ⛽ Ventas del Día  ")
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(0, weight=1)
 
         inner_nb = ttk.Notebook(outer)
         inner_nb.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
 
-        self._tab_ventas_dia(inner_nb)   # sub-pestaÃ±a: Generar PÃ³liza (sin modificar)
-        self._tab_vd_conc(inner_nb)      # sub-pestaÃ±a: Control de Despacho vs Ventas
+        self._tab_ventas_dia(inner_nb)   # sub-pestaña: Generar Póliza (sin modificar)
+        self._tab_vd_conc(inner_nb)      # sub-pestaña: Control de Despacho vs Ventas
 
-    # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    # MÃDULO: CONTROL DE DESPACHO vs VENTAS DEL DÃA
-    # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ─────────────────────────────────────────────────────────────────────────
+    # MÓDULO: CONTROL DE DESPACHO vs VENTAS DEL DÍA
+    # ─────────────────────────────────────────────────────────────────────────
     def _tab_vd_conc(self, nb):
         import os, threading
         from tkinter import filedialog, messagebox as mb
 
         tab = ttk.Frame(nb)
-        nb.add(tab, text="  ð Despachos vs Ventas  ")
+        nb.add(tab, text="  📊 Despachos vs Ventas  ")
         tab.columnconfigure(0, weight=1)
 
-        # ââ Encabezado ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Encabezado ────────────────────────────────────────────────────────
         hdr = tk.Frame(tab, bg="#B45309", height=40)
         hdr.grid(row=0, column=0, sticky="ew")
-        tk.Label(hdr, text="ð  CONTROL DE DESPACHO vs VENTAS DEL DÃA",
+        tk.Label(hdr, text="📊  CONTROL DE DESPACHO vs VENTAS DEL DÍA",
                  bg="#B45309", fg="white",
                  font=("Segoe UI", 11, "bold")).pack(side="left", padx=14, pady=8)
 
-        # ââ SelecciÃ³n de archivos ââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Selección de archivos ──────────────────────────────────────────────
         card = ttk.Frame(tab, style="Tarjeta.TFrame")
         card.grid(row=1, column=0, sticky="ew", padx=8, pady=(8, 4))
         card.columnconfigure(1, weight=1)
@@ -7447,7 +7538,7 @@ class WorkspaceWindow(tk.Toplevel):
         self._vdc_ventas    = tk.StringVar(value="")
         self._vdc_resultado_path = None
 
-        ttk.Label(card, text="ð Control de Despachos (.xlsx):", width=32,
+        ttk.Label(card, text="📊 Control de Despachos (.xlsx):", width=32,
                   style="Tarjeta.TLabel").grid(row=0, column=0, sticky="w", padx=10, pady=(10, 4))
         ttk.Entry(card, textvariable=self._vdc_despachos).grid(
             row=0, column=1, sticky="ew", padx=6, pady=(10, 4))
@@ -7455,7 +7546,7 @@ class WorkspaceWindow(tk.Toplevel):
                    command=lambda: self._vdc_elegir_archivo(self._vdc_despachos)).grid(
             row=0, column=2, padx=(0, 10), pady=(10, 4))
 
-        ttk.Label(card, text="ð Ventas del DÃ­a (.xlsx):", width=32,
+        ttk.Label(card, text="📋 Ventas del Día (.xlsx):", width=32,
                   style="Tarjeta.TLabel").grid(row=1, column=0, sticky="w", padx=10, pady=(4, 10))
         ttk.Entry(card, textvariable=self._vdc_ventas).grid(
             row=1, column=1, sticky="ew", padx=6, pady=(4, 10))
@@ -7463,12 +7554,12 @@ class WorkspaceWindow(tk.Toplevel):
                    command=lambda: self._vdc_elegir_archivo(self._vdc_ventas)).grid(
             row=1, column=2, padx=(0, 10), pady=(4, 10))
 
-        # ââ BotÃ³n generar âââââââââââââââââââââââââââââââââââââââââââââââââââââ
-        ttk.Button(tab, text="â¡  Generar ConciliaciÃ³n",
+        # ── Botón generar ─────────────────────────────────────────────────────
+        ttk.Button(tab, text="⚡  Generar Conciliación",
                    command=self._vdc_generar,
                    style="Accent.TButton").grid(row=2, column=0, pady=6)
 
-        # ââ Barra de progreso âââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Barra de progreso ─────────────────────────────────────────────────
         _vdc_pb_frame = tk.Frame(tab, bg=COLOR_FONDO)
         _vdc_pb_frame.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 2))
         _vdc_pb_frame.grid_remove()
@@ -7479,28 +7570,28 @@ class WorkspaceWindow(tk.Toplevel):
                                      style="Tarjeta.TLabel")
         self._vdc_pb_lbl.pack(side="left")
 
-        # ââ Barra inferior resultado âââââââââââââââââââââââââââââââââââââââââââ
+        # ── Barra inferior resultado ───────────────────────────────────────────
         self._vdc_barra = ttk.Frame(tab, style="Tarjeta.TFrame")
         self._vdc_barra.grid(row=4, column=0, sticky="ew", padx=8, pady=(0, 6))
 
-        ttk.Label(self._vdc_barra, text="ð Resultado:", style="Tarjeta.TLabel").pack(
+        ttk.Label(self._vdc_barra, text="📄 Resultado:", style="Tarjeta.TLabel").pack(
             side="left", padx=(10, 4), pady=8)
-        self._vdc_lbl_archivo = ttk.Label(self._vdc_barra, text="â",
+        self._vdc_lbl_archivo = ttk.Label(self._vdc_barra, text="—",
                                           style="Tarjeta.TLabel", foreground="#6B7280")
         self._vdc_lbl_archivo.pack(side="left", padx=4, pady=8)
-        ttk.Button(self._vdc_barra, text="ð  Abrir",
+        ttk.Button(self._vdc_barra, text="📂  Abrir",
                    command=self._vdc_abrir).pack(side="right", padx=4, pady=6)
-        ttk.Button(self._vdc_barra, text="ð¾  Guardar como...",
+        ttk.Button(self._vdc_barra, text="💾  Guardar como...",
                    command=self._vdc_guardar_como).pack(side="right", padx=4, pady=6)
 
-        # ââ Vista previa (Treeview) ââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Vista previa (Treeview) ────────────────────────────────────────────
         tab.rowconfigure(5, weight=1)
         visor_wrap = ttk.Frame(tab, style="Tarjeta.TFrame")
         visor_wrap.grid(row=5, column=0, sticky="nsew", padx=8, pady=(0, 8))
         visor_wrap.columnconfigure(0, weight=1)
         visor_wrap.rowconfigure(1, weight=1)
 
-        ttk.Label(visor_wrap, text="ð  Vista previa del resultado",
+        ttk.Label(visor_wrap, text="👁  Vista previa del resultado",
                   style="Tarjeta.TLabel",
                   font=("Segoe UI", 9, "bold")).grid(
             row=0, column=0, sticky="w", padx=10, pady=(6, 2))
@@ -7545,7 +7636,7 @@ class WorkspaceWindow(tk.Toplevel):
                 tv.insert("", "end", values=vals)
             self._log(f"  Vista previa: {min(len(all_rows)-1, 50)} fila(s).")
         except Exception as _e:
-            self._log(f"  â  Vista previa no disponible: {_e}", True)
+            self._log(f"  ⚠ Vista previa no disponible: {_e}", True)
 
     def _vdc_elegir_archivo(self, var):
         from tkinter import filedialog
@@ -7562,23 +7653,23 @@ class WorkspaceWindow(tk.Toplevel):
             os.startfile(self._vdc_resultado_path)
         else:
             from tkinter import messagebox
-            messagebox.showwarning("Sin resultado", "Primero genera la conciliaciÃ³n.")
+            messagebox.showwarning("Sin resultado", "Primero genera la conciliación.")
 
     def _vdc_guardar_como(self):
         import os, shutil
         from tkinter import filedialog, messagebox
         if not self._vdc_resultado_path or not os.path.exists(self._vdc_resultado_path):
-            messagebox.showwarning("Sin resultado", "Primero genera la conciliaciÃ³n.")
+            messagebox.showwarning("Sin resultado", "Primero genera la conciliación.")
             return
         destino = filedialog.asksaveasfilename(
-            title="Guardar conciliaciÃ³n como...",
+            title="Guardar conciliación como...",
             defaultextension=".xlsx",
             filetypes=[("Excel", "*.xlsx")],
             initialfile=os.path.basename(self._vdc_resultado_path),
         )
         if destino:
             shutil.copy2(self._vdc_resultado_path, destino)
-            self._log(f"ð¾ Guardado en: {destino}")
+            self._log(f"💾 Guardado en: {destino}")
 
     def _vdc_generar(self):
         from tkinter import messagebox
@@ -7586,7 +7677,7 @@ class WorkspaceWindow(tk.Toplevel):
         vd   = self._vdc_ventas.get().strip()
         if not desp or not vd:
             messagebox.showwarning("Faltan archivos",
-                "Selecciona el Control de Despachos y el archivo de Ventas del DÃ­a.")
+                "Selecciona el Control de Despachos y el archivo de Ventas del Día.")
             return
         self._vdc_lbl_archivo.config(text="Generando...")
         self._vdc_pb_frame.grid()
@@ -7605,17 +7696,17 @@ class WorkspaceWindow(tk.Toplevel):
         except ImportError as e:
             self.after(0, self._pb_error, self._vdc_pb, self._vdc_pb_lbl)
             self.after(0, self._vdc_pb_frame.grid_remove)
-            self.after(0, self._log, f"â Falta librerÃ­a: {e}", True)
+            self.after(0, self._log, f"❌ Falta librería: {e}", True)
             return
 
         try:
-            self.after(0, self._log, "ð Leyendo Control de Despachos...")
+            self.after(0, self._log, "📂 Leyendo Control de Despachos...")
             wb1 = openpyxl.load_workbook(desp_path, read_only=True, data_only=True)
             hoja1 = wb1.sheetnames[0]
             rows1 = list(wb1[hoja1].iter_rows(values_only=True))
             wb1.close()
 
-            self.after(0, self._log, "ð Leyendo Ventas del DÃ­a...")
+            self.after(0, self._log, "📂 Leyendo Ventas del Día...")
             wb2 = openpyxl.load_workbook(vd_path, read_only=True, data_only=True)
             hoja2 = wb2.sheetnames[0]
             rows2 = list(wb2[hoja2].iter_rows(values_only=True))
@@ -7623,11 +7714,11 @@ class WorkspaceWindow(tk.Toplevel):
         except Exception as e:
             self.after(0, self._pb_error, self._vdc_pb, self._vdc_pb_lbl)
             self.after(0, self._vdc_pb_frame.grid_remove)
-            self.after(0, self._log, f"â Error al leer archivos: {e}", True)
+            self.after(0, self._log, f"❌ Error al leer archivos: {e}", True)
             return
 
         try:
-            # ââ Procesar Despachos âââââââââââââââââââââââââââââââââââââââââââââ
+            # ── Procesar Despachos ─────────────────────────────────────────────
             dia = defaultdict(lambda: {"GS_sub":0.0,"GP_sub":0.0,"GD_sub":0.0,
                                        "iva":0.0,"ieps":0.0,"importe":0.0,"uuids":set()})
             data = defaultdict(lambda: {"nombre":"","fechas":set(),
@@ -7665,7 +7756,7 @@ class WorkspaceWindow(tk.Toplevel):
                     e[prod]["sub"]+=sub; e[prod]["iva"]+=iva
                     e[prod]["ieps"]+=ieps; e[prod]["tot"]+=imp
 
-            # ââ Procesar Ventas del DÃ­a ââââââââââââââââââââââââââââââââââââââââ
+            # ── Procesar Ventas del Día ────────────────────────────────────────
             venta = {}
             for r in rows2[3:]:
                 if not r or r[1] is None: continue
@@ -7678,9 +7769,9 @@ class WorkspaceWindow(tk.Toplevel):
                 }
 
             fechas = sorted(dia.keys())
-            self.after(0, self._log, f"â {len(fechas)} dÃ­as encontrados en Despachos.")
+            self.after(0, self._log, f"✅ {len(fechas)} días encontrados en Despachos.")
 
-            # ââ Estilos ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+            # ── Estilos ────────────────────────────────────────────────────────
             MF = '#,##0.00'
             F_WHITE = PatternFill("solid", fgColor="FFFFFF")
             def fill(c): return PatternFill("solid", fgColor=c)
@@ -7717,12 +7808,12 @@ class WorkspaceWindow(tk.Toplevel):
 
             wb = openpyxl.Workbook()
 
-            # ââ HOJA 1 â CONCILIACIÃN DIARIA ââââââââââââââââââââââââââââââââââ
-            ws = wb.active; ws.title = "ConciliaciÃ³n"
-            mw(ws,1,1,18,"CONTROL DE DESPACHO vs VENTAS DEL DÃA",F_HDR,bold=True,sz=12,fc="FFFFFF",al=al_c)
+            # ══ HOJA 1 — CONCILIACIÓN DIARIA ══════════════════════════════════
+            ws = wb.active; ws.title = "Conciliación"
+            mw(ws,1,1,18,"CONTROL DE DESPACHO vs VENTAS DEL DÍA",F_HDR,bold=True,sz=12,fc="FFFFFF",al=al_c)
             ws.row_dimensions[1].height = 26
             for s,e,txt,fi in [(1,1,"FECHA",F_HDR),(2,8,"CONTROL DE DESPACHOS",F_DARK),
-                                (9,13,"VENTAS DEL DÃA",F_GRAY),(14,18,"DIFERENCIAS",F_HDR)]:
+                                (9,13,"VENTAS DEL DÍA",F_GRAY),(14,18,"DIFERENCIAS",F_HDR)]:
                 if s<e: mw(ws,2,s,e,txt,fi,bold=True,sz=9,fc="FFFFFF",al=al_c)
                 else:   cw(ws,2,s,val=txt,fi=fi,al=al_c,bold=True,sz=9,fc="FFFFFF")
             ws.row_dimensions[2].height = 18
@@ -7732,9 +7823,9 @@ class WorkspaceWindow(tk.Toplevel):
                 ("G-Diesel\nSubtotal",14,F_GD,"92400E"),
                 ("IVA\nUnificado",14,F_IVA,"9D174D"),("IEPS\nUnificado",14,F_IVA,"9D174D"),
                 ("TOTAL\nImporte",15,F_DARK,"FFFFFF"),("UUIDs\n#",9,F_UUID,"374151"),
-                ("GS\n(VtaDÃ­a)",13,F_GS,"1E3A8A"),("GP\n(VtaDÃ­a)",13,F_GP,"166534"),
-                ("GD\n(VtaDÃ­a)",13,F_GD,"92400E"),
-                ("IVA\n(VtaDÃ­a)",13,F_IVA,"9D174D"),("IEPS\n(VtaDÃ­a)",13,F_IVA,"9D174D"),
+                ("GS\n(VtaDía)",13,F_GS,"1E3A8A"),("GP\n(VtaDía)",13,F_GP,"166534"),
+                ("GD\n(VtaDía)",13,F_GD,"92400E"),
+                ("IVA\n(VtaDía)",13,F_IVA,"9D174D"),("IEPS\n(VtaDía)",13,F_IVA,"9D174D"),
                 ("Dif\nGS",12,F_HDR,"FFFFFF"),("Dif\nGP",12,F_HDR,"FFFFFF"),
                 ("Dif\nGD",12,F_HDR,"FFFFFF"),("Dif\nIVA",12,F_HDR,"FFFFFF"),
                 ("DIF\nTOTAL",13,F_HDR,"FFFFFF"),
@@ -7788,7 +7879,7 @@ class WorkspaceWindow(tk.Toplevel):
                 if 2<=i<=18: c.number_format=MF if i!=8 else "#,##0"
             ws.row_dimensions[ROW].height=22; ws.freeze_panes="B4"
 
-            # ââ HOJA 2 â DETALLE UUID ââââââââââââââââââââââââââââââââââââââââââ
+            # ══ HOJA 2 — DETALLE UUID ══════════════════════════════════════════
             ws2 = wb.create_sheet("Detalle UUID")
             for i,w in enumerate([20,30,42,14,15,13,13,15],1):
                 ws2.column_dimensions[get_column_letter(i)].width=w
@@ -7808,7 +7899,7 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._pb_step, self._vdc_pb, self._vdc_pb_lbl)
 
             for prod,label,fi_hdr,fi_prod,fc_txt in PRODS:
-                mw(ws2,CUR,1,8,f"  â TABLA {label}",fi_hdr,bold=True,sz=12,fc="FFFFFF",al=al_l)
+                mw(ws2,CUR,1,8,f"  ▌ TABLA {label}",fi_hdr,bold=True,sz=12,fc="FFFFFF",al=al_l)
                 ws2.row_dimensions[CUR].height=28; CUR+=1
 
                 claves_sin = sorted(
@@ -7816,10 +7907,10 @@ class WorkspaceWindow(tk.Toplevel):
                     key=lambda x:(x[0],x[1])
                 )
                 if claves_sin:
-                    mw(ws2,CUR,1,8,"  â   SIN COMPROBANTE FISCAL (UUID = -----)",
+                    mw(ws2,CUR,1,8,"  ⚠  SIN COMPROBANTE FISCAL (UUID = -----)",
                        F_SIN_H,bold=True,sz=9,fc="FFFFFF",al=al_l)
                     ws2.row_dimensions[CUR].height=20; CUR+=1
-                    for i,h in enumerate(["Cliente (col Q)","â","â SIN UUID â",
+                    for i,h in enumerate(["Cliente (col Q)","—","— SIN UUID —",
                                           "Fecha","Subtotal","IVA","IEPS","TOTAL"],1):
                         c=ws2.cell(CUR,i,h); c.fill=F_SIN
                         c.font=Font(color="92400E",bold=True,size=8)
@@ -7836,8 +7927,8 @@ class WorkspaceWindow(tk.Toplevel):
                             ws2.row_dimensions[CUR].height=14; CUR+=1
                         prev_cli=cli; s=sin_uuid[(cli,dt)][prod]
                         cw(ws2,CUR,1,val=cli,fi=F_SIN_ROW,al=al_l,sz=8,fc="7C2D12")
-                        cw(ws2,CUR,2,val="â SIN NOMBRE â",fi=F_SIN_ROW,al=al_l,sz=8,fc="9A3412")
-                        cw(ws2,CUR,3,val="â SIN COMPROBANTE FISCAL â",fi=F_SIN_ROW,al=al_c,sz=8,fc="9A3412")
+                        cw(ws2,CUR,2,val="— SIN NOMBRE —",fi=F_SIN_ROW,al=al_l,sz=8,fc="9A3412")
+                        cw(ws2,CUR,3,val="— SIN COMPROBANTE FISCAL —",fi=F_SIN_ROW,al=al_c,sz=8,fc="9A3412")
                         cw(ws2,CUR,4,val=dt.strftime("%d/%m/%Y"),fi=F_SIN_ROW,al=al_c,sz=8)
                         cw(ws2,CUR,5,val=s["sub"],fi=F_SIN_ROW,al=al_r,fmt=MF,sz=8)
                         cw(ws2,CUR,6,val=s["iva"],fi=F_SIN_ROW,al=al_r,fmt=MF,sz=8)
@@ -7852,7 +7943,7 @@ class WorkspaceWindow(tk.Toplevel):
                         for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
                             cw(ws2,CUR,ci,val=cli_tots[kk],fi=F_RFC,al=al_r,fmt=MF,bold=True,sz=8,fc="7C2D12")
                         ws2.row_dimensions[CUR].height=14; CUR+=1
-                    mw(ws2,CUR,1,4,f"  TOTAL SIN COMPROBANTE â {label}",F_SIN_TOT,bold=True,sz=9,fc="FFFFFF",al=al_l)
+                    mw(ws2,CUR,1,4,f"  TOTAL SIN COMPROBANTE — {label}",F_SIN_TOT,bold=True,sz=9,fc="FFFFFF",al=al_l)
                     for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
                         cw(ws2,CUR,ci,val=sin_grand[kk],fi=F_SIN_TOT,al=al_r,fmt=MF,bold=True,sz=9,fc="FFFFFF")
                     ws2.row_dimensions[CUR].height=18; CUR+=1
@@ -7861,7 +7952,7 @@ class WorkspaceWindow(tk.Toplevel):
 
                 mw(ws2,CUR,1,8,"  CON COMPROBANTE FISCAL (CFDI / UUID)",F_HDR,bold=True,sz=9,fc="FFFFFF",al=al_l)
                 ws2.row_dimensions[CUR].height=16; CUR+=1
-                for i,h in enumerate(["RFC","Nombre / RazÃ³n Social","UUID / Folio Fiscal",
+                for i,h in enumerate(["RFC","Nombre / Razón Social","UUID / Folio Fiscal",
                                        "Fechas","Subtotal","IVA","IEPS","TOTAL"],1):
                     c=ws2.cell(CUR,i,h); c.fill=fi_prod
                     c.font=Font(color=fc_txt,bold=True,size=9); c.alignment=al_c; c.border=bord
@@ -7894,7 +7985,7 @@ class WorkspaceWindow(tk.Toplevel):
                     for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
                         cw(ws2,CUR,ci,val=rfc_tots[kk],fi=F_RFC,al=al_r,fmt=MF,bold=True,sz=8,fc="1E40AF")
                     ws2.row_dimensions[CUR].height=14; CUR+=1
-                mw(ws2,CUR,1,4,f"  TOTAL CON COMPROBANTE â {label}",fill("166534"),bold=True,sz=9,fc="FFFFFF",al=al_l)
+                mw(ws2,CUR,1,4,f"  TOTAL CON COMPROBANTE — {label}",fill("166534"),bold=True,sz=9,fc="FFFFFF",al=al_l)
                 for ci,kk in enumerate(["sub","iva","ieps","tot"],5):
                     cw(ws2,CUR,ci,val=gt.get(kk,0),fi=fill("166534"),al=al_r,fmt=MF,bold=True,sz=9,fc="FFFFFF")
                 ws2.row_dimensions[CUR].height=18; CUR+=1
@@ -7902,18 +7993,18 @@ class WorkspaceWindow(tk.Toplevel):
                 gran_iva=gt.get("iva",0)+gt.get("sin_iva",0)
                 gran_ieps=gt.get("ieps",0)+gt.get("sin_ieps",0)
                 gran_tot=gt.get("tot",0)+gt.get("sin_tot",0)
-                mw(ws2,CUR,1,4,f"  â GRAN TOTAL {label}",F_TOT,bold=True,sz=11,al=al_l)
+                mw(ws2,CUR,1,4,f"  ★ GRAN TOTAL {label}",F_TOT,bold=True,sz=11,al=al_l)
                 for ci,v in enumerate([gran_sub,gran_iva,gran_ieps,gran_tot],5):
                     cw(ws2,CUR,ci,val=v,fi=F_TOT,al=al_r,fmt=MF,bold=True,sz=11)
                 ws2.row_dimensions[CUR].height=26; CUR+=2
 
             ws2.freeze_panes="A2"
 
-            # ââ HOJA 3 â RESUMEN ââââââââââââââââââââââââââââââââââââââââââââââ
+            # ══ HOJA 3 — RESUMEN ══════════════════════════════════════════════
             ws3 = wb.create_sheet("Resumen")
             for i,w in enumerate([30,18,18,18,14,16],1):
                 ws3.column_dimensions[get_column_letter(i)].width=w
-            mw(ws3,1,1,6,"RESUMEN â CONTROL DE DESPACHO vs VENTAS DEL DÃA",F_HDR,bold=True,sz=13,fc="FFFFFF",al=al_c)
+            mw(ws3,1,1,6,"RESUMEN — CONTROL DE DESPACHO vs VENTAS DEL DÍA",F_HDR,bold=True,sz=13,fc="FFFFFF",al=al_c)
             ws3.row_dimensions[1].height=32
 
             tot_gs=tots["gs"]; tot_gp=tots["gp"]; tot_gd=tots["gd"]
@@ -7934,7 +8025,7 @@ class WorkspaceWindow(tk.Toplevel):
             R=3
             mw(ws3,R,1,6,"VENTAS POR PRODUCTO",F_DARK,bold=True,sz=10,fc="FFFFFF",al=al_l)
             ws3.row_dimensions[R].height=22; R+=1
-            for i,h in enumerate(["Producto","Subtotal Despachos","Ventas del DÃ­a","Diferencia","% Total","CFDIs"],1):
+            for i,h in enumerate(["Producto","Subtotal Despachos","Ventas del Día","Diferencia","% Total","CFDIs"],1):
                 cw(ws3,R,i,val=h,fi=F_HDR,al=al_c,bold=True,sz=8,fc="FFFFFF")
             ws3.row_dimensions[R].height=16; R+=1
             for lbl,desp,pol,nuuid,fi_r in [
@@ -7961,7 +8052,7 @@ class WorkspaceWindow(tk.Toplevel):
             ws3.row_dimensions[R].height=22; R+=2
 
             sin_tot_gs=sin_tot_gp=sin_tot_gd=sin_tot_n=0
-            mw(ws3,R,1,6,"â   SIN COMPROBANTE FISCAL â POR CLIENTE (col Q)",F_SIN_H,bold=True,sz=10,fc="FFFFFF",al=al_l)
+            mw(ws3,R,1,6,"⚠  SIN COMPROBANTE FISCAL — POR CLIENTE (col Q)",F_SIN_H,bold=True,sz=10,fc="FFFFFF",al=al_l)
             ws3.row_dimensions[R].height=22; R+=1
             for i,h in enumerate(["Cliente (col Q)","G-Super","G-Premium","G-Diesel","TOTAL","# Tx"],1):
                 cw(ws3,R,i,val=h,fi=F_SIN,al=al_c,bold=True,sz=8,fc="92400E")
@@ -7986,7 +8077,7 @@ class WorkspaceWindow(tk.Toplevel):
 
             mw(ws3,R,1,6,"IMPUESTOS",F_DARK,bold=True,sz=10,fc="FFFFFF",al=al_l)
             ws3.row_dimensions[R].height=22; R+=1
-            for i,h in enumerate(["Concepto","Despachos","Ventas del DÃ­a","Diferencia","",""],1):
+            for i,h in enumerate(["Concepto","Despachos","Ventas del Día","Diferencia","",""],1):
                 cw(ws3,R,i,val=h,fi=F_HDR,al=al_c,bold=True,sz=8,fc="FFFFFF")
             ws3.row_dimensions[R].height=16; R+=1
             for lbl,desp,pol in [("IVA 16%",tot_iva,v_tot_iva),("IEPS",tot_ieps,v_tot_ieps),
@@ -8000,14 +8091,14 @@ class WorkspaceWindow(tk.Toplevel):
                 cw(ws3,R,5,fi=fi_r); cw(ws3,R,6,fi=fi_r)
                 ws3.row_dimensions[R].height=16; R+=1
             R+=1
-            mw(ws3,R,1,6,"MÃTRICAS",F_DARK,bold=True,sz=10,fc="FFFFFF",al=al_l)
+            mw(ws3,R,1,6,"MÉTRICAS",F_DARK,bold=True,sz=10,fc="FFFFFF",al=al_l)
             ws3.row_dimensions[R].height=22; R+=1
             F_LIGHT=fill("F8FAFC")
             for lbl,val,fi_v in [
-                    ("Total CFDIs Ãºnicos",uuid_total,F_GS),
-                    ("   â³ G-Super",uuid_gs,F_GS),("   â³ G-Premium",uuid_gp,F_GP),
-                    ("   â³ G-Diesel",uuid_gd,F_GD),("Clientes Ãºnicos (RFC)",rfc_total,F_UUID),
-                    ("Tx sin comprobante",sin_tot_n,F_SIN),("DÃ­as conciliados",len(fechas),F_UUID)]:
+                    ("Total CFDIs únicos",uuid_total,F_GS),
+                    ("   ↳ G-Super",uuid_gs,F_GS),("   ↳ G-Premium",uuid_gp,F_GP),
+                    ("   ↳ G-Diesel",uuid_gd,F_GD),("Clientes únicos (RFC)",rfc_total,F_UUID),
+                    ("Tx sin comprobante",sin_tot_n,F_SIN),("Días conciliados",len(fechas),F_UUID)]:
                 cw(ws3,R,1,val=lbl,fi=F_LIGHT,al=al_l,sz=9)
                 cw(ws3,R,2,val=val,fi=fi_v,al=al_r,fmt="#,##0",bold=True,sz=11)
                 for ci in range(3,7): cw(ws3,R,ci,fi=F_LIGHT)
@@ -8015,7 +8106,7 @@ class WorkspaceWindow(tk.Toplevel):
 
             wb.move_sheet("Resumen", offset=-2)
 
-            # ââ Guardar ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+            # ── Guardar ────────────────────────────────────────────────────────
             carpeta_sal = os.path.dirname(desp_path)
             base = os.path.splitext(os.path.basename(desp_path))[0]
             OUT = os.path.join(carpeta_sal, f"Conciliacion_DespachoVentas_{base}.xlsx")
@@ -8026,37 +8117,37 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._pb_detener, self._vdc_pb, self._vdc_pb_lbl)
             self.after(0, self._vdc_pb_frame.grid_remove)
             self.after(0, self._vdc_lbl_archivo.config, {"text": nombre})
-            self.after(0, self._log, f"â ConciliaciÃ³n generada: {nombre}")
+            self.after(0, self._log, f"✅ Conciliación generada: {nombre}")
             self.after(0, self._vdc_cargar_visor, OUT)
 
         except Exception as e:
             import traceback as _tb
             self.after(0, self._pb_error, self._vdc_pb, self._vdc_pb_lbl)
             self.after(0, self._vdc_pb_frame.grid_remove)
-            self.after(0, self._log, f"â Error: {e}", True)
+            self.after(0, self._log, f"❌ Error: {e}", True)
             self.after(0, self._vdc_lbl_archivo.config, {"text": "Error"})
             from tkinter import messagebox
             self.after(0, messagebox.showerror, "Error",
                        f"{e}\n\n{_tb.format_exc()[-500:]}")
 
-    # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    # MÃDULO: CONCILIACIÃN CONTROL DE DESPACHO VS SAT
-    # âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ─────────────────────────────────────────────────────────────────────────
+    # MÓDULO: CONCILIACIÓN CONTROL DE DESPACHO VS SAT
+    # ─────────────────────────────────────────────────────────────────────────
     def _tab_concilia_sat(self, nb):
         import os, threading
         from tkinter import filedialog, messagebox as mb
 
         tab = ttk.Frame(nb)
-        nb.add(tab, text="  ð ConciliaciÃ³n SAT  ")
+        nb.add(tab, text="  🔗 Conciliación SAT  ")
 
-        # ââ Encabezado ââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Encabezado ────────────────────────────────────────────────────────
         hdr = tk.Frame(tab, bg="#0A7A4A", height=40)
         hdr.pack(fill="x")
-        tk.Label(hdr, text="ð  CONCILIACIÃN  CONTROL DE DESPACHO  vs  SAT (CFDI/XML)",
+        tk.Label(hdr, text="🔗  CONCILIACIÓN  CONTROL DE DESPACHO  vs  SAT (CFDI/XML)",
                  bg="#0A7A4A", fg="white",
                  font=("Segoe UI", 11, "bold")).pack(side="left", padx=14, pady=8)
 
-        # ââ Estado de archivos ââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Estado de archivos ────────────────────────────────────────────────
         self._csat_excel_path = tk.StringVar(value="")
         self._csat_xml_paths  = []
 
@@ -8078,11 +8169,11 @@ class WorkspaceWindow(tk.Toplevel):
             return z, info
 
         zone_xl,  self._csat_lbl_xl  = _zona(drop_frame,
-            "ð  Arrastra el Excel aquÃ­",
-            "Control de Despachos (.xls / .xlsx)\no clic â seleccionar", 0)
+            "📄  Arrastra el Excel aquí",
+            "Control de Despachos (.xls / .xlsx)\no clic → seleccionar", 0)
         zone_xml, self._csat_lbl_xml = _zona(drop_frame,
-            "ð  Arrastra los XMLs aquÃ­",
-            "Archivos CFDI (.xml) â uno o varios\no clic â seleccionar", 1)
+            "📑  Arrastra los XMLs aquí",
+            "Archivos CFDI (.xml) — uno o varios\no clic → seleccionar", 1)
 
         ttk.Button(zone_xl,  text="Seleccionar Excel...",
                    command=self._csat_cargar_excel).pack(pady=(2,12))
@@ -8114,8 +8205,8 @@ class WorkspaceWindow(tk.Toplevel):
                 p = event.data.strip().strip("{}")
                 if p.lower().endswith((".xls",".xlsx")):
                     self._csat_excel_path.set(p)
-                    self._csat_lbl_xl.config(text="â " + os.path.basename(p))
-                    self._csat_log_write(f"ð Excel: {p}", "ok")
+                    self._csat_lbl_xl.config(text="✔ " + os.path.basename(p))
+                    self._csat_log_write(f"📄 Excel: {p}", "ok")
                 _hoff(zone_xl)
 
             def _drop_xml(event):
@@ -8128,10 +8219,10 @@ class WorkspaceWindow(tk.Toplevel):
                     self._csat_xml_paths = xmls
                     n = len(xmls)
                     self._csat_lbl_xml.config(
-                        text=f"â {n} XML{'s' if n>1 else ''} cargado{'s' if n>1 else ''}")
-                    self._csat_log_write(f"ð {n} XML(s):", "ok")
+                        text=f"✔ {n} XML{'s' if n>1 else ''} cargado{'s' if n>1 else ''}")
+                    self._csat_log_write(f"📑 {n} XML(s):", "ok")
                     for p in xmls:
-                        self._csat_log_write(f"   â¢ {os.path.basename(p)}", "neutral")
+                        self._csat_log_write(f"   • {os.path.basename(p)}", "neutral")
                 _hoff(zone_xml)
 
             zone_xl.drop_target_register(DND_FILES)
@@ -8147,29 +8238,29 @@ class WorkspaceWindow(tk.Toplevel):
         ttk.Separator(tab, orient="horizontal").pack(fill="x", padx=12, pady=4)
 
 
-        # ââ Botones âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Botones ───────────────────────────────────────────────────────────
         btn_frame = tk.Frame(tab, bg=COLOR_FONDO)
         btn_frame.pack(fill="x", padx=12, pady=6)
-        ttk.Button(btn_frame, text="â¡  Generar ConciliaciÃ³n",
+        ttk.Button(btn_frame, text="⚡  Generar Conciliación",
                    style="Accion.TButton",
                    command=self._csat_generar).pack(side="left", padx=4)
-        ttk.Button(btn_frame, text="ð  Limpiar",
+        ttk.Button(btn_frame, text="🗑  Limpiar",
                    command=self._csat_limpiar).pack(side="left", padx=4)
         self._csat_btn_abrir_conc = ttk.Button(
-            btn_frame, text="ð  Abrir ConciliaciÃ³n",
+            btn_frame, text="📂  Abrir Conciliación",
             command=lambda: self._csat_abrir_archivo("conc"), state="disabled")
         self._csat_btn_abrir_conc.pack(side="left", padx=4)
         self._csat_btn_abrir_xl = ttk.Button(
-            btn_frame, text="ð  Abrir Excel con UUID",
+            btn_frame, text="📄  Abrir Excel con UUID",
             command=lambda: self._csat_abrir_archivo("xl"), state="disabled")
         self._csat_btn_abrir_xl.pack(side="left", padx=4)
         self._csat_out_paths = {}
 
-        # ââ Log / resultado âââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Log / resultado ───────────────────────────────────────────────────
         log_frame = ttk.Frame(tab, style="Tarjeta.TFrame")
         log_frame.pack(fill="both", expand=True, padx=12, pady=(4, 12))
 
-        tk.Label(log_frame, text="Resultado de conciliaciÃ³n:",
+        tk.Label(log_frame, text="Resultado de conciliación:",
                  bg=COLOR_TARJETA, fg=COLOR_TEXTO,
                  font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=8, pady=(8, 2))
 
@@ -8207,7 +8298,7 @@ class WorkspaceWindow(tk.Toplevel):
                 subprocess.Popen(["xdg-open", p])
         else:
             from tkinter import messagebox as mb
-            mb.showinfo("No disponible", "Primero genera la conciliaciÃ³n.")
+            mb.showinfo("No disponible", "Primero genera la conciliación.")
 
     def _csat_limpiar(self):
         self._csat_out_paths = {}
@@ -8234,7 +8325,7 @@ class WorkspaceWindow(tk.Toplevel):
             filetypes=[("Excel", "*.xlsx *.xls"), ("Todos", "*.*")])
         if p:
             self._csat_excel_path.set(p)
-            self._csat_log_write(f"ð Excel cargado: {p}", "ok")
+            self._csat_log_write(f"📄 Excel cargado: {p}", "ok")
 
     def _csat_cargar_xmls(self):
         from tkinter import filedialog
@@ -8249,9 +8340,9 @@ class WorkspaceWindow(tk.Toplevel):
             self._csat_xml_paths = list(paths)
             n = len(paths)
             self._csat_xml_lbl.set(f"{n} XML{'s' if n>1 else ''} cargado{'s' if n>1 else ''}")
-            self._csat_log_write(f"ð {n} XML(s) cargado(s):", "ok")
+            self._csat_log_write(f"📑 {n} XML(s) cargado(s):", "ok")
             for p in paths:
-                self._csat_log_write(f"   â¢ {os.path.basename(p)}", "neutral")
+                self._csat_log_write(f"   • {os.path.basename(p)}", "neutral")
 
     def _csat_generar(self):
         import threading
@@ -8273,7 +8364,7 @@ class WorkspaceWindow(tk.Toplevel):
             self._csat_procesar_inner(xl_path, xml_paths)
         except Exception as _ex:
             import traceback
-            self._csat_log_write("\nâ ERROR INESPERADO:\n" + traceback.format_exc(), "err")
+            self._csat_log_write("\n✘ ERROR INESPERADO:\n" + traceback.format_exc(), "err")
 
     def _csat_procesar_inner(self, xl_path, xml_paths):
         import xml.etree.ElementTree as ET
@@ -8286,14 +8377,14 @@ class WorkspaceWindow(tk.Toplevel):
         self._csat_log.config(state="disabled")
 
         self._csat_log_write("=" * 72, "hdr")
-        self._csat_log_write("  CONCILIACIÃN CONTROL DE DESPACHO vs SAT (CFDI)", "hdr")
+        self._csat_log_write("  CONCILIACIÓN CONTROL DE DESPACHO vs SAT (CFDI)", "hdr")
         self._csat_log_write("=" * 72, "hdr")
 
-        # ââ 1. Parsear XMLs âââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── 1. Parsear XMLs ───────────────────────────────────────────────────
         NS = {"cfdi": "http://www.sat.gob.mx/cfd/4",
               "tfd":  "http://www.sat.gob.mx/TimbreFiscalDigital"}
         xmls_data = []
-        self._csat_log_write("\nð Leyendo XMLs...", "hdr")
+        self._csat_log_write("\n📑 Leyendo XMLs...", "hdr")
         for xp in xml_paths:
             try:
                 root = ET.parse(xp).getroot()
@@ -8321,17 +8412,17 @@ class WorkspaceWindow(tk.Toplevel):
                     "archivo":   os.path.basename(xp),
                 })
             except Exception as e:
-                self._csat_log_write(f"   â {os.path.basename(xp)}: {e}", "err")
+                self._csat_log_write(f"   ✘ {os.path.basename(xp)}: {e}", "err")
 
-        self._csat_log_write(f"   â {len(xmls_data)} XMLs leÃ­dos correctamente", "ok")
+        self._csat_log_write(f"   ✔ {len(xmls_data)} XMLs leídos correctamente", "ok")
         if not xmls_data:
-            self._csat_log_write("\nâ Sin XMLs vÃ¡lidos.", "err"); return
+            self._csat_log_write("\n✘ Sin XMLs válidos.", "err"); return
 
-        # ââ 2. Leer Excel â detectar columna FolioFiscal ââââââââââââââââââââââ
-        self._csat_log_write("\nð Leyendo Excel...", "hdr")
+        # ── 2. Leer Excel — detectar columna FolioFiscal ──────────────────────
+        self._csat_log_write("\n📄 Leyendo Excel...", "hdr")
         try:
             is_xls = xl_path.lower().endswith(".xls")
-            folio_col_idx = None   # Ã­ndice 0-based de la col FolioFiscal
+            folio_col_idx = None   # índice 0-based de la col FolioFiscal
             excel_rows = []        # lista de dicts por fila
 
             if is_xls:
@@ -8355,11 +8446,11 @@ class WorkspaceWindow(tk.Toplevel):
                         hdr_row = ri
                         folio_col_idx = matches[0]
                         self._csat_log_write(
-                            f"   â Columna FolioFiscal encontrada: col {folio_col_idx+1} "
+                            f"   ✔ Columna FolioFiscal encontrada: col {folio_col_idx+1} "
                             f"('{sht.cell_value(ri, folio_col_idx)}')", "ok")
                         break
                 if folio_col_idx is None:
-                    self._csat_log_write("   â No se encontrÃ³ columna FolioFiscal en el Excel", "err"); return
+                    self._csat_log_write("   ✘ No se encontró columna FolioFiscal en el Excel", "err"); return
                 # Leer filas de datos
                 for ri in range(hdr_row+1, sht.nrows):
                     uuid_xl = str(sht.cell_value(ri, folio_col_idx)).strip().upper()
@@ -8386,11 +8477,11 @@ class WorkspaceWindow(tk.Toplevel):
                             folio_col_idx = ci - 1   # 0-based
                             hdr_row_xl    = ri
                             self._csat_log_write(
-                                f"   â Columna FolioFiscal: col {ci} ('{v}')", "ok")
+                                f"   ✔ Columna FolioFiscal: col {ci} ('{v}')", "ok")
                             break
                     if folio_col_idx is not None: break
                 if folio_col_idx is None:
-                    self._csat_log_write("   â No se encontrÃ³ columna FolioFiscal", "err"); return
+                    self._csat_log_write("   ✘ No se encontró columna FolioFiscal", "err"); return
                 # Pre-calcular col de importe UNA SOLA VEZ
                 imp_col_idx = None
                 for ci, cell in enumerate(ws_r[hdr_row_xl]):
@@ -8406,23 +8497,23 @@ class WorkspaceWindow(tk.Toplevel):
                         except: pass
                     excel_rows.append({"uuid": uuid_xl, "importe": importe})
 
-            # Ãndice UUID â lista de importes en Excel
+            # Índice UUID → lista de importes en Excel
             excel_idx = {}
             for r in excel_rows:
                 excel_idx.setdefault(r["uuid"], []).append(r["importe"])
-            self._csat_log_write(f"   â {len(excel_rows)} filas leÃ­das  |  {len(excel_idx)} UUIDs Ãºnicos en Excel", "ok")
+            self._csat_log_write(f"   ✔ {len(excel_rows)} filas leídas  |  {len(excel_idx)} UUIDs únicos en Excel", "ok")
 
         except Exception as e:
             import traceback
-            self._csat_log_write(f"\nâ Error leyendo Excel: {e}", "err")
+            self._csat_log_write(f"\n✘ Error leyendo Excel: {e}", "err")
             self._csat_log_write(traceback.format_exc(), "err"); return
 
-        # ââ 3. Generar reporte de conciliaciÃ³n ââââââââââââââââââââââââââââââââ
-        self._csat_log_write("\nð Conciliando...", "hdr")
+        # ── 3. Generar reporte de conciliación ────────────────────────────────
+        self._csat_log_write("\n📊 Conciliando...", "hdr")
 
         wb3  = Workbook()
         ws3  = wb3.active
-        ws3.title = "ConciliaciÃ³n UUID"
+        ws3.title = "Conciliación UUID"
         ws3.sheet_view.showGridLines = False
 
         AZUL="1E3A5F"; AZUL2="2E75B6"; AZUL3="D6E4F0"
@@ -8440,7 +8531,7 @@ class WorkspaceWindow(tk.Toplevel):
             if nf: cell.number_format=nf
 
         ws3.merge_cells("A1:L1")
-        cx(ws3["A1"],"CONCILIACIÃN  CONTROL DE DESPACHO  vs  SAT (CFDI/XML)",
+        cx(ws3["A1"],"CONCILIACIÓN  CONTROL DE DESPACHO  vs  SAT (CFDI/XML)",
            bg=AZUL,fg="FFFFFF",bold=True,sz=13,align="center",border=False)
         ws3.row_dimensions[1].height=30
         ws3.merge_cells("A2:L2")
@@ -8450,9 +8541,9 @@ class WorkspaceWindow(tk.Toplevel):
         ws3.row_dimensions[2].height=18
 
         HDRS=[
-            ("No.",4),("Folio Fiscal\n(UUID â XML)",42),
-            ("Folio Fiscal\n(UIDD â Excel)",42),
-            ("Â¿Coincide?",12),("Fecha",12),
+            ("No.",4),("Folio Fiscal\n(UUID — XML)",42),
+            ("Folio Fiscal\n(UIDD — Excel)",42),
+            ("¿Coincide?",12),("Fecha",12),
             ("Receptor XML",28),("Concepto",26),
             ("SubTotal\nXML",14),("IVA\nXML",12),("Total\nXML",14),
             ("Importe\nExcel",14),("Diferencia",14),("Estado",14),
@@ -8474,10 +8565,10 @@ class WorkspaceWindow(tk.Toplevel):
             imp_xl= sum(excel_idx[uuid]) if found else 0
             diff  = imp_xl - x["total"]
             m_bg  = VERDE if found else ROJO
-            m_txt = "â  SÃ" if found else "â  NO"
+            m_txt = "✔  SÍ" if found else "✘  NO"
             d_bg  = VERDE if abs(diff)<0.02 else (AMBAR if abs(diff)<100 else ROJO)
-            est   = "â Conciliado" if found and abs(diff)<0.02 else                     ("â  Dif. menor" if found and abs(diff)<100 else                     ("â  Dif. mayor" if found else "â No encontrado"))
-            est_bg= VERDE if "Conciliado" in est else (AMBAR if "â " in est else ROJO)
+            est   = "✔ Conciliado" if found and abs(diff)<0.02 else                     ("⚠ Dif. menor" if found and abs(diff)<100 else                     ("⚠ Dif. mayor" if found else "✘ No encontrado"))
+            est_bg= VERDE if "Conciliado" in est else (AMBAR if "⚠" in est else ROJO)
             if found: ok_count += 1
 
             row_data=[
@@ -8496,7 +8587,7 @@ class WorkspaceWindow(tk.Toplevel):
 
             tag = "ok" if found else "err"
             self._csat_log_write(
-                f"{i-4:<5}{x['fecha']:<12}{'â' if found else 'â':<7}"
+                f"{i-4:<5}{x['fecha']:<12}{'✔' if found else '✘':<7}"
                 f"${x['total']:>11,.2f}  ${imp_xl:>11,.2f}  ${diff:>10,.2f}", tag)
 
         # Fila totales
@@ -8533,20 +8624,20 @@ class WorkspaceWindow(tk.Toplevel):
             try:
                 wb3.save(out_conc)
             except PermissionError:
-                # Ãltimo recurso: carpeta temporal del sistema
+                # Último recurso: carpeta temporal del sistema
                 out_conc = os.path.join(tempfile.gettempdir(), "Conciliacion_DespachoVsSAT.xlsx")
                 wb3.save(out_conc)
             self._csat_log_write(
-                f"   â¹ Sin permisos en carpeta origen â guardado en: {out_conc}", "neutral")
+                f"   ℹ Sin permisos en carpeta origen — guardado en: {out_conc}", "neutral")
         xl_out = xl_path
 
         total_xml = sum(x["total"] for x in xmls_data)
         self._csat_log_write("\n"+"="*72,"hdr")
         self._csat_log_write(f"  XMLs procesados   : {len(xmls_data)}","ok")
-        self._csat_log_write(f"  Encontrados       : {ok_count} â","ok")
-        self._csat_log_write(f"  No encontrados    : {len(xmls_data)-ok_count} â","err")
+        self._csat_log_write(f"  Encontrados       : {ok_count} ✔","ok")
+        self._csat_log_write(f"  No encontrados    : {len(xmls_data)-ok_count} ✘","err")
         self._csat_log_write(f"  Total XMLs        : ${total_xml:,.2f}","ok")
-        self._csat_log_write(f"\nð¾ {out_conc}","ok")
+        self._csat_log_write(f"\n💾 {out_conc}","ok")
         self._csat_log_write("="*72,"hdr")
         self._csat_out_paths = {"conc": out_conc, "xl": xl_out}
         try:
@@ -8556,13 +8647,13 @@ class WorkspaceWindow(tk.Toplevel):
             pass
 
 
-        # ââ Parsear XMLs ââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Parsear XMLs ──────────────────────────────────────────────────────
         NS = {
             "cfdi": "http://www.sat.gob.mx/cfd/4",
             "tfd":  "http://www.sat.gob.mx/TimbreFiscalDigital",
         }
         xmls_data = []
-        self._csat_log_write("\nð Leyendo XMLs...", "hdr")
+        self._csat_log_write("\n📑 Leyendo XMLs...", "hdr")
         for xp in xml_paths:
             try:
                 tree = ET.parse(xp)
@@ -8599,16 +8690,16 @@ class WorkspaceWindow(tk.Toplevel):
                     "concepto": desc, "archivo": os.path.basename(xp),
                 })
                 self._csat_log_write(
-                    f"   â {os.path.basename(xp):40s} UUID: {uuid[:18]}...  ${total:,.2f}", "ok")
+                    f"   ✔ {os.path.basename(xp):40s} UUID: {uuid[:18]}...  ${total:,.2f}", "ok")
             except Exception as e:
-                self._csat_log_write(f"   â Error en {os.path.basename(xp)}: {e}", "err")
+                self._csat_log_write(f"   ✘ Error en {os.path.basename(xp)}: {e}", "err")
 
         if not xmls_data:
-            self._csat_log_write("\nâ No se pudo leer ningÃºn XML.", "err")
+            self._csat_log_write("\n✘ No se pudo leer ningún XML.", "err")
             return
 
-        # ââ Leer Excel (.xls o .xlsx) y llenar UIDD âââââââââââââââââââââââââ
-        self._csat_log_write("\nð Leyendo reporte Excel...", "hdr")
+        # ── Leer Excel (.xls o .xlsx) y llenar UIDD ─────────────────────────
+        self._csat_log_write("\n📄 Leyendo reporte Excel...", "hdr")
         try:
             is_xls = xl_path.lower().endswith(".xls")
             if is_xls:
@@ -8616,14 +8707,14 @@ class WorkspaceWindow(tk.Toplevel):
                     import xlrd as _xlrd
                 except ImportError:
                     import subprocess, sys
-                    self._csat_log_write("   â¹ Instalando xlrd...", "neutral")
+                    self._csat_log_write("   ℹ Instalando xlrd...", "neutral")
                     subprocess.check_call([sys.executable, "-m", "pip", "install", "xlrd"],
                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     import xlrd as _xlrd
                 _xls_book = _xlrd.open_workbook(xl_path)
                 _xls_sht  = _xls_book.sheet_by_index(0)
                 # Leer datos directamente desde xlrd
-                fecha_data = {}  # fecha â {total_b2, row_idx}
+                fecha_data = {}  # fecha → {total_b2, row_idx}
                 for ri in range(3, _xls_sht.nrows):  # fila 4+ (0-indexed=3)
                     tipo = _xls_sht.cell_value(ri, 0)
                     if str(tipo).strip().upper() != 'D':
@@ -8663,29 +8754,29 @@ class WorkspaceWindow(tk.Toplevel):
                         total_b2 = fecha_data[fecha]["total_b2"]
                         reporte[fecha] = {"uuid_excel": x["uuid"], "total_b2": total_b2}
                         self._csat_log_write(
-                            f"   â Fecha {fecha}: UIDD actualizado  |  Total B2: ${total_b2:,.2f}", "ok")
+                            f"   ✔ Fecha {fecha}: UIDD actualizado  |  Total B2: ${total_b2:,.2f}", "ok")
                     else:
                         reporte[fecha] = {"uuid_excel": "", "total_b2": 0}
-                        self._csat_log_write(f"   â  Fecha {fecha}: no encontrada en Excel", "err")
+                        self._csat_log_write(f"   ⚠ Fecha {fecha}: no encontrada en Excel", "err")
 
                 xl_out = os.path.join(os.path.dirname(xl_path),
                                       "control_despachos_con_uuid.xlsx")
                 _wb_out.save(xl_out)
 
-            self._csat_log_write(f"\nð¾ Excel actualizado: {os.path.basename(xl_out)}", "ok")
+            self._csat_log_write(f"\n💾 Excel actualizado: {os.path.basename(xl_out)}", "ok")
 
         except Exception as e:
-            self._csat_log_write(f"\nâ Error leyendo Excel: {e}", "err")
+            self._csat_log_write(f"\n✘ Error leyendo Excel: {e}", "err")
             import traceback
             self._csat_log_write(traceback.format_exc(), "err")
             return
 
-        # ââ Generar reporte de conciliaciÃ³n âââââââââââââââââââââââââââââââââââ
-        self._csat_log_write("\nð Generando reporte de conciliaciÃ³n...", "hdr")
+        # ── Generar reporte de conciliación ───────────────────────────────────
+        self._csat_log_write("\n📊 Generando reporte de conciliación...", "hdr")
 
         wb3  = Workbook()
         ws3  = wb3.active
-        ws3.title = "ConciliaciÃ³n UUID"
+        ws3.title = "Conciliación UUID"
         ws3.sheet_view.showGridLines = False
 
         AZUL="1E3A5F"; AZUL2="2E75B6"; AZUL3="D6E4F0"
@@ -8703,7 +8794,7 @@ class WorkspaceWindow(tk.Toplevel):
             if nf: cell.number_format=nf
 
         ws3.merge_cells("A1:K1")
-        cx(ws3["A1"],"CONCILIACIÃN  CONTROL DE DESPACHO  vs  SAT (CFDI/XML)",
+        cx(ws3["A1"],"CONCILIACIÓN  CONTROL DE DESPACHO  vs  SAT (CFDI/XML)",
            bg=AZUL,fg="FFFFFF",bold=True,sz=13,align="center",border=False)
         ws3.row_dimensions[1].height=30
 
@@ -8714,9 +8805,9 @@ class WorkspaceWindow(tk.Toplevel):
         ws3.row_dimensions[2].height=18
 
         HDRS=[
-            ("No.",4),("Folio Fiscal\n(UUID â XML)",42),
-            ("Folio Fiscal\n(UIDD â Excel)",42),
-            ("Â¿Coincide?",13),("Fecha",12),
+            ("No.",4),("Folio Fiscal\n(UUID — XML)",42),
+            ("Folio Fiscal\n(UIDD — Excel)",42),
+            ("¿Coincide?",13),("Fecha",12),
             ("Receptor XML",26),("Concepto",28),
             ("SubTotal XML",14),("IVA XML",12),
             ("Total XML",14),("Total B2 Excel",16),("Diferencia",14),
@@ -8737,15 +8828,15 @@ class WorkspaceWindow(tk.Toplevel):
             imp_xl= sum(excel_idx[uuid]) if found else 0
             diff  = imp_xl - x["total"]
             m_bg  = VERDE if found else ROJO
-            m_txt = "â  SÃ" if found else "â  NO"
+            m_txt = "✔  SÍ" if found else "✘  NO"
             d_bg  = VERDE if abs(diff)<0.02 else (AMBAR if abs(diff)<100 else ROJO)
-            est   = "â Conciliado" if found and abs(diff)<0.02 else \
-                    ("â  Dif.menor"  if found and abs(diff)<100  else \
-                    ("â  Dif.mayor"  if found else "â No encontrado"))
-            est_bg= VERDE if "Conciliado" in est else (AMBAR if "â " in est else ROJO)
+            est   = "✔ Conciliado" if found and abs(diff)<0.02 else \
+                    ("⚠ Dif.menor"  if found and abs(diff)<100  else \
+                    ("⚠ Dif.mayor"  if found else "✘ No encontrado"))
+            est_bg= VERDE if "Conciliado" in est else (AMBAR if "⚠" in est else ROJO)
             if found: ok_count += 1
 
-            uuid_xl_val = uuid if found else "â"
+            uuid_xl_val = uuid if found else "—"
             row_data=[
                 (i-4,bg,"center",None),(uuid,bg,"left",None),
                 (uuid_xl_val,m_bg,"left",None),
@@ -8762,7 +8853,7 @@ class WorkspaceWindow(tk.Toplevel):
             ws3.row_dimensions[i].height=20
             tag = "ok" if found else "err"
             self._csat_log_write(
-                f"{i-4:<5}{x['fecha']:<12}{'â' if found else 'â':<7}"
+                f"{i-4:<5}{x['fecha']:<12}{'✔' if found else '✘':<7}"
                 f"${x['total']:>11,.2f}  ${imp_xl:>11,.2f}  ${diff:>10,.2f}", tag)
 
         # Fila totales
@@ -8797,25 +8888,25 @@ class WorkspaceWindow(tk.Toplevel):
             except PermissionError:
                 out_conc = os.path.join(tempfile.gettempdir(),"Conciliacion_DespachoVsSAT.xlsx")
                 wb3.save(out_conc)
-            self._csat_log_write(f"   â¹ Guardado en: {out_conc}", "neutral")
+            self._csat_log_write(f"   ℹ Guardado en: {out_conc}", "neutral")
 
 
         total_xml = sum(x["total"] for x in xmls_data)
         self._csat_log_write("\n" + "=" * 70, "hdr")
         self._csat_log_write(f"  XMLs procesados : {len(xmls_data)}", "ok")
         self._csat_log_write(f"  Total XMLs      : ${total_xml:,.2f}", "ok")
-        self._csat_log_write(f"\nð¾ ConciliaciÃ³n guardada en:\n   {out_conc}", "ok")
+        self._csat_log_write(f"\n💾 Conciliación guardada en:\n   {out_conc}", "ok")
         self._csat_log_write("=" * 70, "hdr")
 
     def _tab_configuracion(self, nb):
         tab = ttk.Frame(nb)
-        nb.add(tab, text="  â ConfiguraciÃ³n  ")
+        nb.add(tab, text="  ⚙ Configuración  ")
 
         card = ttk.Frame(tab, style="Tarjeta.TFrame")
         card.pack(fill="x", padx=12, pady=12)
         card.columnconfigure(1, weight=1)
 
-        ttk.Label(card, text="â  Opciones generales", style="Encabezado.TLabel").grid(
+        ttk.Label(card, text="⚙  Opciones generales", style="Encabezado.TLabel").grid(
             row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 8))
 
         # Carpeta de salida personalizada
@@ -8825,7 +8916,7 @@ class WorkspaceWindow(tk.Toplevel):
         ttk.Button(card, text="Elegir...",
                    command=self._elegir_salida).grid(row=1, column=2, padx=6)
         ttk.Label(card,
-            text="  (si vacÃ­o, se usa 'resultados/' dentro de la carpeta de trabajo)",
+            text="  (si vacío, se usa 'resultados/' dentro de la carpeta de trabajo)",
             style="Tarjeta.TLabel", font=("Segoe UI", 8),
         ).grid(row=2, column=1, columnspan=2, sticky="w", padx=6)
 
@@ -8836,19 +8927,19 @@ class WorkspaceWindow(tk.Toplevel):
             row=4, column=0, sticky="w", padx=12, pady=4)
         ttk.Entry(card, textvariable=self.prefijo_salida, width=30).grid(row=4, column=1, sticky="w", padx=6)
         ttk.Label(card,
-            text="  Ej: 'MAYO2026_' â archivos como MAYO2026_Nomina_...",
+            text="  Ej: 'MAYO2026_' → archivos como MAYO2026_Nomina_...",
             style="Tarjeta.TLabel", font=("Segoe UI", 8),
         ).grid(row=5, column=1, columnspan=2, sticky="w", padx=6)
 
         ttk.Separator(card, orient="horizontal").grid(row=6, column=0, columnspan=3, sticky="ew", padx=12, pady=10)
 
         # Info del sistema
-        ttk.Label(card, text="InformaciÃ³n del sistema:", style="Tarjeta.TLabel", width=24).grid(
+        ttk.Label(card, text="Información del sistema:", style="Tarjeta.TLabel", width=24).grid(
             row=7, column=0, sticky="nw", padx=12, pady=4)
 
         info_lines = [
             f"Python: {sys.version.split()[0]}",
-            f"Motor contable: {'cargado â' if cn else 'NO encontrado â'}",
+            f"Motor contable: {'cargado ✓' if cn else 'NO encontrado ✗'}",
             f"Carpeta actual: {os.getcwd()}",
         ]
         info_txt = tk.Text(card, height=4, width=60,
@@ -8859,19 +8950,19 @@ class WorkspaceWindow(tk.Toplevel):
         info_txt.config(state="disabled")
         info_txt.grid(row=7, column=1, columnspan=2, sticky="w", padx=6, pady=4)
 
-        ttk.Button(card, text="ð¾  Aplicar configuraciÃ³n",
-                   command=lambda: self._log("ConfiguraciÃ³n guardada.", ok=True)).grid(
+        ttk.Button(card, text="💾  Aplicar configuración",
+                   command=lambda: self._log("Configuración guardada.", ok=True)).grid(
             row=8, column=0, columnspan=3, padx=12, pady=12)
 
     # ---------------------------------------------------------------- #
     # PANEL DE LOG (compartido)
     # ---------------------------------------------------------------- #
     def _panel_log(self):
-        # Contenedor raÃ­z empacado al fondo â se reserva ANTES del notebook
+        # Contenedor raíz empacado al fondo — se reserva ANTES del notebook
         log_outer = tk.Frame(self._content_frame, bg=COLOR_FONDO)
         log_outer.pack(side="bottom", fill="x")
 
-        ttk.Label(log_outer, text="ð Registro de actividad:", style="Seccion.TLabel").pack(
+        ttk.Label(log_outer, text="📝 Registro de actividad:", style="Seccion.TLabel").pack(
             anchor="w", padx=14, pady=(4, 2))
         log_frame = tk.Frame(log_outer, bg="#0D1117")
         log_frame.pack(fill="both", expand=False, padx=10, pady=(0, 4))
@@ -8892,7 +8983,7 @@ class WorkspaceWindow(tk.Toplevel):
 
         bottom = ttk.Frame(log_outer)
         bottom.pack(fill="x", padx=10, pady=(0, 6))
-        ttk.Button(bottom, text="ð  Limpiar log",
+        ttk.Button(bottom, text="🗑  Limpiar log",
                    command=self._limpiar_log).pack(side="left")
 
     # ================================================================ #
@@ -8927,12 +9018,12 @@ class WorkspaceWindow(tk.Toplevel):
         if r:
             self.salida_dir.set(r)
 
-    # ââ Elegir carpeta / catÃ¡logo independiente por mÃ³dulo âââââââââââ #
+    # ── Elegir carpeta / catálogo independiente por módulo ─────────── #
     def _elegir_carpeta_pagos(self):
         self.lift(); self.focus_force(); self.update()
         rutas = filedialog.askopenfilenames(
             parent=self,
-            title="Selecciona los PDFs de nÃ³mina",
+            title="Selecciona los PDFs de nómina",
             initialdir=self.carpeta_pagos.get() or os.getcwd(),
             filetypes=[("Archivos PDF", "*.pdf")],
         )
@@ -8954,13 +9045,13 @@ class WorkspaceWindow(tk.Toplevel):
         for path in sorted(rutas):
             categoria, descripcion = clasificar_pdf(path)
             rel = os.path.relpath(path, carpeta)
-            etiqueta = f"{rel}   â   {descripcion}"
+            etiqueta = f"{rel}   —   {descripcion}"
             if categoria in ("nomina", "complementos", "vacaciones"):
                 self.archivos_por_categoria[categoria][path] = descripcion
                 self.listboxes[categoria].insert("end", etiqueta)
                 self.listboxes[categoria].select_set("end")
             elif categoria != "prestamos":
-                no_reconocidos.append(f"{os.path.basename(path)} â {categoria}")
+                no_reconocidos.append(f"{os.path.basename(path)} → {categoria}")
                 self._log(f"  Sin clasificar: {os.path.basename(path)} ({categoria})")
 
         for key in ("nomina", "complementos", "vacaciones"):
@@ -8990,14 +9081,14 @@ class WorkspaceWindow(tk.Toplevel):
         if r:
             self.carpeta_prestamos.set(r)
 
-    # ââ Escaneo independiente: Pagos Bancarios âââââââââââââââââââââââ #
+    # ── Escaneo independiente: Pagos Bancarios ─────────────────────── #
     def _escanear_pagos(self):
         if cn is None:
             self._log("No puedo escanear: falta conciliacion_nomina.py.", error=True)
             return
         carpeta = self.carpeta_pagos.get()
         if not os.path.isdir(carpeta):
-            messagebox.showerror("Carpeta invÃ¡lida", "Elige una carpeta vÃ¡lida primero.")
+            messagebox.showerror("Carpeta inválida", "Elige una carpeta válida primero.")
             return
 
         # Limpiar listas de pagos (NO toca prestamos)
@@ -9025,7 +9116,7 @@ class WorkspaceWindow(tk.Toplevel):
             self._log(f"Tipos encontrados: {', '.join(ext_enc)}", error=True)
             return
         if not pdfs:
-            self._log("[Pagos] No encontrÃ© PDFs en esa carpeta.", error=True)
+            self._log("[Pagos] No encontré PDFs en esa carpeta.", error=True)
             return
 
         self._log(f"[Pagos] Escaneando {len(pdfs)} PDF(s)...")
@@ -9033,13 +9124,13 @@ class WorkspaceWindow(tk.Toplevel):
         for path in pdfs:
             categoria, descripcion = clasificar_pdf(path)
             rel = os.path.relpath(path, carpeta)
-            etiqueta = f"{rel}   â   {descripcion}"
+            etiqueta = f"{rel}   —   {descripcion}"
             if categoria in ("nomina", "complementos", "vacaciones"):
                 self.archivos_por_categoria[categoria][path] = descripcion
                 self.listboxes[categoria].insert("end", etiqueta)
                 self.listboxes[categoria].select_set("end")
             elif categoria != "prestamos":
-                no_reconocidos.append(f"{os.path.basename(path)} â {categoria}")
+                no_reconocidos.append(f"{os.path.basename(path)} → {categoria}")
                 self._log(f"  Sin clasificar: {os.path.basename(path)} ({categoria})")
 
         for key in ("nomina", "complementos", "vacaciones"):
@@ -9053,17 +9144,17 @@ class WorkspaceWindow(tk.Toplevel):
 
         self._log("[Pagos] Escaneo terminado.", ok=True)
 
-    # ââ Escaneo independiente: PrÃ©stamos âââââââââââââââââââââââââââââ #
+    # ── Escaneo independiente: Préstamos ───────────────────────────── #
     def _escanear_prestamos(self):
         if cn is None:
             self._log("No puedo escanear: falta conciliacion_nomina.py.", error=True)
             return
         carpeta = self.carpeta_prestamos.get()
         if not os.path.isdir(carpeta):
-            messagebox.showerror("Carpeta invÃ¡lida", "Elige una carpeta vÃ¡lida primero.")
+            messagebox.showerror("Carpeta inválida", "Elige una carpeta válida primero.")
             return
 
-        # Limpiar solo la lista de prÃ©stamos (NO toca pagos)
+        # Limpiar solo la lista de préstamos (NO toca pagos)
         if self.lb_prestamos:
             self.lb_prestamos.delete(0, "end")
         self.archivos_por_categoria["prestamos"] = {}
@@ -9075,28 +9166,28 @@ class WorkspaceWindow(tk.Toplevel):
                     pdfs.append(os.path.join(raiz, f))
         pdfs.sort()
 
-        self._log(f"[PrÃ©stamos] Carpeta: {carpeta}")
-        self._log(f"[PrÃ©stamos] PDFs encontrados: {len(pdfs)}")
+        self._log(f"[Préstamos] Carpeta: {carpeta}")
+        self._log(f"[Préstamos] PDFs encontrados: {len(pdfs)}")
 
         if not pdfs:
-            self._log("[PrÃ©stamos] No encontrÃ© PDFs en esa carpeta.", error=True)
+            self._log("[Préstamos] No encontré PDFs en esa carpeta.", error=True)
             return
 
-        self._log(f"[PrÃ©stamos] Escaneando {len(pdfs)} PDF(s)...")
+        self._log(f"[Préstamos] Escaneando {len(pdfs)} PDF(s)...")
         for path in pdfs:
             categoria, descripcion = clasificar_pdf(path)
             rel = os.path.relpath(path, carpeta)
-            etiqueta = f"{rel}   â   {descripcion}"
+            etiqueta = f"{rel}   —   {descripcion}"
             if categoria == "prestamos":
                 self.archivos_por_categoria["prestamos"][path] = descripcion
                 self.lb_prestamos.insert("end", etiqueta)
                 self.lb_prestamos.select_set("end")
             else:
-                self._log(f"  No es prÃ©stamo: {os.path.basename(path)} ({categoria})")
+                self._log(f"  No es préstamo: {os.path.basename(path)} ({categoria})")
 
         n = len(self.archivos_por_categoria["prestamos"])
-        self._log(f"  PrÃ©stamos: {n} archivo(s)")
-        self._log("[PrÃ©stamos] Escaneo terminado.", ok=True)
+        self._log(f"  Préstamos: {n} archivo(s)")
+        self._log("[Préstamos] Escaneo terminado.", ok=True)
 
     def _log(self, texto, error=False, ok=False):
         self.log_text.config(state="normal")
@@ -9121,7 +9212,7 @@ class WorkspaceWindow(tk.Toplevel):
         """Devuelve la carpeta de resultados.
 
         Prioridad:
-        1. Carpeta personalizada (campo Salida en ConfiguraciÃ³n) si existe.
+        1. Carpeta personalizada (campo Salida en Configuración) si existe.
         2. base_hint / carpeta seleccionada de PDFs si existe y no es sistema.
         3. Carpeta del script como respaldo final.
         """
@@ -9156,7 +9247,7 @@ class WorkspaceWindow(tk.Toplevel):
                 except PermissionError:
                     continue
 
-        # Ãltimo recurso: carpeta Documentos del usuario
+        # Último recurso: carpeta Documentos del usuario
         out = os.path.join(os.path.expanduser("~"), "Documents", "resultados_nomina")
         os.makedirs(out, exist_ok=True)
         return out
@@ -9182,7 +9273,7 @@ class WorkspaceWindow(tk.Toplevel):
             return
         carpeta = self.carpeta.get()
         if not os.path.isdir(carpeta):
-            messagebox.showerror("Carpeta invÃ¡lida", "Elige una carpeta vÃ¡lida primero.")
+            messagebox.showerror("Carpeta inválida", "Elige una carpeta válida primero.")
             return
 
         # Limpiar todo
@@ -9194,7 +9285,7 @@ class WorkspaceWindow(tk.Toplevel):
             "nomina": {}, "complementos": {}, "vacaciones": {}, "prestamos": {}
         }
 
-        # Buscar PDFs en carpeta raÃ­z Y subcarpetas
+        # Buscar PDFs en carpeta raíz Y subcarpetas
         pdfs = []
         for raiz, dirs, archivos in os.walk(carpeta):
             for f in sorted(archivos):
@@ -9203,7 +9294,7 @@ class WorkspaceWindow(tk.Toplevel):
         pdfs.sort()
 
 
-        # Reportar quÃ© hay en la carpeta para diagnÃ³stico
+        # Reportar qué hay en la carpeta para diagnóstico
         todos = []
         for raiz, dirs, archivos in os.walk(carpeta):
             for f in archivos:
@@ -9213,10 +9304,10 @@ class WorkspaceWindow(tk.Toplevel):
         if todos and not pdfs:
             ext_encontradas = list({os.path.splitext(f)[1].lower() for f in todos})
             self._log(f"Tipos de archivo encontrados: {', '.join(ext_encontradas)}", error=True)
-            self._log("Esta pestaÃ±a procesa PDFs bancarios. Â¿Los archivos son XML? Usa la pestaÃ±a 'ProvisiÃ³n de NÃ³mina'.", error=True)
+            self._log("Esta pestaña procesa PDFs bancarios. ¿Los archivos son XML? Usa la pestaña 'Provisión de Nómina'.", error=True)
             return
         if not pdfs:
-            self._log("No encontrÃ© ningÃºn PDF en esa carpeta ni subcarpetas.", error=True)
+            self._log("No encontré ningún PDF en esa carpeta ni subcarpetas.", error=True)
             return
 
         self._log(f"Escaneando {len(pdfs)} PDF(s)...")
@@ -9226,7 +9317,7 @@ class WorkspaceWindow(tk.Toplevel):
             categoria, descripcion = clasificar_pdf(path)
             nombre = os.path.basename(path)
             rel = os.path.relpath(path, carpeta)
-            etiqueta = f"{rel}   â   {descripcion}"
+            etiqueta = f"{rel}   —   {descripcion}"
 
             if categoria in self.archivos_por_categoria:
                 self.archivos_por_categoria[categoria][path] = descripcion
@@ -9237,7 +9328,7 @@ class WorkspaceWindow(tk.Toplevel):
                     self.listboxes[categoria].insert("end", etiqueta)
                     self.listboxes[categoria].select_set("end")
             else:
-                no_reconocidos.append(f"{nombre} â {categoria}")
+                no_reconocidos.append(f"{nombre} → {categoria}")
                 self._log(f"  Sin clasificar: {nombre} ({categoria})")
 
         for key in ("nomina", "complementos", "vacaciones", "prestamos"):
@@ -9267,7 +9358,7 @@ class WorkspaceWindow(tk.Toplevel):
             return
         archivos = self._seleccionados(categoria)
         if not archivos:
-            messagebox.showwarning("Sin selecciÃ³n", f"No hay archivos seleccionados en '{CATEGORIA_LABELS.get(categoria, categoria)}'.")
+            messagebox.showwarning("Sin selección", f"No hay archivos seleccionados en '{CATEGORIA_LABELS.get(categoria, categoria)}'.")
             return
         try:
             self._conc_pb_frame.grid()
@@ -9323,7 +9414,7 @@ class WorkspaceWindow(tk.Toplevel):
             if _pb: self.after(0, self._pb_error, _pb, _lbl)
 
     def _cargar_catalogo_hilo(self):
-        """Carga el catÃ¡logo de cuentas.
+        """Carga el catálogo de cuentas.
         Devuelve {"empleados": {nombre_norm: cuenta}, "prestamos": {nombre_norm: cuenta}}.
         Usa load_poliza() de conciliacion_nomina para leer ambas tablas."""
         catalogo = {"empleados": {}, "prestamos": {}}
@@ -9339,9 +9430,9 @@ class WorkspaceWindow(tk.Toplevel):
             n_emp  = len(catalogo["empleados"])
             n_pres = len(catalogo["prestamos"])
             self.after(0, self._log,
-                       f"  CatÃ¡logo: {n_emp} empleado(s), {n_pres} prÃ©stamo(s) cargado(s).")
+                       f"  Catálogo: {n_emp} empleado(s), {n_pres} préstamo(s) cargado(s).")
         except Exception as _e:
-            self.after(0, self._log, f"  â  No se pudo leer CatÃ¡logo: {_e}", True)
+            self.after(0, self._log, f"  ⚠ No se pudo leer Catálogo: {_e}", True)
         return catalogo
 
     def _conc_cargar_visor(self, path):
@@ -9372,14 +9463,14 @@ class WorkspaceWindow(tk.Toplevel):
                 tv.insert("", "end", values=vals)
             self._log(f"  Vista previa: {min(len(all_rows)-1, 50)} fila(s).")
         except Exception as _e:
-            self._log(f"  â  Vista previa: error al leer Excel â {_e}", True)
+            self._log(f"  ⚠ Vista previa: error al leer Excel — {_e}", True)
             tv["columns"] = ["error"]
             tv.heading("error", text="No se pudo cargar la vista previa")
             tv.insert("", "end", values=(str(_e),))
 
-    # ââ Helpers genÃ©ricos de barra de progreso ââââââââââââââââââââââââ #
+    # ── Helpers genéricos de barra de progreso ──────────────────────── #
     def _pb_iniciar(self, bar=None, lbl=None):
-        """Inicia la barra global y la barra de mÃ³dulo (si se pasa)."""
+        """Inicia la barra global y la barra de módulo (si se pasa)."""
         try:
             # Barra global
             self._global_pb["value"] = 0
@@ -9388,7 +9479,7 @@ class WorkspaceWindow(tk.Toplevel):
         except Exception:
             pass
         try:
-            # Barra de mÃ³dulo (opcional)
+            # Barra de módulo (opcional)
             if bar is not None and bar is not getattr(self, "_global_pb", None):
                 bar["value"] = 0
                 if lbl:
@@ -9410,8 +9501,8 @@ class WorkspaceWindow(tk.Toplevel):
         except Exception:
             pass
 
-    def _pb_detener(self, bar=None, lbl=None, texto="â Listo"):
-        """Detiene animaciÃ³n y lleva al 100%."""
+    def _pb_detener(self, bar=None, lbl=None, texto="✓ Listo"):
+        """Detiene animación y lleva al 100%."""
         try:
             # Detener barra global
             if hasattr(self._global_pb, "_after_id") and self._global_pb._after_id:
@@ -9420,8 +9511,8 @@ class WorkspaceWindow(tk.Toplevel):
             self._global_pb["value"] = 100
             if isinstance(self._global_pb, FunkyProgressBar):
                 self._global_pb._draw()
-            self._global_pb_lbl.config(text="â Listo")
-            # Resetear a 0 despuÃ©s de 2 segundos
+            self._global_pb_lbl.config(text="✓ Listo")
+            # Resetear a 0 después de 2 segundos
             self.after(2000, self._pb_reset_global)
         except Exception:
             pass
@@ -9459,9 +9550,9 @@ class WorkspaceWindow(tk.Toplevel):
         except Exception:
             pass
 
-    # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    # MÃDULO â CONCILIACIÃN BANCO VS AUXILIAR
-    # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ══════════════════════════════════════════════════════════════════════
+    # MÓDULO — CONCILIACIÓN BANCO VS AUXILIAR
+    # ══════════════════════════════════════════════════════════════════════
     _CBA_ACENTO   = "#6B3FA0"
     _CBA_ACENTO_L = "#EDE7F6"
     _DEP_ACENTO   = "#1565C0"
@@ -9469,7 +9560,7 @@ class WorkspaceWindow(tk.Toplevel):
 
     def _tab_conc_banco_aux(self, nb):
         outer = ttk.Frame(nb)
-        nb.add(outer, text="  ð Banco vs Auxiliar  ")
+        nb.add(outer, text="  🔀 Banco vs Auxiliar  ")
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
 
@@ -9480,7 +9571,7 @@ class WorkspaceWindow(tk.Toplevel):
         self._cba_wb_name    = ""
         self._cba_wb_dir     = ""
 
-        # ââ Panel de controles ââââââââââââââââââââââââââââââââââââââââ
+        # ── Panel de controles ────────────────────────────────────────
         ctrl = tk.Frame(outer, bg=COLOR_FONDO)
         ctrl.grid(row=0, column=0, sticky="ew")
         ctrl.columnconfigure(0, weight=1)
@@ -9525,7 +9616,7 @@ class WorkspaceWindow(tk.Toplevel):
         btn_row.grid(row=2, column=0, sticky="ew", padx=16, pady=(4, 4))
         btn_row.columnconfigure(0, weight=1)
         self._cba_btn_gen = tk.Button(btn_row,
-            text="  â Generar Conciliacion",
+            text="  ⚙ Generar Conciliacion",
             bg=self._CBA_ACENTO, fg=COLOR_BLANCO,
             font=("Segoe UI", 10, "bold"), relief="flat",
             padx=16, pady=8, cursor="hand2",
@@ -9552,14 +9643,14 @@ class WorkspaceWindow(tk.Toplevel):
         self._cba_lbl_arch = tk.Label(tb, text="---", bg=COLOR_BLANCO,
             fg=self._CBA_ACENTO, font=("Segoe UI", 8, "bold"))
         self._cba_lbl_arch.pack(side="left", padx=(0, 10), pady=3)
-        self._cba_btn_guardar = ttk.Button(tb, text="ð¾ Guardar como",
+        self._cba_btn_guardar = ttk.Button(tb, text="💾 Guardar como",
             command=self._cba_guardar_como, state="disabled")
         self._cba_btn_guardar.pack(side="right", padx=(6, 2), pady=3)
-        self._cba_btn_abrir = ttk.Button(tb, text="ð Abrir en Excel",
+        self._cba_btn_abrir = ttk.Button(tb, text="📂 Abrir en Excel",
             command=self._cba_abrir, state="disabled")
         self._cba_btn_abrir.pack(side="right", padx=6, pady=3)
 
-        # ââ Area de trabajo âââââââââââââââââââââââââââââââââââââââââââ
+        # ── Area de trabajo ───────────────────────────────────────────
         ttk.Separator(outer, orient="horizontal").grid(
             row=0, column=0, sticky="sew")   # al fondo del row=0
 
@@ -9571,7 +9662,7 @@ class WorkspaceWindow(tk.Toplevel):
         # Header area de trabajo
         lbl_area = tk.Frame(work, bg=self._CBA_ACENTO)
         lbl_area.grid(row=0, column=0, columnspan=2, sticky="ew")
-        tk.Label(lbl_area, text="  Area de Trabajo  â  Vista previa",
+        tk.Label(lbl_area, text="  Area de Trabajo  —  Vista previa",
                  bg=self._CBA_ACENTO, fg=COLOR_BLANCO,
                  font=("Segoe UI", 9, "bold")).pack(side="left", pady=4)
         self._cba_lbl_resumen = tk.Label(lbl_area, text="",
@@ -9582,10 +9673,10 @@ class WorkspaceWindow(tk.Toplevel):
         leyenda_bar = tk.Frame(work, bg=COLOR_FONDO)
         leyenda_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(3, 1))
         for txt_l, bg_l, fg_l in [
-                ("â Deposito conciliado",  "#C8E6C9", "#1B5E20"),
-                ("â Retiro conciliado",    "#BBDEFB", "#1F3864"),
-                ("â No conciliado",        "#FFCDD2", "#B71C1C"),
-                ("â Solo en banco",        "#FFF9C4", "#7D5B00")]:
+                ("█ Deposito conciliado",  "#C8E6C9", "#1B5E20"),
+                ("█ Retiro conciliado",    "#BBDEFB", "#1F3864"),
+                ("█ No conciliado",        "#FFCDD2", "#B71C1C"),
+                ("█ Solo en banco",        "#FFF9C4", "#7D5B00")]:
             tk.Label(leyenda_bar, text=f"  {txt_l}  ",
                      bg=bg_l, fg=fg_l,
                      font=("Segoe UI", 8), relief="flat",
@@ -9667,10 +9758,13 @@ class WorkspaceWindow(tk.Toplevel):
                          args=(banco, aux), daemon=True).start()
 
     def _cba_hilo(self, ruta_banco, ruta_aux):
-        import re as _re, io as _io, os as _os
+        import re as _re, io as _io, os as _os, itertools as _it
+        from collections import defaultdict as _dd
+        from calendar import monthrange as _mr
         try:
             import openpyxl
             from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+            from openpyxl.utils import get_column_letter as _gcl
         except ImportError:
             self.after(0, self._log, "Falta openpyxl", True)
             self.after(0, self._pb_error, self._cba_pb, self._cba_pb_lbl)
@@ -9681,285 +9775,517 @@ class WorkspaceWindow(tk.Toplevel):
         def _log(msg, err=False):
             self.after(0, self._log, msg, err)
 
-        def _num(row, c):
-            v = row[c] if len(row) > c else None
-            return float(v) if isinstance(v, (int, float)) else None
+        def _to_date(v):
+            from datetime import date as _d, datetime as _dt
+            if v is None: return None
+            if isinstance(v, _dt): return v.date()
+            if isinstance(v, _d): return v
+            if isinstance(v, (int, float)):
+                try:
+                    from openpyxl.utils.datetime import from_excel
+                    return from_excel(v).date()
+                except: return None
+            s = str(v).strip()
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+                try: return _dt.strptime(s, fmt).date()
+                except: pass
+            return None
 
-        def _str(row, c):
-            v = row[c] if len(row) > c else None
-            return str(v) if v is not None else ""
+        def _to_float(v):
+            if v is None: return 0.0
+            if isinstance(v, (int, float)): return float(v)
+            try: return float(str(v).replace(",", "").replace("$", "").strip())
+            except: return 0.0
 
-        def _parse_client(dd, dp):
-            m = _re.search(r"CLIENTE\((.+?)\)#", dd)
-            if m: return m.group(1)
-            m2 = _re.search(r"\[P:\d+\](.+)", dd)
-            if m2: return m2.group(1).strip()
-            return dd.strip()[:60] or dp[:60]
+        def _detect_header(rows, keywords):
+            for i, row in enumerate(rows):
+                vals = [str(v).strip().lower() if v is not None else "" for v in row]
+                if all(kw in vals for kw in keywords):
+                    return i, {v: j for j, v in enumerate(vals) if v}
+            return None, {}
+
+        def _col(mapping, *cands):
+            for c in cands:
+                for k, v in mapping.items():
+                    if c in k: return v
+            return None
+
+        def fecha_ok(f1, f2):
+            """Fechas iguales o dentro de ±3 días."""
+            return abs((f1 - f2).days) <= 3
+
+        def _text_sim(a, b):
+            import difflib
+            if not a or not b: return 0.0
+            return difflib.SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
+
+        import itertools as _it
+        TOL1 = 0.05; TOL_N = 2.00; MAX_COMBO = 6
+        COMBO_MIN_PCT = 0.01   # cada entrada combo >= 1% del total banco
+        COMBO_SIM_MIN = 0.10   # al menos una entrada combo con >= 10% similitud desc
+        TOL_TEXT = 5.0         # Paso 3: tolerancia monto para match por texto
+        SIM_MIN  = 0.45        # Paso 3: similitud mínima descripción
+        MESES = {1:"ENERO",2:"FEBRERO",3:"MARZO",4:"ABRIL",5:"MAYO",6:"JUNIO",
+                 7:"JULIO",8:"AGOSTO",9:"SEPTIEMBRE",10:"OCTUBRE",11:"NOVIEMBRE",12:"DICIEMBRE"}
+
+        # ── Patrones comisiones bancarias ─────────────────────────────
+        _PAT_COM = [
+            r'\bCOMISION\b', r'\bCOMISIÓN\b', r'\bIVA COM\b',
+            r'COM TRANSACCIONE', r'COM SERV BBVA', r'EMISION LIBRAMIE',
+            r'COBRO INTERESES', r'\bMANTENIMIENTO\b', r'\bCUOTA ANUAL\b',
+            r'\bCARGO POR SERVICIO\b', r'\bSERVICIO DIGITAL\b', r'SERV BANCA INTERNET',
+            # BBVA — tasas de descuento terminales punto de venta
+            r'APLI TASA DE DES[C]? CREDITO', r'IVA TASA DE DESC CREDITO',
+            r'APLI TASA DE DES[C]? DEBITO', r'IVA TASA DE DESC DEBITO',
+            r'TERMINALES PUNTO DE VENTA',
+            # BBVA — comisiones ventas (AMEX, TDC nacional/internacional/puntos)
+            r'COM\.?\s*VTA[S]?\.?\s*NAL', r'COM\.?\s*VTA[S]?\.?\s*INTL',
+            r'COM\.?\s*VTA[S]?\.?\s*TDC', r'COM\s*VTA[S]?\s*PUNTOS\s*TDC',
+            r'COM\s*VTAS\s*TDC\s*INTER', r'PUNTOS\s*TDC\s*(BE|BBVA)',
+            # BBVA — contratación TPV adicional
+            r'CONTRATACI[OÓ]?N?-?TPV\s*ADICIONAL', r'IVA\s+CONTR-?TPV\s*ADICIONAL',
+            # Banorte — comisiones SPEI banca internet
+            r'TRANSFERENCIA\s*-\s*ENVIO.*SPEI.*BANCA POR INTERNET',
+            r'I\.V\.A\.\s+ORDEN DE PAGO SPEI',
+        ]
+        _PAT_MORA = [r'MORA SPEI', r'COMPENSACION POR RETRASO', r'COMP SPEI']
+        def _is_com(d):  return any(_re.search(p, str(d).upper()) for p in _PAT_COM)
+        def _is_mora(d): return any(_re.search(p, str(d).upper()) for p in _PAT_MORA)
+
+        def conciliar(banco_movs, aux_pool, monto_key):
+            libre = [dict(a) for a in aux_pool]
+            results = []; matched_idx = set()
+
+            # Paso 1 — exacto (±$0.05, fecha ±3 días)
+            for bi, banco in enumerate(banco_movs):
+                target = banco[monto_key]
+                for aux in libre:
+                    if aux["matched"] or not fecha_ok(banco["fecha"], aux["fecha"]): continue
+                    if abs(aux["monto"] - target) <= TOL1:
+                        results.append({"tipo": "EXACTO", "banco": banco,
+                                        "aux_entries": [aux], "diferencia": aux["monto"] - target})
+                        aux["matched"] = True; matched_idx.add(bi); break
+
+            # Paso 2 — combinado (N-a-1, ±$2.00, fecha ±3 días,
+            #           cada entrada >= 1% total, al menos una desc >= 10% similar)
+            libres_p2 = [a for a in libre if not a["matched"]]
+            for bi, banco in enumerate(banco_movs):
+                if bi in matched_idx: continue
+                target = banco[monto_key]
+                if target < 10: continue
+                min_m = max(1.0, target * COMBO_MIN_PCT)
+                desc_b = banco["desc"]
+                candidatos = [a for a in libres_p2
+                              if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"])
+                              and a["monto"] >= min_m
+                              and a["monto"] <= target + TOL_N]
+                found = False
+                for n in range(2, min(MAX_COMBO + 1, len(candidatos) + 1)):
+                    for combo in _it.combinations(candidatos, n):
+                        if abs(sum(c["monto"] for c in combo) - target) <= TOL_N:
+                            if max(_text_sim(desc_b, c["concepto"]) for c in combo) < COMBO_SIM_MIN:
+                                continue
+                            results.append({"tipo": f"COMBO({n})", "banco": banco,
+                                            "aux_entries": list(combo),
+                                            "diferencia": sum(c["monto"] for c in combo) - target})
+                            for c in combo: c["matched"] = True
+                            matched_idx.add(bi); found = True; break
+                    if found: break
+
+            # Paso 3 — similitud de texto (±$5.00, fecha ±3 días, sim >= 45%)
+            libres_p3 = [a for a in libre if not a["matched"]]
+            for bi, banco in enumerate(banco_movs):
+                if bi in matched_idx: continue
+                target = banco[monto_key]; desc_b = banco["desc"]
+                cands = [(a, _text_sim(desc_b, a["concepto"])) for a in libres_p3
+                         if not a["matched"] and fecha_ok(banco["fecha"], a["fecha"])
+                         and abs(a["monto"] - target) <= TOL_TEXT]
+                cands.sort(key=lambda x: -x[1])
+                for aux, sim in cands:
+                    if sim >= SIM_MIN:
+                        results.append({"tipo": f"TEXTO({sim:.0%})", "banco": banco,
+                                        "aux_entries": [aux], "diferencia": aux["monto"] - target})
+                        aux["matched"] = True; matched_idx.add(bi); break
+
+            sin_banco = [banco_movs[i] for i in range(len(banco_movs)) if i not in matched_idx]
+            sin_aux   = [a for a in libre if not a["matched"]]
+            return results, sin_banco, sin_aux
 
         try:
             _log(f"Banco:    {_os.path.basename(ruta_banco)}")
             _log(f"Auxiliar: {_os.path.basename(ruta_aux)}")
 
-            # ââ Leer Banco ââââââââââââââââââââââââââââââââââââââââââââ
+            # ── Leer Banco ────────────────────────────────────────────
             _log("Leyendo estado de cuenta bancario...")
             wb1 = openpyxl.load_workbook(ruta_banco, read_only=True, data_only=True)
-            ws1 = wb1.active
-            rows1 = list(ws1.iter_rows(values_only=True))
-            wb1.close()
-
-            # Detectar encabezado banco (sin limite de filas)
-            hdr_row = 1; col_f=0; col_d=1; col_dep=2; col_ret=3; col_sal=4
-            for i, row in enumerate(rows1):
-                vals = [str(v).strip().lower() if v else "" for v in row]
-                if "fecha" in vals:
-                    hdr_row = i + 1
-                    col_f   = vals.index("fecha")
-                    col_d   = next((j for j,v in enumerate(vals) if "desc" in v), 1)
-                    col_dep = next((j for j,v in enumerate(vals) if "dep"  in v), 2)
-                    col_ret = next((j for j,v in enumerate(vals) if "ret"  in v), 3)
-                    col_sal = next((j for j,v in enumerate(vals) if "saldo" in v), 4)
-                    break
-
-            bank = []
-            for row in rows1[hdr_row:]:
-                if len(row) <= col_f or row[col_f] is None: continue
-                bank.append({
-                    "fecha":    row[col_f],
-                    "desc":     _str(row, col_d),
-                    "deposito": _num(row, col_dep),
-                    "retiro":   _num(row, col_ret),
-                    "saldo":    _num(row, col_sal),
+            rows1 = list(wb1.active.iter_rows(values_only=True)); wb1.close()
+            hi1, mp1 = _detect_header(rows1, ["fecha"])
+            if hi1 is None: raise ValueError("No se encontró encabezado 'Fecha' en el banco.")
+            cf1  = _col(mp1, "fecha")
+            cd1  = _col(mp1, "desc", "concepto", "referencia", "movimiento")
+            cdep = _col(mp1, "dep", "abono", "crédito", "credito", "entrada", "depósito", "deposito")
+            cret = _col(mp1, "ret", "cargo", "débito", "debito", "salida", "retiro")
+            movs_banco = []
+            for row in rows1[hi1 + 1:]:
+                if not row or all(v is None for v in row): continue
+                f = _to_date(row[cf1] if cf1 is not None and cf1 < len(row) else None)
+                if f is None: continue
+                movs_banco.append({
+                    "fecha": f,
+                    "desc":  str(row[cd1] if cd1 is not None and cd1 < len(row) else "").strip(),
+                    "dep":   _to_float(row[cdep] if cdep is not None and cdep < len(row) else 0),
+                    "ret":   _to_float(row[cret] if cret is not None and cret < len(row) else 0),
                 })
-            deposits = [b for b in bank if b["deposito"] and b["deposito"] > 0]
-            retiros  = [b for b in bank if b["retiro"]   and b["retiro"]   > 0]
-            _log(f"Banco: {len(bank)} movimientos ({len(deposits)} dep, {len(retiros)} ret).")
+            movs_banco.sort(key=lambda x: x["fecha"])
+            _deps_all    = [m for m in movs_banco if m["dep"] > 0]
+            _rets_all    = [m for m in movs_banco if m["ret"] > 0]
+            com_entries  = [m for m in _rets_all if _is_com(m["desc"])]
+            mora_entries = [m for m in _deps_all if _is_mora(m["desc"])]
+            deps_banco   = [m for m in _deps_all if not _is_mora(m["desc"])]
+            rets_banco   = [m for m in _rets_all if not _is_com(m["desc"])]
+            _log(f"Banco: {len(movs_banco)} movimientos ({len(deps_banco)} depósitos, {len(rets_banco)} cargos, {len(com_entries)} comisiones, {len(mora_entries)} mora/SPEI).")
 
-            # ââ Leer Auxiliar âââââââââââââââââââââââââââââââââââââââââ
+            # ── Leer Auxiliar ─────────────────────────────────────────
             _log("Leyendo auxiliar contable...")
             wb2 = openpyxl.load_workbook(ruta_aux, read_only=True, data_only=True)
-            ws2 = wb2.active
-            rows2 = list(ws2.iter_rows(values_only=True))
-            wb2.close()
-
-            # Detectar encabezado auxiliar (sin limite de filas)
-            hdr2 = -1; cf=4; cp=3; cdet=7; cdp=8; ccargo=9; cabono=10
-            for i, row in enumerate(rows2):
-                vals = [str(v).strip().lower() if v else "" for v in row]
-                if "cargo" in vals and "fecha" in vals:
-                    hdr2   = i
-                    cf     = vals.index("fecha")
-                    ccargo = vals.index("cargo")
-                    cabono = next((j for j,v in enumerate(vals) if "abono"   in v), cabono)
-                    cp     = next((j for j,v in enumerate(vals) if "num" in v or "num. p" in v), cp)
-                    cdet   = next((j for j,v in enumerate(vals) if "detalle" in v), cdet)
-                    cdp    = next((j for j,v in enumerate(vals) if "desc" in v and j != cdet), cdp)
-                    break
-            data_start = hdr2 + 1 if hdr2 >= 0 else 0
-            _log(f"Auxiliar: encabezado en fila {hdr2+1 if hdr2>=0 else 'N/A'} | Fecha={cf} Cargo={ccargo} Abono={cabono}")
-
-            from datetime import datetime as _dt
+            rows2 = list(wb2.active.iter_rows(values_only=True)); wb2.close()
+            hi2, mp2 = _detect_header(rows2, ["cargo", "fecha"])
+            if hi2 is None: raise ValueError("No se encontró encabezado en el auxiliar.")
+            cf2 = _col(mp2, "fecha"); col_cargo = _col(mp2, "cargo"); col_abono = _col(mp2, "abono")
+            col_pol = None
+            for c in ("núm. póliza", "num. póliza", "número póliza", "num. póliza"):
+                if c in mp2: col_pol = mp2[c]; break
+            if col_pol is None:
+                for c in ("póliza", "poliza", "pol"):
+                    for k, v in mp2.items():
+                        if c in k and not k.startswith("tipo"): col_pol = v; break
+                    if col_pol: break
+            col_dp = None
+            for c in ("desc. póliza", "desc poliza", "desc. detalle", "descripción", "descripcion", "desc"):
+                if c in mp2: col_dp = mp2[c]; break
+            def _s(row, col):
+                if col is None or col >= len(row): return ""
+                v = row[col]; s = "" if v is None else str(v).strip()
+                return "" if s.lower() in ("none", "nan", "#n/a", "") else s
             aux_cargo = []; aux_abono = []
-            for row in rows2[data_start:]:
-                if len(row) <= cf or row[cf] is None: continue
-                if not isinstance(row[cf], _dt): continue
-                cargo = _num(row, ccargo) or 0
-                abono = _num(row, cabono) or 0
-                dd = _str(row, cdet); dp = _str(row, cdp)
-                pol = row[cp] if len(row) > cp else ""
-                client = _parse_client(dd, dp)
-                if cargo > 0:
-                    aux_cargo.append({"fecha":row[cf],"poliza":pol,"client":client,"monto":cargo,"dd":dd,"dp":dp})
-                if abono > 0:
-                    aux_abono.append({"fecha":row[cf],"poliza":pol,"client":client,"monto":abono,"dd":dd,"dp":dp})
+            for row in rows2[hi2 + 1:]:
+                if not row or all(v is None for v in row): continue
+                f = _to_date(row[cf2] if cf2 is not None and cf2 < len(row) else None)
+                if f is None: continue
+                pol = _s(row, col_pol); concepto = _s(row, col_dp)
+                c = _to_float(row[col_cargo] if col_cargo is not None and col_cargo < len(row) else 0)
+                a = _to_float(row[col_abono] if col_abono is not None and col_abono < len(row) else 0)
+                base = {"fecha": f, "poliza": pol, "concepto": concepto, "matched": False}
+                if c > 0: aux_cargo.append({**base, "monto": c})
+                if a > 0: aux_abono.append({**base, "monto": a})
             _log(f"Auxiliar: {len(aux_cargo)} cargos, {len(aux_abono)} abonos.")
 
-            # ââ Matching depositos <-> cargos âââââââââââââââââââââââââ
-            used_dep = set(); used_cargo = set()
-            for i, a in enumerate(aux_cargo):
-                best, best_d = None, 999
-                for j, b in enumerate(deposits):
-                    if j in used_dep: continue
-                    if abs(b["deposito"] - a["monto"]) <= 0.05:
-                        try: delta = abs((b["fecha"] - a["fecha"]).days)
-                        except: delta = 0
-                        if delta < best_d: best, best_d = j, delta
-                if best is not None:
-                    used_dep.add(best); used_cargo.add(i)
-                    aux_cargo[i]["match"] = deposits[best]; deposits[best]["match_aux"] = a
+            # Filtrar auxiliar al rango del banco
+            from datetime import date as _date
+            if movs_banco:
+                f_min = min(m["fecha"] for m in movs_banco)
+                f_max = max(m["fecha"] for m in movs_banco)
+                f_min = _date(f_min.year, f_min.month, 1)
+                f_max = _date(f_max.year, f_max.month, _mr(f_max.year, f_max.month)[1])
+                aux_cargo = [a for a in aux_cargo if f_min <= a["fecha"] <= f_max]
+                aux_abono = [a for a in aux_abono if f_min <= a["fecha"] <= f_max]
+            meses_ord = sorted(set(m["fecha"].month for m in movs_banco))
 
-            # ââ Matching retiros <-> abonos âââââââââââââââââââââââââââ
-            used_ret = set(); used_abono = set()
-            for i, a in enumerate(aux_abono):
-                best, best_d = None, 999
-                for j, b in enumerate(retiros):
-                    if j in used_ret: continue
-                    if abs(b["retiro"] - a["monto"]) <= 0.05:
-                        try: delta = abs((b["fecha"] - a["fecha"]).days)
-                        except: delta = 0
-                        if delta < best_d: best, best_d = j, delta
-                if best is not None:
-                    used_ret.add(best); used_abono.add(i)
-                    aux_abono[i]["match"] = retiros[best]; retiros[best]["match_aux"] = a
+            # ── Conciliación ──────────────────────────────────────────
+            _log("Ejecutando conciliación (paso 1: exacto, paso 2: combinaciones)...")
+            res_dep, sin_dep_b, sin_dep_a = conciliar(deps_banco, aux_cargo, "dep")
+            res_ret, sin_ret_b, sin_ret_a = conciliar(rets_banco, aux_abono, "ret")
 
-            n_conc_dep = len(used_cargo);  n_nconc_dep = len(aux_cargo) - n_conc_dep
-            n_conc_ret = len(used_abono);  n_nconc_ret = len(aux_abono) - n_conc_ret
-            _log(f"Depositos: {n_conc_dep}/{len(aux_cargo)} conciliados.")
-            _log(f"Retiros:   {n_conc_ret}/{len(aux_abono)} conciliados.")
+            ex_dep = sum(1 for r in res_dep if r["tipo"] == "EXACTO")
+            co_dep = len(res_dep) - ex_dep
+            ex_ret = sum(1 for r in res_ret if r["tipo"] == "EXACTO")
+            co_ret = len(res_ret) - ex_ret
+            _log(f"Depósitos:  {len(res_dep)}/{len(deps_banco)} conciliados ({ex_dep} exactos + {co_dep} combo). Sin conciliar: {len(sin_dep_b)}")
+            _log(f"Cargos:     {len(res_ret)}/{len(rets_banco)} conciliados ({ex_ret} exactos + {co_ret} combo). Sin conciliar: {len(sin_ret_b)}")
 
-            # ââ Estilos âââââââââââââââââââââââââââââââââââââââââââââââ
-            thin = Side(style="thin", color="BFBFBF")
-            BORD    = Border(left=thin, right=thin, top=thin, bottom=thin)
-            HDR_FL  = PatternFill("solid", fgColor="1F3864")
-            HDR2_FL = PatternFill("solid", fgColor="4A1E8A")
-            HDR_FN  = Font(color="FFFFFF", bold=True)
-            C_GREEN = PatternFill("solid", fgColor="C6EFCE"); F_GREEN = Font(color="375623")
-            C_RED   = PatternFill("solid", fgColor="FFC7CE"); F_RED   = Font(color="9C0006")
-            C_YELL  = PatternFill("solid", fgColor="FFEB9C"); F_YELL  = Font(color="7D5B00")
-            C_BLUE  = PatternFill("solid", fgColor="DDEBF7"); F_BLUE  = Font(color="1F3864")
-            GRAY_FL = PatternFill("solid", fgColor="F2F2F2")
+            # ── Estilos Excel ─────────────────────────────────────────
+            thin = Side(style="thin", color="CCCCCC")
+            brd  = Border(left=thin, right=thin, top=thin, bottom=thin)
+            HDR_F   = Font(bold=True, color="FFFFFF", size=10)
+            EXACTO  = PatternFill("solid", fgColor="D1FAE5")
+            COMBO_F = PatternFill("solid", fgColor="FCE4D6")
+            AUXF    = PatternFill("solid", fgColor="FFF3CD")
+            DEP_M   = PatternFill("solid", fgColor="1E40AF")
+            RET_M   = PatternFill("solid", fgColor="831843")
+            DEP_S   = PatternFill("solid", fgColor="1D4ED8")
+            RET_S   = PatternFill("solid", fgColor="9D174D")
+            DEP_R   = PatternFill("solid", fgColor="DBEAFE")
+            RET_R   = PatternFill("solid", fgColor="FCE7F3")
+            DEP_A   = PatternFill("solid", fgColor="BFDBFE")
+            RET_A   = PatternFill("solid", fgColor="FBCFE8")
+            TOT_F   = PatternFill("solid", fgColor="FEF3C7")
+            GRD_F   = PatternFill("solid", fgColor="FCD34D")
+            BLANK   = PatternFill("solid", fgColor="F9FAFB")
 
-            def _hdr(cell, text, fill=None):
-                cell.value = text; cell.fill = fill or HDR_FL; cell.font = HDR_FN
+            def hdr(ws, r, c, v, f=None):
+                cell = ws.cell(row=r, column=c, value=v)
+                cell.fill = f or PatternFill("solid", fgColor="1E3A8A")
+                cell.font = HDR_F
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                cell.border = BORD
+                cell.border = brd
 
-            def _srow(ws, r, nc, fill, font):
-                for c in range(1, nc + 1):
-                    ws.cell(r, c).fill = fill; ws.cell(r, c).font = font
-                    ws.cell(r, c).border = BORD
+            def dc(ws, r, c, v, fill=None, fmt=None, bold=False, align="left"):
+                cell = ws.cell(row=r, column=c, value=v)
+                if fill: cell.fill = fill
+                if fmt:  cell.number_format = fmt
+                cell.font = Font(bold=bold, size=10)
+                cell.alignment = Alignment(horizontal=align, vertical="center")
+                cell.border = brd
 
+            CONC_H = ["ESTATUS","FECHA BANCO","MONTO BANCO","DESCRIPCIÓN BANCO",
+                       "FECHA AUX","PÓLIZA","CONCEPTO AUX","MONTO AUX","DIFERENCIA"]
+            CONC_W = [18, 13, 15, 50, 13, 10, 50, 15, 12]
+
+            def write_conc(ws, results, mkey, mfill):
+                for ci, w in enumerate(CONC_W, 1):
+                    ws.column_dimensions[_gcl(ci)].width = w
+                ws.freeze_panes = "A2"
+                por_mes = _dd(list)
+                for r in results: por_mes[r["banco"]["fecha"].month].append(r)
+                row = 1; grand = 0
+                for mes in meses_ord:
+                    its = por_mes.get(mes, [])
+                    if not its: continue
+                    ws.row_dimensions[row].height = 24
+                    for ci in range(1, 10):
+                        cell = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == 1 else "")
+                        cell.fill = mfill; cell.font = Font(bold=True, color="FFFFFF", size=11)
+                        cell.alignment = Alignment(vertical="center"); cell.border = brd
+                    row += 1
+                    for ci, h in enumerate(CONC_H, 1): hdr(ws, row, ci, h)
+                    row += 1; sub = 0
+                    for r2 in its:
+                        fill = EXACTO if r2["tipo"] == "EXACTO" else COMBO_F
+                        a0 = r2["aux_entries"][0]; b = r2["banco"]
+                        dc(ws, row, 1, "✅ " + r2["tipo"], fill)
+                        dc(ws, row, 2, b["fecha"], fill, fmt="DD/MM/YYYY", align="center")
+                        dc(ws, row, 3, b[mkey], fill, fmt="#,##0.00", align="right")
+                        dc(ws, row, 4, b["desc"], fill)
+                        dc(ws, row, 5, a0["fecha"], fill, fmt="DD/MM/YYYY", align="center")
+                        dc(ws, row, 6, a0["poliza"], fill, align="center")
+                        dc(ws, row, 7, a0["concepto"], fill)
+                        dc(ws, row, 8, a0["monto"], fill, fmt="#,##0.00", align="right")
+                        dc(ws, row, 9, r2["diferencia"], fill, fmt="#,##0.00", align="right")
+                        sub += b[mkey]; row += 1
+                        for a in r2["aux_entries"][1:]:
+                            for ci in range(1, 5): dc(ws, row, ci, "", AUXF)
+                            dc(ws, row, 5, a["fecha"], AUXF, fmt="DD/MM/YYYY", align="center")
+                            dc(ws, row, 6, a["poliza"], AUXF, align="center")
+                            dc(ws, row, 7, a["concepto"], AUXF)
+                            dc(ws, row, 8, a["monto"], AUXF, fmt="#,##0.00", align="right")
+                            dc(ws, row, 9, "", AUXF); row += 1
+                    for ci in range(1, 10): dc(ws, row, ci, "", TOT_F)
+                    dc(ws, row, 1, f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+                    dc(ws, row, 3, sub, TOT_F, fmt="#,##0.00", align="right", bold=True)
+                    grand += sub; row += 1
+                for ci in range(1, 10): dc(ws, row, ci, "", GRD_F)
+                dc(ws, row, 1, "TOTAL", GRD_F, bold=True, align="right")
+                dc(ws, row, 3, grand, GRD_F, fmt="#,##0.00", align="right", bold=True)
+
+            def write_pair(ws, sr,
+                           il, ml, ll, fl, mfl, sfl, secc_l,
+                           ir, mr, lr, pr, fr, mfr, sfr, secc_r):
+                row = sr; L = (1, 2, 3); R = (5, 6, 7, 8); SEP = 4
+                ws.row_dimensions[row].height = 26
+                for ci in L:
+                    cell = ws.cell(row=row, column=ci, value=secc_l if ci == L[0] else "")
+                    cell.fill = sfl; cell.font = Font(bold=True, color="FFFFFF", size=11)
+                    cell.alignment = Alignment(vertical="center"); cell.border = brd
+                ws.cell(row=row, column=SEP, value="").border = brd
+                for ci in R:
+                    cell = ws.cell(row=row, column=ci, value=secc_r if ci == R[0] else "")
+                    cell.fill = sfr; cell.font = Font(bold=True, color="FFFFFF", size=11)
+                    cell.alignment = Alignment(vertical="center"); cell.border = brd
+                row += 1
+                pml = _dd(list); pmr = _dd(list)
+                for it in il: pml[it["fecha"].month].append(it)
+                for it in ir: pmr[it["fecha"].month].append(it)
+                gl = 0; gr = 0
+                for mes in meses_ord:
+                    itsl = sorted(pml.get(mes, []), key=lambda x: x["fecha"])
+                    itsr = sorted(pmr.get(mes, []), key=lambda x: x["fecha"])
+                    if not itsl and not itsr: continue
+                    ws.row_dimensions[row].height = 20
+                    for ci in L:
+                        cell = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == L[0] else "")
+                        cell.fill = mfl; cell.font = Font(bold=True, color="FFFFFF", size=10)
+                        cell.alignment = Alignment(vertical="center"); cell.border = brd
+                    ws.cell(row=row, column=SEP, value="").border = brd
+                    for ci in R:
+                        cell = ws.cell(row=row, column=ci, value=f"  {MESES[mes]}" if ci == R[0] else "")
+                        cell.fill = mfr; cell.font = Font(bold=True, color="FFFFFF", size=10)
+                        cell.alignment = Alignment(vertical="center"); cell.border = brd
+                    row += 1
+                    hdr(ws, row, L[0], "FECHA",             mfl)
+                    hdr(ws, row, L[1], "MONTO",             mfl)
+                    hdr(ws, row, L[2], "DESCRIPCIÓN BANCO", mfl)
+                    ws.cell(row=row, column=SEP, value="").border = brd
+                    hdr(ws, row, R[0], "FECHA",        mfr)
+                    hdr(ws, row, R[1], "MONTO",        mfr)
+                    hdr(ws, row, R[2], "CONCEPTO AUX", mfr)
+                    hdr(ws, row, R[3], "PÓLIZA",       mfr)
+                    row += 1; sl = 0; sr2 = 0
+                    for i in range(max(len(itsl), len(itsr))):
+                        ws.cell(row=row, column=SEP, value="").border = brd
+                        if i < len(itsl):
+                            it = itsl[i]; m = ml(it); sl += m
+                            dc(ws, row, L[0], it["fecha"], fl, fmt="DD/MM/YYYY", align="center")
+                            dc(ws, row, L[1], m,           fl, fmt="#,##0.00",   align="right")
+                            dc(ws, row, L[2], ll(it),      fl)
+                        else:
+                            for ci in L: dc(ws, row, ci, "", BLANK)
+                        if i < len(itsr):
+                            it = itsr[i]; m = mr(it); sr2 += m
+                            dc(ws, row, R[0], it["fecha"], fr, fmt="DD/MM/YYYY", align="center")
+                            dc(ws, row, R[1], m,           fr, fmt="#,##0.00",   align="right")
+                            dc(ws, row, R[2], lr(it),      fr)
+                            dc(ws, row, R[3], pr(it),      fr, align="center")
+                        else:
+                            for ci in R: dc(ws, row, ci, "", BLANK)
+                        row += 1
+                    ws.cell(row=row, column=SEP, value="").border = brd
+                    dc(ws, row, L[0], f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+                    dc(ws, row, L[1], sl, TOT_F, fmt="#,##0.00", align="right", bold=True)
+                    dc(ws, row, L[2], "", TOT_F)
+                    dc(ws, row, R[0], f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+                    dc(ws, row, R[1], sr2, TOT_F, fmt="#,##0.00", align="right", bold=True)
+                    dc(ws, row, R[2], "", TOT_F); dc(ws, row, R[3], "", TOT_F)
+                    gl += sl; gr += sr2; row += 1
+                ws.cell(row=row, column=SEP, value="").border = brd
+                dc(ws, row, L[0], "TOTAL", GRD_F, bold=True, align="right")
+                dc(ws, row, L[1], gl, GRD_F, fmt="#,##0.00", align="right", bold=True)
+                dc(ws, row, L[2], "", GRD_F)
+                dc(ws, row, R[0], "TOTAL", GRD_F, bold=True, align="right")
+                dc(ws, row, R[1], gr, GRD_F, fmt="#,##0.00", align="right", bold=True)
+                dc(ws, row, R[2], "", GRD_F); dc(ws, row, R[3], "", GRD_F)
+                return row + 2
+
+            # ── Hoja de comisiones ────────────────────────────────────
+            COM_H_F  = PatternFill("solid", fgColor="1E3A8A")
+            COM_M_F  = PatternFill("solid", fgColor="1E40AF")
+            COM_R_F  = PatternFill("solid", fgColor="FEE2E2")
+            MORA_H_F = PatternFill("solid", fgColor="7C3AED")
+            MORA_M_F = PatternFill("solid", fgColor="6D28D9")
+            MORA_R_F = PatternFill("solid", fgColor="EDE9FE")
+            COM_COLS = ["FECHA", "MONTO", "DESCRIPCIÓN BANCO", "TIPO"]
+
+            def write_comisiones(ws, coms, moras):
+                ws.sheet_properties.tabColor = "7C3AED"
+                for ci, w in enumerate([13, 15, 60, 12], 1):
+                    ws.column_dimensions[_gcl(ci)].width = w
+                ws.freeze_panes = "A2"
+                r = 1
+                # Sección 1: COMISIONES
+                ws.row_dimensions[r].height = 26
+                cell = ws.cell(row=r, column=1, value="🏦 COMISIONES BANCARIAS")
+                cell.fill = COM_H_F; cell.font = Font(bold=True, color="FFFFFF", size=12)
+                cell.alignment = Alignment(vertical="center"); cell.border = brd
+                for ci in range(2, 5):
+                    c = ws.cell(row=r, column=ci, value="")
+                    c.fill = COM_H_F; c.border = brd
+                r += 1
+                por_mes_c = _dd(list)
+                for m in coms: por_mes_c[m["fecha"].month].append(m)
+                grand_c = 0
+                for mes in meses_ord:
+                    its = sorted(por_mes_c.get(mes, []), key=lambda x: x["fecha"])
+                    if not its: continue
+                    ws.row_dimensions[r].height = 20
+                    for ci in range(1, 5):
+                        c = ws.cell(row=r, column=ci, value=f"  {MESES[mes]}" if ci == 1 else "")
+                        c.fill = COM_M_F; c.font = Font(bold=True, color="FFFFFF", size=10)
+                        c.alignment = Alignment(vertical="center"); c.border = brd
+                    r += 1
+                    for ci, h in enumerate(COM_COLS, 1): hdr(ws, r, ci, h, COM_M_F)
+                    r += 1; sub = 0
+                    for m in its:
+                        ws.row_dimensions[r].height = 16
+                        dc(ws, r, 1, m["fecha"], COM_R_F, fmt="DD/MM/YYYY", align="center")
+                        dc(ws, r, 2, m["ret"],   COM_R_F, fmt="#,##0.00",   align="right")
+                        dc(ws, r, 3, m["desc"],  COM_R_F)
+                        dc(ws, r, 4, "CARGO",    COM_R_F, align="center")
+                        sub += m["ret"]; r += 1
+                    for ci in range(1, 5): dc(ws, r, ci, "", TOT_F)
+                    dc(ws, r, 1, f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+                    dc(ws, r, 2, sub, TOT_F, fmt="#,##0.00", align="right", bold=True)
+                    grand_c += sub; r += 1
+                for ci in range(1, 5): dc(ws, r, ci, "", GRD_F)
+                dc(ws, r, 1, "TOTAL COMISIONES", GRD_F, bold=True, align="right")
+                dc(ws, r, 2, grand_c, GRD_F, fmt="#,##0.00", align="right", bold=True)
+                r += 2
+                # Sección 2: MORA / COMP SPEI
+                if not moras: return
+                ws.row_dimensions[r].height = 26
+                cell = ws.cell(row=r, column=1, value="⚡ MORA / COMPENSACIÓN SPEI")
+                cell.fill = MORA_H_F; cell.font = Font(bold=True, color="FFFFFF", size=12)
+                cell.alignment = Alignment(vertical="center"); cell.border = brd
+                for ci in range(2, 5):
+                    c = ws.cell(row=r, column=ci, value="")
+                    c.fill = MORA_H_F; c.border = brd
+                r += 1
+                por_mes_m = _dd(list)
+                for m in moras: por_mes_m[m["fecha"].month].append(m)
+                grand_m = 0
+                for mes in meses_ord:
+                    its = sorted(por_mes_m.get(mes, []), key=lambda x: x["fecha"])
+                    if not its: continue
+                    ws.row_dimensions[r].height = 20
+                    for ci in range(1, 5):
+                        c = ws.cell(row=r, column=ci, value=f"  {MESES[mes]}" if ci == 1 else "")
+                        c.fill = MORA_M_F; c.font = Font(bold=True, color="FFFFFF", size=10)
+                        c.alignment = Alignment(vertical="center"); c.border = brd
+                    r += 1
+                    for ci, h in enumerate(COM_COLS, 1): hdr(ws, r, ci, h, MORA_M_F)
+                    r += 1; sub = 0
+                    for m in its:
+                        ws.row_dimensions[r].height = 16
+                        dc(ws, r, 1, m["fecha"], MORA_R_F, fmt="DD/MM/YYYY", align="center")
+                        dc(ws, r, 2, m["dep"],   MORA_R_F, fmt="#,##0.00",   align="right")
+                        dc(ws, r, 3, m["desc"],  MORA_R_F)
+                        dc(ws, r, 4, "ABONO",    MORA_R_F, align="center")
+                        sub += m["dep"]; r += 1
+                    for ci in range(1, 5): dc(ws, r, ci, "", TOT_F)
+                    dc(ws, r, 1, f"Subtotal {MESES[mes]}", TOT_F, bold=True, align="right")
+                    dc(ws, r, 2, sub, TOT_F, fmt="#,##0.00", align="right", bold=True)
+                    grand_m += sub; r += 1
+                for ci in range(1, 5): dc(ws, r, ci, "", GRD_F)
+                dc(ws, r, 1, "TOTAL MORA", GRD_F, bold=True, align="right")
+                dc(ws, r, 2, grand_m, GRD_F, fmt="#,##0.00", align="right", bold=True)
+
+            # ── Generar Excel ─────────────────────────────────────────
+            n_hojas = 4 if (com_entries or mora_entries) else 3
+            _log(f"Generando Excel ({n_hojas} hojas)...")
             wb_out = openpyxl.Workbook()
+            ws1 = wb_out.active; ws1.title = "Depositos"; ws1.sheet_properties.tabColor = "1E3A8A"
+            write_conc(ws1, res_dep, "dep", DEP_M)
+            ws2 = wb_out.create_sheet("Cargos"); ws2.sheet_properties.tabColor = "BE185D"
+            write_conc(ws2, res_ret, "ret", RET_M)
+            ws3 = wb_out.create_sheet("Sin conciliar"); ws3.sheet_properties.tabColor = "D97706"
+            for ci, w in {1:13,2:15,3:52,4:2,5:13,6:15,7:50,8:10}.items():
+                ws3.column_dimensions[_gcl(ci)].width = w
+            row = 1
+            row = write_pair(ws3, row,
+                sin_dep_b, lambda x:x["dep"],   lambda x:x["desc"],     DEP_R, DEP_M, DEP_S,
+                "BANCO — DEPÓSITOS SIN CONCILIAR",
+                sin_dep_a, lambda x:x["monto"], lambda x:x["concepto"], lambda x:x.get("poliza",""),
+                DEP_A, DEP_M, PatternFill("solid", fgColor="1E40AF"),
+                "AUXILIAR — CARGOS SIN CONCILIAR")
+            row = write_pair(ws3, row,
+                sin_ret_b, lambda x:x["ret"],   lambda x:x["desc"],     RET_R, RET_M, RET_S,
+                "BANCO — CARGOS SIN CONCILIAR",
+                sin_ret_a, lambda x:x["monto"], lambda x:x["concepto"], lambda x:x.get("poliza",""),
+                RET_A, RET_M, PatternFill("solid", fgColor="831843"),
+                "AUXILIAR — ABONOS SIN CONCILIAR")
+            if com_entries or mora_entries:
+                ws4 = wb_out.create_sheet("Comisiones Bancarias")
+                write_comisiones(ws4, com_entries, mora_entries)
 
-            # ââ Hoja Depositos ââââââââââââââââââââââââââââââââââââââââ
-            ws_dep = wb_out.active; ws_dep.title = "Depositos"
-            ws_dep.merge_cells("A1:F1")
-            t = ws_dep["A1"]
-            t.value = "BANCO - " + _os.path.basename(ruta_banco).upper() + "  |  Depositos vs Auxiliar"
-            t.fill = HDR_FL; t.font = Font(color="FFFFFF", bold=True, size=12)
-            t.alignment = Alignment(horizontal="center", vertical="center")
-            ws_dep.row_dimensions[1].height = 22
-            for c, h in enumerate(["Fecha","Descripcion","Deposito","Estado","Monto Auxiliar","Cliente / Poliza"], 1):
-                _hdr(ws_dep.cell(2, c), h)
-            ws_dep.row_dimensions[2].height = 28; ws_dep.freeze_panes = "A3"
-            ri = 3
-            for i, a in enumerate(aux_cargo):
-                matched = i in used_cargo; b = a.get("match", {})
-                fill = C_GREEN if matched else C_RED
-                font = F_GREEN if matched else F_RED
-                estado = "Conciliado" if matched else "No Conciliado"
-                fecha_s = (b.get("fecha") or a["fecha"])
-                desc_s  = b.get("desc", "") if matched else (a["dp"] or a["dd"] or a["client"])
-                monto_b = b.get("deposito", "") if matched else ""
-                pol_s   = f"Pol.{a['poliza']} - {a['client']}"
-                ws_dep.cell(ri, 1, fecha_s).number_format = "DD/MM/YYYY"
-                ws_dep.cell(ri, 2, desc_s)
-                if monto_b != "": ws_dep.cell(ri, 3, monto_b).number_format = "#,##0.00"
-                ws_dep.cell(ri, 4, estado)
-                ws_dep.cell(ri, 5, a["monto"]).number_format = "#,##0.00"
-                ws_dep.cell(ri, 6, pol_s)
-                _srow(ws_dep, ri, 6, fill, font); ri += 1
-            for b in [x for j,x in enumerate(deposits) if j not in used_dep]:
-                ws_dep.cell(ri, 1, b["fecha"]).number_format = "DD/MM/YYYY"
-                ws_dep.cell(ri, 2, b["desc"])
-                ws_dep.cell(ri, 3, b["deposito"]).number_format = "#,##0.00"
-                ws_dep.cell(ri, 4, "Solo en Banco")
-                _srow(ws_dep, ri, 6, C_YELL, F_YELL); ri += 1
-            for col, w in zip("ABCDEF", [14,60,14,18,14,40]):
-                ws_dep.column_dimensions[col].width = w
-
-            # ââ Hoja Retiros ââââââââââââââââââââââââââââââââââââââââââ
-            ws_ret = wb_out.create_sheet("Retiros")
-            ws_ret.merge_cells("A1:F1")
-            t2 = ws_ret["A1"]
-            t2.value = "BANCO - " + _os.path.basename(ruta_banco).upper() + "  |  Retiros vs Auxiliar"
-            t2.fill = HDR2_FL; t2.font = Font(color="FFFFFF", bold=True, size=12)
-            t2.alignment = Alignment(horizontal="center", vertical="center")
-            ws_ret.row_dimensions[1].height = 22
-            for c, h in enumerate(["Fecha","Descripcion","Retiro","Estado","Monto Auxiliar","Descripcion Poliza"], 1):
-                _hdr(ws_ret.cell(2, c), h, HDR2_FL)
-            ws_ret.row_dimensions[2].height = 28; ws_ret.freeze_panes = "A3"
-            ri = 3
-            for i, a in enumerate(aux_abono):
-                matched = i in used_abono; b = a.get("match", {})
-                fill = C_BLUE if matched else C_RED
-                font = F_BLUE if matched else F_RED
-                estado = "Conciliado" if matched else "No Conciliado"
-                fecha_s = (b.get("fecha") or a["fecha"])
-                desc_s  = b.get("desc", "") if matched else (a["dp"] or a["dd"] or "")
-                monto_b = b.get("retiro", "") if matched else ""
-                ws_ret.cell(ri, 1, fecha_s).number_format = "DD/MM/YYYY"
-                ws_ret.cell(ri, 2, desc_s)
-                if monto_b != "": ws_ret.cell(ri, 3, monto_b).number_format = "#,##0.00"
-                ws_ret.cell(ri, 4, estado)
-                ws_ret.cell(ri, 5, a["monto"]).number_format = "#,##0.00"
-                ws_ret.cell(ri, 6, a["dd"])
-                _srow(ws_ret, ri, 6, fill, font); ri += 1
-            for b in [x for j,x in enumerate(retiros) if j not in used_ret]:
-                ws_ret.cell(ri, 1, b["fecha"]).number_format = "DD/MM/YYYY"
-                ws_ret.cell(ri, 2, b["desc"])
-                ws_ret.cell(ri, 3, b["retiro"]).number_format = "#,##0.00"
-                ws_ret.cell(ri, 4, "Solo en Banco")
-                _srow(ws_ret, ri, 6, C_YELL, F_YELL); ri += 1
-            for col, w in zip("ABCDEF", [14,60,14,18,14,50]):
-                ws_ret.column_dimensions[col].width = w
-
-            # ââ Hoja Resumen ââââââââââââââââââââââââââââââââââââââââââ
-            ws_r = wb_out.create_sheet("Resumen")
-            ws_r.merge_cells("A1:C1")
-            t3 = ws_r["A1"]
-            t3.value = "RESUMEN DE CONCILIACION"
-            t3.fill = HDR_FL; t3.font = Font(color="FFFFFF", bold=True, size=13)
-            t3.alignment = Alignment(horizontal="center", vertical="center")
-            ws_r.row_dimensions[1].height = 26
-            solo_dep_n = len(deposits) - len(used_dep)
-            solo_ret_n = len(retiros)  - len(used_ret)
-            datos_res = [
-                ("DEPOSITOS","",""),
-                ("Total polizas auxiliar", len(aux_cargo), ""),
-                ("Conciliadas", n_conc_dep, ""),
-                ("No conciliadas", n_nconc_dep, ""),
-                ("Solo en banco (sin poliza)", solo_dep_n, ""),
-                ("","",""),
-                ("RETIROS / PAGOS","",""),
-                ("Total polizas auxiliar", len(aux_abono), ""),
-                ("Conciliadas", n_conc_ret, ""),
-                ("No conciliadas", n_nconc_ret, ""),
-                ("Solo en banco (sin poliza)", solo_ret_n, ""),
-                ("","",""),
-                ("BANCO TOTAL","",""),
-                ("Total movimientos", len(bank), ""),
-                ("Depositos", len(deposits), ""),
-                ("Retiros", len(retiros), ""),
-            ]
-            for ri2, (label, val, fmt) in enumerate(datos_res, 2):
-                ws_r.cell(ri2, 1, label)
-                if val != "":
-                    c = ws_r.cell(ri2, 2, val)
-                    if fmt: c.number_format = fmt
-                if label in ("DEPOSITOS","RETIROS / PAGOS","BANCO TOTAL"):
-                    ws_r.cell(ri2, 1).font = Font(bold=True, color="1F3864", size=11)
-                    ws_r.cell(ri2, 1).fill = GRAY_FL
-            r_det = len(datos_res) + 4
-            ws_r.merge_cells(f"A{r_det}:D{r_det}")
-            h_det = ws_r.cell(r_det, 1, "DEPOSITOS NO CONCILIADOS (DETALLE)")
-            h_det.font = Font(bold=True, color="B71C1C"); h_det.fill = GRAY_FL
-            r_det += 1
-            for hdx, htxt in enumerate(["Fecha","Cliente","Monto","Nota"], 1):
-                _hdr(ws_r.cell(r_det, hdx), htxt)
-            r_det += 1
-            for i, a in enumerate(aux_cargo):
-                if i not in used_cargo:
-                    ws_r.cell(r_det, 1, a["fecha"]).number_format = "DD/MM/YYYY"
-                    ws_r.cell(r_det, 2, a["client"])
-                    ws_r.cell(r_det, 3, a["monto"]).number_format = "#,##0.00"
-                    close = [b for b in deposits if abs((b["deposito"] or 0) - a["monto"]) < 200]
-                    ws_r.cell(r_det, 4, f"Mas cercano: ${close[0]['deposito']:,.2f}" if close else "No encontrado")
-                    _srow(ws_r, r_det, 4, C_RED, F_RED); r_det += 1
-            for col, w in zip("ABCD", [28,34,16,55]):
-                ws_r.column_dimensions[col].width = w
-
-            buf = _io.BytesIO()
-            wb_out.save(buf); buf.seek(0)
+            buf = _io.BytesIO(); wb_out.save(buf); buf.seek(0)
             self._cba_wb = wb_out
             nombre_base = "CONCILIACION_" + _os.path.splitext(_os.path.basename(ruta_banco))[0].upper() + ".xlsx"
             self._cba_wb_name = nombre_base
@@ -9970,9 +10296,11 @@ class WorkspaceWindow(tk.Toplevel):
             tmp.write(buf.getvalue()); tmp.close()
             self._cba_resultado = tmp.name
 
-            resumen_txt = (f"Dep: {n_conc_dep}/{len(aux_cargo)}  |  "
-                           f"Ret: {n_conc_ret}/{len(aux_abono)}  |  "
-                           f"No conciliados: {n_nconc_dep} dep, {n_nconc_ret} ret")
+            pct_dep = len(res_dep)/len(deps_banco)*100 if deps_banco else 0
+            pct_ret = len(res_ret)/len(rets_banco)*100 if rets_banco else 0
+            resumen_txt = (f"Dep: {len(res_dep)}/{len(deps_banco)} ({pct_dep:.0f}%)  |  "
+                           f"Cargos: {len(res_ret)}/{len(rets_banco)} ({pct_ret:.0f}%)  |  "
+                           f"Sin conciliar: {len(sin_dep_b)} dep, {len(sin_ret_b)} cargos")
             _log(f"Listo. {resumen_txt}")
             self.after(0, self._pb_detener, self._cba_pb, self._cba_pb_lbl)
             self.after(100, self._cba_pb_frame.grid_remove)
@@ -9982,32 +10310,40 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, lambda: self._cba_btn_guardar.config(state="normal"))
             self.after(0, lambda t=resumen_txt: self._cba_lbl_resumen.config(text=t))
 
-            # ââ Treeview ââââââââââââââââââââââââââââââââââââââââââââââ
+            # ── Treeview ──────────────────────────────────────────────
             tree_data = []
-            for i, b in enumerate(bank):
+            # Conciliados dep
+            for r2 in res_dep:
+                b = r2["banco"]
                 fecha_s = b["fecha"].strftime("%d/%m/%Y") if hasattr(b["fecha"], "strftime") else str(b["fecha"])
-                if b["deposito"] and b["deposito"] > 0:
-                    ma = b.get("match_aux")
-                    if ma:
-                        tag = "conc"; estado = "Conciliado"
-                        monto_aux = f"${ma['monto']:,.2f}"
-                        desc_show = ma["client"] + "  -  " + b["desc"][:70]
-                    else:
-                        tag = "solo_banco"; estado = "Solo Banco"
-                        monto_aux = ""; desc_show = b["desc"][:100]
-                    tree_data.append((fecha_s, desc_show, f"${b['deposito']:,.2f}", "", estado, monto_aux, tag))
-                elif b["retiro"] and b["retiro"] > 0:
-                    ma = b.get("match_aux")
-                    if ma:
-                        tag = "conc_ret"; estado = "Retiro Conc."
-                        monto_aux = f"${ma['monto']:,.2f}"
-                    else:
-                        tag = "retiro"; estado = "Retiro"
-                        monto_aux = ""
-                    tree_data.append((fecha_s, b["desc"][:100], "",
-                        f"${b['retiro']:,.2f}", estado, monto_aux, tag))
+                tag   = "conc"
+                estado = f"✅ {r2['tipo']}"
+                a0 = r2["aux_entries"][0]
+                maux = f"${sum(c['monto'] for c in r2['aux_entries']):,.2f}"
+                desc_s = a0["concepto"][:70] + " | " + b["desc"][:50] if a0["concepto"] else b["desc"][:100]
+                tree_data.append((fecha_s, desc_s, f"${b['dep']:,.2f}", "", estado, maux, tag))
+            # Sin conciliar dep
+            for b in sin_dep_b:
+                fecha_s = b["fecha"].strftime("%d/%m/%Y") if hasattr(b["fecha"], "strftime") else str(b["fecha"])
+                tree_data.append((fecha_s, b["desc"][:100], f"${b['dep']:,.2f}", "", "⚠ Sin conciliar", "", "no_conc"))
+            # Conciliados ret
+            for r2 in res_ret:
+                b = r2["banco"]
+                fecha_s = b["fecha"].strftime("%d/%m/%Y") if hasattr(b["fecha"], "strftime") else str(b["fecha"])
+                a0 = r2["aux_entries"][0]
+                maux = f"${sum(c['monto'] for c in r2['aux_entries']):,.2f}"
+                tree_data.append((fecha_s, b["desc"][:100], "", f"${b['ret']:,.2f}",
+                                  f"✅ {r2['tipo']}", maux, "conc_ret"))
+            # Sin conciliar ret
+            for b in sin_ret_b:
+                fecha_s = b["fecha"].strftime("%d/%m/%Y") if hasattr(b["fecha"], "strftime") else str(b["fecha"])
+                tree_data.append((fecha_s, b["desc"][:100], "", f"${b['ret']:,.2f}", "⚠ Sin conciliar", "", "retiro"))
+            # Ordenar por fecha
+            tree_data.sort(key=lambda x: x[0])
 
             def _fill(data):
+                for item in self._cba_tree.get_children():
+                    self._cba_tree.delete(item)
                 for d in data:
                     self._cba_tree.insert("", "end", values=d[:6], tags=(d[6],))
             self.after(0, lambda d=tree_data: _fill(d))
@@ -10019,6 +10355,8 @@ class WorkspaceWindow(tk.Toplevel):
             self.after(0, self._pb_error, self._cba_pb, self._cba_pb_lbl)
             self.after(100, self._cba_pb_frame.grid_remove)
             self.after(0, lambda: self._cba_btn_gen.config(state="normal"))
+
+
 
     def _cba_abrir(self):
         ruta = getattr(self, "_cba_resultado", None)
@@ -10063,13 +10401,13 @@ class WorkspaceWindow(tk.Toplevel):
             messagebox.showerror("Error al guardar",
                 f"No se pudo guardar:\n{e}", parent=self)
 
-    # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-    # MÃDULO: DEPÃSITOS BANCARIOS
-    # ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+    # ════════════════════════════════════════════════════════════════════════════
+    # MÓDULO: DEPÓSITOS BANCARIOS
+    # ════════════════════════════════════════════════════════════════════════════
 
     def _tab_depositos_bancarios(self, nb):
         outer = ttk.Frame(nb)
-        nb.add(outer, text="  ð¦ DepÃ³sitos Bancarios  ")
+        nb.add(outer, text="  🏦 Depósitos Bancarios  ")
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
 
@@ -10082,14 +10420,14 @@ class WorkspaceWindow(tk.Toplevel):
         self._dep_wb_name      = ""
         self._dep_wb_dir       = ""
 
-        # ââ Panel de controles ââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Panel de controles ──────────────────────────────────────────────────
         ctrl = tk.Frame(outer, bg=COLOR_FONDO)
         ctrl.grid(row=0, column=0, sticky="ew")
         ctrl.columnconfigure(0, weight=1)
 
         hdr = tk.Frame(ctrl, bg=COLOR_FONDO)
         hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(8, 4))
-        tk.Label(hdr, text="DepÃ³sitos Bancarios  â  BBVA Â· Banorte Â· Inbursa",
+        tk.Label(hdr, text="Depósitos Bancarios  —  BBVA · Banorte · Inbursa",
                  bg=COLOR_FONDO, fg=self._DEP_ACENTO,
                  font=("Segoe UI", 12, "bold")).pack(side="left")
 
@@ -10101,9 +10439,9 @@ class WorkspaceWindow(tk.Toplevel):
         fsel.columnconfigure(7, weight=1)
 
         bancos_cfg = [
-            ("ð¦ BBVA (.xlsx):",    "_dep_lbl_bbva",    self._dep_elegir_bbva,    "#0D47A1", 0),
-            ("ð¥ Banorte (.xlsx):", "_dep_lbl_banorte", self._dep_elegir_banorte, "#B71C1C", 3),
-            ("ð§ Inbursa (.xlsx):", "_dep_lbl_inbursa", self._dep_elegir_inbursa, "#BF360C", 6),
+            ("🟦 BBVA (.xlsx):",    "_dep_lbl_bbva",    self._dep_elegir_bbva,    "#0D47A1", 0),
+            ("🟥 Banorte (.xlsx):", "_dep_lbl_banorte", self._dep_elegir_banorte, "#B71C1C", 3),
+            ("🟧 Inbursa (.xlsx):", "_dep_lbl_inbursa", self._dep_elegir_inbursa, "#BF360C", 6),
         ]
         for lbl_txt, lbl_attr, cmd, fg_sel, c0 in bancos_cfg:
             tk.Label(fsel, text=lbl_txt, bg=COLOR_FONDO, fg=COLOR_TEXTO,
@@ -10115,12 +10453,12 @@ class WorkspaceWindow(tk.Toplevel):
             lbl.grid(row=0, column=c0+1, sticky="ew", padx=(0, 4))
             lbl.bind("<Button-1>", lambda e, c=cmd: c())
             setattr(self, lbl_attr, lbl)
-            ttk.Button(fsel, text="ð", width=3,
+            ttk.Button(fsel, text="📂", width=3,
                        command=cmd).grid(row=0, column=c0+2, padx=(0, 4))
 
         # Selector plantilla
-        fsel.columnconfigure(1, weight=1)  # ya estaba, reforzar expansiÃ³n col 1
-        tk.Label(fsel, text="ð PLANTILLA DE DEPOSITOS:",
+        fsel.columnconfigure(1, weight=1)  # ya estaba, reforzar expansión col 1
+        tk.Label(fsel, text="📋 PLANTILLA DE DEPOSITOS:",
                  bg=COLOR_FONDO, fg=COLOR_TEXTO,
                  font=("Segoe UI", 9, "bold")).grid(
                  row=1, column=0, sticky="w", padx=(0, 4), pady=(6, 0))
@@ -10130,16 +10468,16 @@ class WorkspaceWindow(tk.Toplevel):
         self._dep_lbl_plantilla.grid(row=1, column=1, columnspan=7,
             sticky="ew", padx=(0, 4), pady=(6, 0))
         self._dep_lbl_plantilla.bind("<Button-1>", lambda e: self._dep_elegir_plantilla())
-        ttk.Button(fsel, text="ð", width=3,
+        ttk.Button(fsel, text="📂", width=3,
                    command=self._dep_elegir_plantilla).grid(
                    row=1, column=8, padx=(0, 4), pady=(6, 0))
 
-        # BotÃ³n generar
+        # Botón generar
         btn_row = tk.Frame(ctrl, bg=COLOR_FONDO)
         btn_row.grid(row=2, column=0, sticky="ew", padx=16, pady=(4, 4))
         btn_row.columnconfigure(0, weight=1)
         self._dep_btn_gen = tk.Button(btn_row,
-            text="  â Generar PÃ³liza de DepÃ³sitos",
+            text="  ⚙ Generar Póliza de Depósitos",
             bg=self._DEP_ACENTO, fg=COLOR_BLANCO,
             font=("Segoe UI", 10, "bold"), relief="flat",
             padx=16, pady=8, cursor="hand2",
@@ -10166,14 +10504,14 @@ class WorkspaceWindow(tk.Toplevel):
         self._dep_lbl_arch = tk.Label(tb, text="---", bg=COLOR_BLANCO,
             fg=self._DEP_ACENTO, font=("Segoe UI", 8, "bold"))
         self._dep_lbl_arch.pack(side="left", padx=(0, 10), pady=3)
-        self._dep_btn_guardar = ttk.Button(tb, text="ð¾ Guardar como",
+        self._dep_btn_guardar = ttk.Button(tb, text="💾 Guardar como",
             command=self._dep_guardar_como, state="disabled")
         self._dep_btn_guardar.pack(side="right", padx=(6, 2), pady=3)
-        self._dep_btn_abrir = ttk.Button(tb, text="ð Abrir en Excel",
+        self._dep_btn_abrir = ttk.Button(tb, text="📂 Abrir en Excel",
             command=self._dep_abrir, state="disabled")
         self._dep_btn_abrir.pack(side="right", padx=6, pady=3)
 
-        # ââ Ãrea de trabajo âââââââââââââââââââââââââââââââââââââââââââââââââââââ
+        # ── Área de trabajo ─────────────────────────────────────────────────────
         ttk.Separator(outer, orient="horizontal").grid(row=0, column=0, sticky="sew")
 
         work = tk.Frame(outer, bg=COLOR_FONDO)
@@ -10183,7 +10521,7 @@ class WorkspaceWindow(tk.Toplevel):
 
         lbl_area = tk.Frame(work, bg=self._DEP_ACENTO)
         lbl_area.grid(row=0, column=0, columnspan=2, sticky="ew")
-        tk.Label(lbl_area, text="  Ãrea de Trabajo  â  Vista previa de pÃ³liza",
+        tk.Label(lbl_area, text="  Área de Trabajo  —  Vista previa de póliza",
                  bg=self._DEP_ACENTO, fg=COLOR_BLANCO,
                  font=("Segoe UI", 9, "bold")).pack(side="left", pady=4)
         self._dep_lbl_resumen = tk.Label(lbl_area, text="",
@@ -10194,20 +10532,20 @@ class WorkspaceWindow(tk.Toplevel):
         leyenda_bar = tk.Frame(work, bg=COLOR_FONDO)
         leyenda_bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(3, 1))
         for txt_l, bg_l, fg_l in [
-                ("â BBVA",    "#C5DCF5", "#0D47A1"),
-                ("â Inbursa", "#FFE0B5", "#BF360C"),
-                ("â Banorte", "#FFCCCC", "#B71C1C")]:
+                ("█ BBVA",    "#C5DCF5", "#0D47A1"),
+                ("█ Inbursa", "#FFE0B5", "#BF360C"),
+                ("█ Banorte", "#FFCCCC", "#B71C1C")]:
             tk.Label(leyenda_bar, text=f"  {txt_l}  ",
                      bg=bg_l, fg=fg_l, font=("Segoe UI", 8),
                      relief="flat", padx=4, pady=1).pack(side="left", padx=2)
 
         # Treeview
-        cols_tree = ("Fecha", "Banco", "DescripciÃ³n", "Cta. Cargo", "Cta. Abono", "Monto")
+        cols_tree = ("Fecha", "Banco", "Descripción", "Cta. Cargo", "Cta. Abono", "Monto")
         self._dep_tree = ttk.Treeview(work, columns=cols_tree,
                                        show="headings", selectmode="browse")
-        col_w   = {"Fecha": 90, "Banco": 80, "DescripciÃ³n": 310,
+        col_w   = {"Fecha": 90, "Banco": 80, "Descripción": 310,
                    "Cta. Cargo": 140, "Cta. Abono": 180, "Monto": 110}
-        col_anc = {"Fecha": "center", "Banco": "center", "DescripciÃ³n": "w",
+        col_anc = {"Fecha": "center", "Banco": "center", "Descripción": "w",
                    "Cta. Cargo": "center", "Cta. Abono": "w", "Monto": "e"}
         for c in cols_tree:
             self._dep_tree.heading(c, text=c)
@@ -10258,7 +10596,7 @@ class WorkspaceWindow(tk.Toplevel):
     def _dep_elegir_plantilla(self):
         self.focus_force(); self.update()
         ruta = filedialog.askopenfilename(parent=self,
-            title="Plantilla de DepÃ³sitos (.xlsx)",
+            title="Plantilla de Depósitos (.xlsx)",
             filetypes=[("Excel", "*.xlsx *.xlsm"), ("Todos", "*.*")])
         if ruta:
             self._dep_ruta_plantilla.set(ruta)
@@ -10292,7 +10630,7 @@ class WorkspaceWindow(tk.Toplevel):
             from openpyxl.styles import PatternFill, Font, Alignment
             from openpyxl.utils import get_column_letter
         except ImportError:
-            self.after(0, self._log, "Falta openpyxl â pip install openpyxl", True)
+            self.after(0, self._log, "Falta openpyxl — pip install openpyxl", True)
             self.after(0, lambda: self._dep_btn_gen.config(state="normal"))
             self.after(0, self._dep_pb_frame.grid_remove)
             return
@@ -10307,51 +10645,117 @@ class WorkspaceWindow(tk.Toplevel):
             "BBVA":    ("102-01-0001-0003", "BBVA"),
             "INBURSA": ("102-01-0001-0002", "INBURSA"),
         }
-        ABONOS = [
-            {"col":12,"cuenta":"106-01-0001-0010","nombre":"DEPOSITO EN TRANSITO T AMERICAN EXPRESS"},
-            {"col":13,"cuenta":"106-01-0001-0005","nombre":"DEPOSITO EN TRANSITO  EFECTIVALE"},
-            {"col":14,"cuenta":"106-01-0001-0009","nombre":"DEPOSITO EN TRANSITO  TICKET CARD EDENRED"},
-            {"col":15,"cuenta":"101-01-0001",      "nombre":"Fondo Fijo de Caja"},
-            {"col":16,"cuenta":"106-01-0001-0011", "nombre":"DEPOSITO EN TRANSITO T BANORTE"},
-            {"col":17,"cuenta":"106-01-0001-0003", "nombre":"DEPOSITO EN TRANSITO  SMARTBT - SHELL FLEET"},
-            {"col":18,"cuenta":"106-01-0001-0013", "nombre":"BBVA"},
-            {"col":19,"cuenta":"106-01-0001-0012", "nombre":"DEPOSITO EN TRANSITO T INBURSA"},
+        # ── ABONOS: leer dinámicamente desde hoja CUENTAS (col D=cuenta, E=nombre) ──
+        _ABONOS_FALLBACK = [
+            {"cuenta":"106-01-0001-0010","nombre":"DEPOSITO EN TRANSITO T AMERICAN EXPRESS"},
+            {"cuenta":"106-01-0001-0005","nombre":"DEPOSITO EN TRANSITO  EFECTIVALE"},
+            {"cuenta":"106-01-0001-0009","nombre":"DEPOSITO EN TRANSITO  TICKET CARD EDENRED"},
+            {"cuenta":"101-01-0001",     "nombre":"Fondo Fijo de Caja"},
+            {"cuenta":"106-01-0001-0011","nombre":"DEPOSITO EN TRANSITO T BANORTE"},
+            {"cuenta":"106-01-0001-0003","nombre":"DEPOSITO EN TRANSITO  SMARTBT - SHELL FLEET"},
+            {"cuenta":"106-01-0001-0013","nombre":"BBVA"},
+            {"cuenta":"106-01-0001-0012","nombre":"DEPOSITO EN TRANSITO T INBURSA"},
         ]
+        _abonos_raw = []
+        _bancos_en_cuentas = set()   # bancos que SÍ están en la hoja CUENTAS
+        cargos_efectivos = dict(CARGOS)
+        _ruta_pl_dep = getattr(self, "_dep_ruta_plantilla", None)
+        _rpl_dep_str = (_ruta_pl_dep.get().strip() if _ruta_pl_dep else "")
+        if _rpl_dep_str and _os.path.exists(_rpl_dep_str):
+            try:
+                _wb_ctas = openpyxl.load_workbook(_rpl_dep_str, data_only=True)
+                _sh_ctas = next((s for s in _wb_ctas.sheetnames if s.strip().upper() == "CUENTAS"), None)
+                if _sh_ctas:
+                    _wsc = _wb_ctas[_sh_ctas]
+                    for _fila in _wsc.iter_rows(min_row=3, values_only=True):
+                        # Cargo (col A/B)
+                        _cta_v = str(_fila[0] or "").strip() if _fila[0] is not None else ""
+                        _bnm_v = str(_fila[1] or "").strip().upper() if len(_fila) > 1 and _fila[1] is not None else ""
+                        if _cta_v and _bnm_v:
+                            for _key in ("BANORTE", "BBVA", "INBURSA"):
+                                if _key in _bnm_v:
+                                    cargos_efectivos[_key] = (_cta_v, cargos_efectivos[_key][1])
+                                    _bancos_en_cuentas.add(_key)
+                                    break
+                        # Abono (col D/E)
+                        _c2 = str(_fila[3] or "").strip() if len(_fila) > 3 and _fila[3] is not None else ""
+                        _n2 = str(_fila[4] or "").strip() if len(_fila) > 4 and _fila[4] is not None else ""
+                        if _c2 and _n2:
+                            _abonos_raw.append({"cuenta": _c2, "nombre": _n2})
+                _wb_ctas.close()
+                # Blanquear cuenta de bancos que NO estén en la hoja CUENTAS
+                for _bk in ("BANORTE", "BBVA", "INBURSA"):
+                    if _bk not in _bancos_en_cuentas:
+                        cargos_efectivos[_bk] = ("", cargos_efectivos[_bk][1])
+                _log("Cuentas cargo: " + ", ".join(f"{b}={v[0] or '(no en CUENTAS)'}" for b, v in cargos_efectivos.items()))
+                if _abonos_raw:
+                    _log(f"Abonos desde CUENTAS: {len(_abonos_raw)} cuentas")
+                else:
+                    _log("⚠ CUENTAS sin filas de abonos — usando fallback")
+                    _abonos_raw = _ABONOS_FALLBACK[:]
+            except Exception as _ec_err:
+                _log(f"⚠ No se pudo leer CUENTAS de plantilla: {_ec_err}")
+                _abonos_raw = _ABONOS_FALLBACK[:]
+        else:
+            _abonos_raw = _ABONOS_FALLBACK[:]
+        cargo_cta_ef = {b: v[0] for b, v in cargos_efectivos.items()}
+        # Asignar columnas dinámicamente (col = Python-idx + 12; Excel col = col + 1)
+        ABONOS = [{"col": 12 + i, "cuenta": a["cuenta"], "nombre": a["nombre"]} for i, a in enumerate(_abonos_raw)]
         COL_ABONO_IDX = {a["col"]: a for a in ABONOS}
         CARGO_COL = {"BBVA": 9, "BANORTE": 8, "INBURSA": 10}
         CARGO_CTA = {"BBVA": "102-01-0001-0003", "BANORTE": "102-01-0001-0001", "INBURSA": "102-01-0001-0002"}
+        COL_TOTAL_ABONOS = 12 + len(ABONOS) + 1   # Excel col para encabezado TOTAL ABONOS
+        COL_DIFERENCIA   = COL_TOTAL_ABONOS + 1    # Excel col para DIFERENCIA
+        # Mapa keyword → col basado en nombres leídos de CUENTAS
+        def _kw_col(*keys):
+            for ab in ABONOS:
+                n = ab["nombre"].upper()
+                if any(k.upper() in n for k in keys):
+                    return ab["col"]
+            return None
+        COL_AMEX       = _kw_col("AMERICAN", "AMEX")
+        COL_EFECTIVALE = _kw_col("EFECTIVALE")
+        COL_EDENRED    = _kw_col("EDENRED", "TICKET")
+        COL_EFECTIVO   = _kw_col("EFECTIVO", "CAJA")
+        COL_BANORTE_A  = _kw_col("BANORTE")
+        COL_SHELL      = _kw_col("SHELL", "SMARTBT")
+        COL_PLUXE      = _kw_col("PLUXE", "PLUXEE")   # PLUXEE separado de SHELL
+        COL_BBVA_AB    = _kw_col("BBVA")
+        COL_INBURSA_A  = _kw_col("INBURSA")
 
         def _clf_bbva(desc, monto):
             d = desc.upper()
-            if "AMEX" in d: return 12
+            # "AMEX" sola coincidiría con "BANAMEX" — verificar que no sea Banamex
+            if "AMERICAN EXPRESS" in d or ("AMEX" in d and "BANAMEX" not in d): return COL_AMEX
             if ("VENTAS PUNTOS TDC" in d or "VENTAS CREDITO" in d
                     or "TERMINALES PUNTO DE VENTA" in d
-                    or "VENTAS TDC INTER" in d or "TDC INTER" in d): return 18
-            if "DEPOSITO EN EFECTIVO" in d or "DEP.EFECTIVO" in d or "DEP EN EFECTIVO" in d: return 15
+                    or "VENTAS TDC INTER" in d or "TDC INTER" in d): return COL_BBVA_AB
+            if "DEPOSITO EN EFECTIVO" in d or "DEP.EFECTIVO" in d or "DEP EN EFECTIVO" in d: return COL_EFECTIVO
             return None
         def _clf_inbursa(desc, monto):
-            return 19 if "INBURED" in desc.upper() else None
+            return COL_INBURSA_A if "INBURED" in desc.upper() else None
         def _clf_banorte(desc, monto):
             d = desc.upper()
             if "DEP. CH." in d or "CHEQUE SBC" in d: return None
             if "COMPENSACION DESFASE" in d: return None
             if "SPEI RECIBIDO" in d and "SERVICIOS FELUSA" in d: return None
-            if "SHELL" in d or "SMARTBT" in d: return 17
+            if "SHELL" in d or "SMARTBT" in d: return COL_SHELL
             if "AMERICAN EXPRESS" in d or "BCO:0124" in d or "CITI MEXICO" in d:
                 m = _re.search(r"HR LIQ:\s*(\d{2}):", desc)
-                return 17 if (int(m.group(1)) if m else 0) >= 12 else 12
+                return COL_SHELL if (int(m.group(1)) if m else 0) >= 12 else COL_AMEX
+            if "PLUXEE" in d or "PLUXE" in d: return COL_PLUXE   # antes BCO:0014
             if "EFECTIVALE" in d or "EFE8908015L3" in d or "BCO:0014" in d or (
-                    "SANTANDER" in d and "SPEI RECIBIDO" in d): return 13
-            if "EDENRED" in d or "HSBCPGMD" in d or "BCO:0021" in d: return 14
-            if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d: return 15
+                    "SANTANDER" in d and "SPEI RECIBIDO" in d): return COL_EFECTIVALE
+            if "EDENRED" in d or "HSBCPGMD" in d or "BCO:0021" in d: return COL_EDENRED
+            if "DEP.EFECTIVO" in d or "DEPOSITO EN EFECTIVO" in d: return COL_EFECTIVO
             if "07277262C" in d or "07277262D" in d or (
                     "SERV" in d and _re.search(r'\d{5,}[CD]', d)):
-                if "AMERICAN" in d: return 12
-                if "EFECTIVALE" in d: return 13
-                if "EDENRED" in d or "TICKET" in d: return 14
-                if "SHELL" in d or "SMARTBT" in d: return 17
-                if "INBURSA" in d: return 19
-                return 16
+                if "AMERICAN" in d: return COL_AMEX
+                if "EFECTIVALE" in d: return COL_EFECTIVALE
+                if "EDENRED" in d or "TICKET" in d: return COL_EDENRED
+                if "SHELL" in d or "SMARTBT" in d: return COL_SHELL
+                if "INBURSA" in d: return COL_INBURSA_A
+                return COL_BANORTE_A
             return None
 
         CLSF = {"BBVA": _clf_bbva, "BANORTE": _clf_banorte, "INBURSA": _clf_inbursa}
@@ -10393,25 +10797,35 @@ class WorkspaceWindow(tk.Toplevel):
                 todos_ok.extend(ok); todos_nc.extend(nc)
                 total_m = sum(r["monto"] for r in ok)
                 _log(f"  {banco}: {len(ok)} clasificados (${total_m:,.2f})")
-                if nc: _log(f"  {banco}: {len(nc)} sin clasificar â omitidos")
+                if nc: _log(f"  {banco}: {len(nc)} sin clasificar — omitidos")
 
             if not todos_ok:
-                _log("Sin depÃ³sitos clasificables.", True)
+                _log("Sin depósitos clasificables.", True)
                 self.after(0, lambda: self._dep_btn_gen.config(state="normal"))
                 self.after(0, self._dep_pb_frame.grid_remove)
                 return
 
             _log("Generando Excel..."); _pb(60, "Generando...")
 
-            F_FECHA=PatternFill("solid",fgColor="FFC000"); F_REF=PatternFill("solid",fgColor="7030A0")
-            F_CONC=PatternFill("solid",fgColor="00B050");  F_ERROR=PatternFill("solid",fgColor="843C0C")
-            F_ADMIN=PatternFill("solid",fgColor="D0D6DC"); F_BANCO=PatternFill("solid",fgColor="BDD7EE")
-            F_ABONO=PatternFill("solid",fgColor="FFE699"); F_GRAY2=PatternFill("solid",fgColor="BFBFBF")
-            F_TIPO=PatternFill("solid",fgColor="E2EFDA");  F_NONE=PatternFill(fill_type=None)
+            # ── Paleta cian eléctrico ─────────────────────────────────────────────
+            F_META_H = PatternFill("solid",fgColor="0369A1")  # sky-700   — headers meta
+            F_CARGO_H= PatternFill("solid",fgColor="0E7490")  # cyan-700  — encabezados cargo
+            F_ABONO_H= PatternFill("solid",fgColor="0891B2")  # cyan-600  — encabezados abono
+            F_TOT_C  = PatternFill("solid",fgColor="0284C7")  # sky-600   — TOTAL CARGOS
+            F_TOT_A  = PatternFill("solid",fgColor="0891B2")  # cyan-600  — TOTAL ABONOS
+            F_DIFF   = PatternFill("solid",fgColor="0E7490")  # cyan-700  — DIFERENCIA
+            F_R1_META= PatternFill("solid",fgColor="0C4A6E")  # sky-900   — fila1 meta
+            F_R1_COL = PatternFill("solid",fgColor="0E7490")  # cyan-700  — fila1 cargo/abono
+            F_R2     = PatternFill("solid",fgColor="155E75")  # cyan-800  — fila2 cuentas
+            F_NONE   = PatternFill(fill_type=None)
+            # Cargos: BANORTE cyan-700, BBVA blue-700, INBURSA sky-800
+            _CARGO_H = {"BANORTE": F_CARGO_H,
+                        "BBVA":    PatternFill("solid",fgColor="1D4ED8"),
+                        "INBURSA": PatternFill("solid",fgColor="075985")}
             FILLS_BANCO={
-                "BBVA":   (PatternFill("solid",fgColor="DDEEFF"),PatternFill("solid",fgColor="C5DCF5")),
-                "INBURSA":(PatternFill("solid",fgColor="FFF0DC"),PatternFill("solid",fgColor="FFE0B5")),
-                "BANORTE":(PatternFill("solid",fgColor="FFE4E4"),PatternFill("solid",fgColor="FFCCCC")),
+                "BBVA":   (PatternFill("solid",fgColor="E0F7FA"),PatternFill("solid",fgColor="B2EBF2")),
+                "INBURSA":(PatternFill("solid",fgColor="E3F8FC"),PatternFill("solid",fgColor="BAE6FD")),
+                "BANORTE":(PatternFill("solid",fgColor="E0FBFF"),PatternFill("solid",fgColor="C7F2FA")),
             }
             FMT_N="#,##0.00"; FMT_D="DD/MM/YYYY"
             AC=Alignment(horizontal="center",vertical="center")
@@ -10430,22 +10844,36 @@ class WorkspaceWindow(tk.Toplevel):
                 return c
 
             wb_o=openpyxl.Workbook(); ws_p=wb_o.active; ws_p.title="POLIZA"
-            for idx in range(21): sc(ws_p,1,idx+1,idx,fnt(),F_NONE,AC)
+            _fnt_idx = fnt(color="BAE6FD"); _fnt_idx2 = fnt(color="7DD3FC")
+            # Fila 1 — todas las celdas con color
+            for idx in range(COL_DIFERENCIA):
+                _ci1 = idx + 1
+                _f1 = F_R1_META if _ci1 <= 8 else F_R1_COL
+                sc(ws_p,1,_ci1,idx,_fnt_idx,_f1,AC)
+            # Fila 2 — todas las celdas con color base; sobreescribir donde hay cuenta
+            _fnt_cta = fnt(color="E0F7FA"); _fnt_cta2 = fnt(color="BAE6FD",bold=False)
+            for _ci2 in range(1, COL_DIFERENCIA + 1):
+                sc(ws_p,2,_ci2,None,_fnt_cta2,F_R2,AC)
             for pi,banco in [(8,"BANORTE"),(9,"BBVA"),(10,"INBURSA")]:
-                sc(ws_p,2,pi+1,CARGOS[banco][0],fnt(),F_GRAY2,AC)
-            for a in ABONOS: sc(ws_p,2,a["col"]+1,a["cuenta"],fnt(),F_GRAY2,AC)
-            for col,lbl,fill,font in [
-                (1,"TIPO DE POLIZA",F_TIPO,fnt()),(2,"Fecha",F_FECHA,fnt(bold=True,color="FFFFFF")),
-                (3,"REFERENCIA",F_REF,fnt(bold=True,color="FFFFFF")),(4,"CONCEPTO",F_CONC,fnt(bold=True,color="FFFFFF")),
-                (5,"ERROR",F_ERROR,fnt(bold=True,color="FFFFFF")),(6,"UIDD",F_ADMIN,fnt(bold=True,color="FFFFFF")),
-                (7,"NUM POLIZA",F_ADMIN,fnt(bold=True,color="FFFFFF")),(8,"PROCESADO",F_ADMIN,fnt(bold=True,color="FFFFFF"))]:
-                sc(ws_p,3,col,lbl,font,fill,AC)
+                _cta_cargo = cargos_efectivos[banco][0]
+                if _cta_cargo:
+                    sc(ws_p,2,pi+1,_cta_cargo,_fnt_cta,F_R2,AC)
+            for a in ABONOS: sc(ws_p,2,a["col"]+1,a["cuenta"],_fnt_cta,F_R2,AC)
+            # Fila 3 — encabezados cian eléctrico
+            _fnt_h3 = fnt(bold=True,color="FFFFFF")
+            _fnt_h9 = Font(name="Aptos Narrow",size=9,bold=True,color="FFFFFF")
+            for col,lbl in [(1,"TIPO"),(2,"FECHA"),(3,"REFERENCIA"),(4,"CONCEPTO"),
+                            (5,"ERROR"),(6,"UIDD"),(7,"NÚM\nPÓLIZA"),(8,"PROCESADO")]:
+                sc(ws_p,3,col,lbl,_fnt_h9,F_META_H,ACW)
             for pi,banco in [(8,"BANORTE"),(9,"BBVA"),(10,"INBURSA")]:
-                sc(ws_p,3,pi+1,CARGOS[banco][1],fnt(bold=True,color="FFFFFF"),F_BANCO,AC)
-            sc(ws_p,3,12,"TOTAL CARGOS",fnt(color="FF0000"),F_NONE,AC)
-            for a in ABONOS: sc(ws_p,3,a["col"]+1,a["nombre"],fnt(bold=True),F_ABONO,ACW)
-            sc(ws_p,3,21,"TOTAL ABONOS",fnt(color="FF0000"),F_NONE,AC)
-            sc(ws_p,3,22,"DIFERENCIA",  fnt(color="FF0000"),F_NONE,AC)
+                sc(ws_p,3,pi+1,CARGOS[banco][1],_fnt_h9,_CARGO_H[banco],ACW)
+            sc(ws_p,3,12,"TOTAL\nCARGOS",_fnt_h9,F_TOT_C,ACW)
+            for a in ABONOS: sc(ws_p,3,a["col"]+1,a["nombre"],_fnt_h9,F_ABONO_H,ACW)
+            sc(ws_p,3,COL_TOTAL_ABONOS,"TOTAL\nABONOS",_fnt_h9,F_TOT_A,ACW)
+            sc(ws_p,3,COL_DIFERENCIA,  "DIFERENCIA",   _fnt_h9,F_DIFF,ACW)
+            ws_p.row_dimensions[1].height = 12
+            ws_p.row_dimensions[2].height = 22
+            ws_p.row_dimensions[3].height = 50
 
             orden_b={"BBVA":0,"INBURSA":1,"BANORTE":2}
             reg_s=sorted(todos_ok,key=lambda x:(orden_b[x["banco"]],x["fecha"]))
@@ -10460,23 +10888,53 @@ class WorkspaceWindow(tk.Toplevel):
                 dat(r["col_cargo"]+1,m,FMT_N,AR)
                 dat(12,m,FMT_N,AR)
                 dat(r["col_abono"]+1,m,FMT_N,AR)
-                dat(21,m,FMT_N,AR)
-                cd=ws_p.cell(row=fn_num,column=22,
-                    value=f"={get_column_letter(12)}{fn_num}-{get_column_letter(21)}{fn_num}")
+                dat(COL_TOTAL_ABONOS,m,FMT_N,AR)
+                cd=ws_p.cell(row=fn_num,column=COL_DIFERENCIA,
+                    value=f"={get_column_letter(12)}{fn_num}-{get_column_letter(COL_TOTAL_ABONOS)}{fn_num}")
                 cd.font=fd; cd.fill=fr; cd.alignment=AR; cd.number_format=FMT_N
 
-            for cn,w in {1:14.4,2:13.0,3:36.9,4:26.3,5:6.7,6:5.3,7:11.3,8:11.6,
-                         9:16.0,10:16.0,11:16.0,12:16.3,13:32.0,14:26.0,15:30.0,
-                         16:18.0,17:28.0,18:32.0,19:12.0,20:28.0,21:14.1,22:12.6}.items():
+            _col_widths = {1:14.4,2:13.0,3:36.9,4:26.3,5:6.7,6:5.3,7:11.3,8:11.6,
+                           9:16.0,10:16.0,11:16.0,12:16.3}
+            for ab in ABONOS: _col_widths[ab["col"]+1] = 28.0
+            _col_widths[COL_TOTAL_ABONOS] = 14.1
+            _col_widths[COL_DIFERENCIA]   = 12.6
+            for cn,w in _col_widths.items():
                 ws_p.column_dimensions[get_column_letter(cn)].width=w
             ws_p.freeze_panes="B4"
+
+            # ── Hoja RESUMEN ──────────────────────────────────────────────────────
+            ws_r = wb_o.create_sheet("RESUMEN")
+            _FR_T = PatternFill("solid",fgColor="0F172A"); _FR_H = PatternFill("solid",fgColor="0369A1")
+            _FR_D = PatternFill("solid",fgColor="E0F7FA"); _FR_D2= PatternFill("solid",fgColor="B2EBF2")
+            _fh_r = fnt(bold=True,color="FFFFFF"); _fd_r = fnt(color="0C4A6E")
+            sc(ws_r,1,1,"RESUMEN DE DEPÓSITOS BANCARIOS",_fh_r,_FR_T,Alignment(horizontal="left",vertical="center"))
+            ws_r.row_dimensions[1].height = 22
+            for _ci,_hdr in [(1,"BANCO"),(2,"REGISTROS"),(3,"TOTAL ($)")]:
+                sc(ws_r,2,_ci,_hdr,_fh_r,_FR_H,AC)
+            _res_tot_m, _res_tot_n = 0, 0
+            for _ri,(_bk,_bf) in enumerate([("BBVA",F_R1_COL),("INBURSA",F_R1_COL),("BANORTE",F_CARGO_H)],start=3):
+                _bk_regs = [_r for _r in todos_ok if _r["banco"]==_bk]
+                _bk_m = sum(_r["monto"] for _r in _bk_regs)
+                _fr_r  = _FR_D if _ri % 2 == 1 else _FR_D2
+                sc(ws_r,_ri,1,_bk,_fd_r,_fr_r,AL)
+                sc(ws_r,_ri,2,len(_bk_regs),_fd_r,_fr_r,AC)
+                c_m=ws_r.cell(row=_ri,column=3,value=_bk_m); c_m.font=_fd_r; c_m.fill=_fr_r
+                c_m.alignment=AR; c_m.number_format="#,##0.00"
+                _res_tot_m+=_bk_m; _res_tot_n+=len(_bk_regs)
+            _fr_tot=PatternFill("solid",fgColor="0891B2")
+            sc(ws_r,6,"TOTAL",_fh_r,_fr_tot,AL)
+            sc(ws_r,6,2,_res_tot_n,_fh_r,_fr_tot,AC)
+            c_gt=ws_r.cell(row=6,column=3,value=_res_tot_m); c_gt.font=_fh_r; c_gt.fill=_fr_tot
+            c_gt.alignment=AR; c_gt.number_format="#,##0.00"
+            for _ci,_w in {1:18,2:12,3:18}.items():
+                ws_r.column_dimensions[get_column_letter(_ci)].width=_w
 
             wc=wb_o.create_sheet("CUENTAS"); fp=fnt()
             sc(wc,1,1,"CARGOS",fp,F_NONE,Alignment(horizontal="center"))
             sc(wc,1,4,"ABONOS",fp,F_NONE,Alignment(horizontal="center"))
-            sc(wc,2,1,"NÂ° Cuenta",fp,F_NONE); sc(wc,2,2,"Banco",fp,F_NONE)
-            sc(wc,2,4,"NÂ° Cuenta",fp,F_NONE); sc(wc,2,5,"Nombre del Deposito",fp,F_NONE)
-            for i,(banco,(cta,nom)) in enumerate(CARGOS.items(),start=3):
+            sc(wc,2,1,"N° Cuenta",fp,F_NONE); sc(wc,2,2,"Banco",fp,F_NONE)
+            sc(wc,2,4,"N° Cuenta",fp,F_NONE); sc(wc,2,5,"Nombre del Deposito",fp,F_NONE)
+            for i,(banco,(cta,nom)) in enumerate(cargos_efectivos.items(),start=3):
                 sc(wc,i,1,cta,fp,F_NONE); sc(wc,i,2,nom,fp,F_NONE)
             for i,a in enumerate(ABONOS,start=3):
                 sc(wc,i,4,a["cuenta"],fp,F_NONE); sc(wc,i,5,a["nombre"],fp,F_NONE)
@@ -10491,7 +10949,7 @@ class WorkspaceWindow(tk.Toplevel):
             mes=_dt.now().strftime("%Y-%m")
             self._dep_wb_name=f"DEPOSITOS BANCARIOS {mes}.xlsx"
             self._dep_wb_dir=_os.path.expanduser("~\\Desktop")
-            _pb(100,"Â¡Listo!")
+            _pb(100,"¡Listo!")
 
             total_g=sum(r["monto"] for r in todos_ok)
             bbva_n=sum(1 for r in todos_ok if r["banco"]=="BBVA")
@@ -10500,12 +10958,12 @@ class WorkspaceWindow(tk.Toplevel):
             res=(f"  BBVA:{bbva_n}  Inbursa:{inbu_n}  Banorte:{bnrt_n}  "
                  f"Total:{len(todos_ok)} movs  ${total_g:,.2f}")
             self.after(0,self._dep_lbl_resumen.config,{"text":res})
-            self.after(0,self._dep_cargar_visor,reg_s,COL_ABONO_IDX,CARGO_CTA)
+            self.after(0,self._dep_cargar_visor,reg_s,COL_ABONO_IDX,cargo_cta_ef)
             self.after(0,self._dep_lbl_arch.config,{"text":self._dep_wb_name})
             self.after(0,self._dep_btn_abrir.config,{"state":"normal"})
             self.after(0,self._dep_btn_guardar.config,{"state":"normal"})
-            _log(f"â Listo â {len(todos_ok)} movimientos | Total: ${total_g:,.2f}")
-            if todos_nc: _log(f"â   {len(todos_nc)} movimientos no clasificados (omitidos)")
+            _log(f"✅ Listo — {len(todos_ok)} movimientos | Total: ${total_g:,.2f}")
+            if todos_nc: _log(f"⚠  {len(todos_nc)} movimientos no clasificados (omitidos)")
 
         except Exception as exc:
             import traceback as _tb
@@ -10548,12 +11006,12 @@ class WorkspaceWindow(tk.Toplevel):
     def _dep_guardar_como(self):
         wb = getattr(self, "_dep_wb", None)
         if wb is None:
-            messagebox.showwarning("Sin datos","Primero genera la pÃ³liza.",parent=self)
+            messagebox.showwarning("Sin datos","Primero genera la póliza.",parent=self)
             return
         self.focus_force(); self.update()
         ruta = filedialog.asksaveasfilename(
             parent=self,
-            title="Guardar pÃ³liza de depÃ³sitos como...",
+            title="Guardar póliza de depósitos como...",
             initialdir=getattr(self,"_dep_wb_dir",os.getcwd()),
             initialfile=getattr(self,"_dep_wb_name","DEPOSITOS BANCARIOS.xlsx"),
             defaultextension=".xlsx",
@@ -10572,12 +11030,1622 @@ class WorkspaceWindow(tk.Toplevel):
             messagebox.showerror("Error al guardar",f"No se pudo guardar:\n{e}",parent=self)
 
 
+
+
+    # ══════════════════════════════════════════════════════════════════════
+    # MÓDULO — OPINIÓN IMSS (Art. 32-D)
+    # ══════════════════════════════════════════════════════════════════════
+    _IMSS_ACENTO   = "#00695C"
+    _IMSS_ACENTO_L = "#E0F2F1"
+
+    def _imss_json_path(self):
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "imss_efirmas.json")
+
+    def _imss_protect(self, data: bytes) -> str:
+        import base64
+        try:
+            import ctypes, ctypes.wintypes
+            class _BLOB(ctypes.Structure):
+                _fields_ = [("cbData", ctypes.wintypes.DWORD),
+                            ("pbData", ctypes.POINTER(ctypes.c_char))]
+            blob_in = _BLOB(len(data), ctypes.cast(ctypes.c_char_p(data), ctypes.POINTER(ctypes.c_char)))
+            blob_out = _BLOB()
+            ok = ctypes.windll.crypt32.CryptProtectData(
+                ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out))
+            if ok:
+                res = ctypes.string_at(blob_out.pbData, blob_out.cbData)
+                ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+                return base64.b64encode(res).decode()
+        except Exception:
+            pass
+        return base64.b64encode(data).decode()
+
+    def _imss_unprotect(self, b64: str) -> bytes:
+        import base64
+        data = base64.b64decode(b64)
+        try:
+            import ctypes, ctypes.wintypes
+            class _BLOB(ctypes.Structure):
+                _fields_ = [("cbData", ctypes.wintypes.DWORD),
+                            ("pbData", ctypes.POINTER(ctypes.c_char))]
+            blob_in = _BLOB(len(data), ctypes.cast(ctypes.c_char_p(data), ctypes.POINTER(ctypes.c_char)))
+            blob_out = _BLOB()
+            ok = ctypes.windll.crypt32.CryptUnprotectData(
+                ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out))
+            if ok:
+                res = ctypes.string_at(blob_out.pbData, blob_out.cbData)
+                ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+                return res
+        except Exception:
+            pass
+        return data
+
+    def _imss_cargar_empresas(self) -> list:
+        try:
+            import json
+            with open(self._imss_json_path(), encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+    def _imss_guardar_empresas(self, lista):
+        import json
+        with open(self._imss_json_path(), "w", encoding="utf-8") as f:
+            json.dump(lista, f, ensure_ascii=False, indent=2)
+
+    def _tab_opinion_imss(self, nb):
+        outer = ttk.Frame(nb)
+        nb.add(outer, text="  🏥 Opinión IMSS  ")
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
+
+        self._imss_cer_path = tk.StringVar()
+        self._imss_key_path = tk.StringVar()
+        self._imss_pwd_var  = tk.StringVar()
+        self._imss_nrp_var  = tk.StringVar()
+        self._imss_pdf_path = None
+
+        # ── Panel superior: controles ──────────────────────────────────
+        ctrl = tk.Frame(outer, bg=COLOR_FONDO)
+        ctrl.grid(row=0, column=0, sticky="ew")
+        ctrl.columnconfigure(0, weight=1)
+
+        hdr = tk.Frame(ctrl, bg=COLOR_FONDO)
+        hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(10, 4))
+        tk.Label(hdr, text="🏥  Opinión de Cumplimiento — IMSS  (Art. 32-D)",
+                 bg=COLOR_FONDO, fg=self._IMSS_ACENTO,
+                 font=("Segoe UI", 12, "bold")).pack(side="left")
+
+        # ── Área principal: izquierda form | derecha log ───────────────
+        main = tk.Frame(outer, bg=COLOR_FONDO)
+        main.grid(row=1, column=0, sticky="nsew", padx=16, pady=4)
+        main.columnconfigure(0, weight=0)
+        main.columnconfigure(1, weight=1)
+        main.rowconfigure(0, weight=1)
+
+        # LEFT ──────────────────────────────────────────────────────────
+        lfrm = tk.Frame(main, bg=COLOR_FONDO, width=340)
+        lfrm.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        lfrm.grid_propagate(False)
+        lfrm.columnconfigure(1, weight=1)
+
+        # E.firmas guardadas
+        tk.Label(lfrm, text="📁  E.firmas guardadas", bg=COLOR_FONDO,
+                 fg=self._IMSS_ACENTO, font=("Segoe UI", 9, "bold")).grid(
+                 row=0, column=0, columnspan=3, sticky="w", pady=(0, 3))
+
+        self._imss_lb = tk.Listbox(lfrm, height=5, font=("Consolas", 8),
+                                    bg="#0D1117", fg="#7FFFD4",
+                                    selectbackground=self._IMSS_ACENTO,
+                                    selectforeground="white", bd=0,
+                                    highlightthickness=0)
+        self._imss_lb.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 4))
+
+        btn_row = tk.Frame(lfrm, bg=COLOR_FONDO)
+        btn_row.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 6))
+        tk.Button(btn_row, text="✅ Usar seleccionada",
+                  bg=self._IMSS_ACENTO, fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._imss_usar_guardada).pack(side="left", padx=(0, 4))
+        tk.Button(btn_row, text="🗑 Quitar",
+                  bg="#B71C1C", fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._imss_quitar_empresa).pack(side="left")
+
+        ttk.Separator(lfrm).grid(row=3, column=0, columnspan=3, sticky="ew", pady=6)
+
+        # E.firma nueva
+        tk.Label(lfrm, text="🔐  Nueva e.firma", bg=COLOR_FONDO,
+                 fg=self._IMSS_ACENTO, font=("Segoe UI", 9, "bold")).grid(
+                 row=4, column=0, columnspan=3, sticky="w", pady=(0, 4))
+
+        # .cer
+        tk.Label(lfrm, text="Archivo .cer", bg=COLOR_FONDO, fg="#AAAAAA",
+                 font=("Segoe UI", 8)).grid(row=5, column=0, sticky="w", pady=2)
+        tk.Entry(lfrm, textvariable=self._imss_cer_path, font=("Segoe UI", 8),
+                 bg="#1A2332", fg="white", insertbackground="white",
+                 relief="flat").grid(row=5, column=1, sticky="ew", padx=4)
+        tk.Button(lfrm, text="📂 CER", bg="#1E3A5F", fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._imss_elegir_cer).grid(row=5, column=2)
+
+        # .key
+        tk.Label(lfrm, text="Archivo .key", bg=COLOR_FONDO, fg="#AAAAAA",
+                 font=("Segoe UI", 8)).grid(row=6, column=0, sticky="w", pady=2)
+        tk.Entry(lfrm, textvariable=self._imss_key_path, font=("Segoe UI", 8),
+                 bg="#1A2332", fg="white", insertbackground="white",
+                 relief="flat").grid(row=6, column=1, sticky="ew", padx=4)
+        tk.Button(lfrm, text="📂 KEY", bg="#1E3A5F", fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._imss_elegir_key).grid(row=6, column=2)
+
+        # Contraseña
+        tk.Label(lfrm, text="Contraseña", bg=COLOR_FONDO, fg="#AAAAAA",
+                 font=("Segoe UI", 8)).grid(row=7, column=0, sticky="w", pady=2)
+        tk.Entry(lfrm, textvariable=self._imss_pwd_var, show="*",
+                 font=("Segoe UI", 8), bg="#1A2332", fg="white",
+                 insertbackground="white", relief="flat").grid(
+                 row=7, column=1, columnspan=2, sticky="ew", padx=(4, 0))
+
+        # NRP
+        tk.Label(lfrm, text="NRP (opcional)", bg=COLOR_FONDO, fg="#AAAAAA",
+                 font=("Segoe UI", 8)).grid(row=8, column=0, sticky="w", pady=2)
+        tk.Entry(lfrm, textvariable=self._imss_nrp_var,
+                 font=("Segoe UI", 8), bg="#1A2332", fg="white",
+                 insertbackground="white", relief="flat").grid(
+                 row=8, column=1, columnspan=2, sticky="ew", padx=(4, 0))
+
+        # Guardar e.firma
+        tk.Button(lfrm, text="💾  Guardar e.firma en este equipo",
+                  bg="#1565C0", fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._imss_guardar_empresa_ui).grid(
+                  row=9, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+
+        # Botón principal
+        self._imss_btn_gen = tk.Button(
+            lfrm, text="⚡  GENERAR OPINIÓN IMSS",
+            bg=self._IMSS_ACENTO, fg="white", font=("Segoe UI", 10, "bold"),
+            relief="flat", cursor="hand2", height=2,
+            command=self._imss_generar)
+        self._imss_btn_gen.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(14, 0))
+
+        # RIGHT: log ────────────────────────────────────────────────────
+        rfrm = tk.Frame(main, bg=COLOR_FONDO)
+        rfrm.grid(row=0, column=1, sticky="nsew")
+        rfrm.columnconfigure(0, weight=1)
+        rfrm.rowconfigure(1, weight=1)
+
+        tk.Label(rfrm, text="  📋  Progreso", bg=COLOR_FONDO,
+                 fg=self._IMSS_ACENTO, font=("Segoe UI", 9, "bold"),
+                 anchor="w").grid(row=0, column=0, sticky="ew", padx=8, pady=(6, 0))
+
+        self._imss_log_txt = tk.Text(
+            rfrm, bg="#F5F5F5", fg="#1A1A2E", font=("Consolas", 8),
+            wrap="word", state="disabled", relief="flat",
+            selectbackground=self._IMSS_ACENTO)
+        self._imss_log_txt.grid(row=1, column=0, sticky="nsew", padx=8, pady=4)
+
+        sb = ttk.Scrollbar(rfrm, orient="vertical", command=self._imss_log_txt.yview)
+        sb.grid(row=1, column=1, sticky="ns", pady=4)
+        self._imss_log_txt.config(yscrollcommand=sb.set)
+
+        self._imss_log_txt.tag_configure("ok",  foreground="#007A4A")
+        self._imss_log_txt.tag_configure("err", foreground="#CC0000")
+        self._imss_log_txt.tag_configure("hdr", foreground=self._IMSS_ACENTO,
+                                          font=("Consolas", 8, "bold"))
+
+        # BOTTOM: barra de resultado ────────────────────────────────────
+        bot = tk.Frame(outer, bg=COLOR_FONDO, height=42)
+        bot.grid(row=2, column=0, sticky="ew")
+        bot.pack_propagate(False)
+        bot.grid_propagate(False)
+
+        self._imss_lbl_res = tk.Label(bot, text="", bg=COLOR_FONDO, fg=self._IMSS_ACENTO,
+                                       font=("Segoe UI", 8), anchor="w")
+        self._imss_lbl_res.pack(side="left", padx=12, fill="x", expand=True)
+
+        self._imss_btn_guardar = tk.Button(
+            bot, text="💾 Guardar como", bg="#1565C0", fg="white",
+            font=("Segoe UI", 8), relief="flat", cursor="hand2",
+            state="disabled", command=self._imss_guardar_pdf)
+        self._imss_btn_guardar.pack(side="right", padx=4, pady=7)
+
+        self._imss_btn_abrir = tk.Button(
+            bot, text="📂 Abrir PDF", bg=self._IMSS_ACENTO, fg="white",
+            font=("Segoe UI", 8), relief="flat", cursor="hand2",
+            state="disabled", command=self._imss_abrir_pdf)
+        self._imss_btn_abrir.pack(side="right", padx=(4, 0), pady=7)
+
+        # Cargar lista inicial
+        self._imss_refrescar_lista()
+
+    # ── helpers ─────────────────────────────────────────────────────────
+
+    def _imss_log(self, msg, tag=""):
+        try:
+            self._imss_log_txt.config(state="normal")
+            self._imss_log_txt.insert("end", msg + "\n", tag)
+            self._imss_log_txt.see("end")
+            self._imss_log_txt.config(state="disabled")
+        except Exception:
+            pass
+
+    def _imss_refrescar_lista(self):
+        try:
+            self._imss_lb.delete(0, "end")
+            for emp in self._imss_cargar_empresas():
+                self._imss_lb.insert("end", f"  {emp.get('rfc','')}  —  {emp.get('nombre','')}")
+        except Exception:
+            pass
+
+    def _imss_on_select(self, _event=None):
+        pass  # solo selección visual
+
+    def _imss_usar_guardada(self):
+        sel = self._imss_lb.curselection()
+        if not sel:
+            messagebox.showwarning("Sin selección", "Selecciona una e.firma de la lista.", parent=self)
+            return
+        lista = self._imss_cargar_empresas()
+        idx = sel[0]
+        if idx >= len(lista):
+            return
+        emp = lista[idx]
+        # Desencriptar y escribir a temp
+        try:
+            import tempfile
+            cer_bytes = self._imss_unprotect(emp["cer_enc"])
+            key_bytes = self._imss_unprotect(emp["key_enc"])
+            tmp = tempfile.gettempdir()
+            rfc = emp.get("rfc", "efirma")
+            cer_tmp = os.path.join(tmp, f"{rfc}.cer")
+            key_tmp = os.path.join(tmp, f"{rfc}.key")
+            with open(cer_tmp, "wb") as f: f.write(cer_bytes)
+            with open(key_tmp, "wb") as f: f.write(key_bytes)
+            self._imss_cer_path.set(cer_tmp)
+            self._imss_key_path.set(key_tmp)
+            self._imss_nrp_var.set(emp.get("nrp", ""))
+            self._imss_log(f"✅ E.firma cargada: {emp.get('rfc','')} — {emp.get('nombre','')}", "ok")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo cargar la e.firma:\n{e}", parent=self)
+
+    def _imss_quitar_empresa(self):
+        sel = self._imss_lb.curselection()
+        if not sel:
+            messagebox.showwarning("Sin selección", "Selecciona una empresa para quitar.", parent=self)
+            return
+        lista = self._imss_cargar_empresas()
+        idx = sel[0]
+        if idx >= len(lista):
+            return
+        rfc = lista[idx].get("rfc", "")
+        if not messagebox.askyesno("Confirmar", f"¿Quitar {rfc} de las e.firmas guardadas?", parent=self):
+            return
+        lista.pop(idx)
+        self._imss_guardar_empresas(lista)
+        self._imss_refrescar_lista()
+        self._imss_log(f"🗑 E.firma {rfc} eliminada.", "err")
+
+    def _imss_guardar_empresa_ui(self):
+        cer = self._imss_cer_path.get().strip()
+        key = self._imss_key_path.get().strip()
+        pwd = self._imss_pwd_var.get()
+        if not cer or not key or not pwd:
+            messagebox.showwarning("Datos incompletos",
+                                   "Selecciona .cer, .key y contraseña antes de guardar.", parent=self)
+            return
+        # Leer RFC del .cer
+        rfc = ""
+        nombre = ""
+        try:
+            from satcfdi.cfdi.csd import CSD
+            csd = CSD(open(cer,"rb").read(), open(key,"rb").read(), pwd.encode())
+            rfc = csd.rfc
+            nombre = csd.name
+        except Exception:
+            rfc = os.path.splitext(os.path.basename(cer))[0].upper()
+        lista = self._imss_cargar_empresas()
+        # Actualizar si ya existe
+        for emp in lista:
+            if emp.get("rfc") == rfc:
+                emp["cer_enc"]  = self._imss_protect(open(cer,"rb").read())
+                emp["key_enc"]  = self._imss_protect(open(key,"rb").read())
+                emp["pwd_enc"]  = self._imss_protect(pwd.encode())
+                emp["nombre"]   = nombre
+                emp["nrp"]      = self._imss_nrp_var.get().strip()
+                self._imss_guardar_empresas(lista)
+                self._imss_refrescar_lista()
+                self._imss_log(f"💾 E.firma actualizada: {rfc}", "ok")
+                return
+        lista.append({
+            "rfc": rfc, "nombre": nombre,
+            "cer_enc": self._imss_protect(open(cer,"rb").read()),
+            "key_enc": self._imss_protect(open(key,"rb").read()),
+            "pwd_enc": self._imss_protect(pwd.encode()),
+            "nrp": self._imss_nrp_var.get().strip(),
+        })
+        self._imss_guardar_empresas(lista)
+        self._imss_refrescar_lista()
+        self._imss_log(f"💾 E.firma guardada: {rfc} — {nombre}", "ok")
+
+    def _imss_elegir_cer(self):
+        p = filedialog.askopenfilename(
+            title="Seleccionar .cer",
+            filetypes=[("Certificado", "*.cer"), ("Todos", "*.*")],
+            parent=self)
+        if p:
+            self._imss_cer_path.set(p)
+
+    def _imss_elegir_key(self):
+        p = filedialog.askopenfilename(
+            title="Seleccionar .key",
+            filetypes=[("Llave privada", "*.key"), ("Todos", "*.*")],
+            parent=self)
+        if p:
+            self._imss_key_path.set(p)
+
+    def _imss_generar(self):
+        cer = self._imss_cer_path.get().strip()
+        key = self._imss_key_path.get().strip()
+        pwd = self._imss_pwd_var.get()
+        if not cer or not key or not pwd:
+            messagebox.showwarning("Datos incompletos",
+                                   "Selecciona .cer, .key y escribe la contraseña.", parent=self)
+            return
+        if not os.path.isfile(cer) or not os.path.isfile(key):
+            messagebox.showerror("Archivo no encontrado",
+                                 "No se encontraron los archivos .cer / .key.", parent=self)
+            return
+        nrp = self._imss_nrp_var.get().strip()
+        # Limpiar log y deshabilitar botón
+        try:
+            self._imss_log_txt.config(state="normal")
+            self._imss_log_txt.delete("1.0", "end")
+            self._imss_log_txt.config(state="disabled")
+        except Exception:
+            pass
+        self._imss_lbl_res.config(text="")
+        self._imss_btn_abrir.config(state="disabled")
+        self._imss_btn_guardar.config(state="disabled")
+        self._imss_pdf_path = None
+        self._imss_btn_gen.config(state="disabled", text="⏳  Generando…")
+        self._imss_log("━━━  OPINIÓN IMSS  ━━━━━━━━━━━━━━━━━━━━━━━━━", "hdr")
+        self._imss_log(f"  .cer : {os.path.basename(cer)}")
+        self._imss_log(f"  .key : {os.path.basename(key)}")
+        if nrp:
+            self._imss_log(f"  NRP  : {nrp}")
+        self._imss_log("  Iniciando Playwright (Chromium)…")
+        import threading
+        t = threading.Thread(target=self._imss_hilo,
+                             args=(cer, key, pwd, nrp), daemon=True)
+        t.start()
+
+    def _imss_hilo(self, cer, key, pwd, nrp):
+        import subprocess, sys, tempfile, importlib
+
+        def log(msg, tag=""):
+            self.after(0, lambda m=msg, t=tag: self._imss_log(m, t))
+
+        def done(pdf_path=None, error=None):
+            def _ui():
+                self._imss_btn_gen.config(state="normal", text="⚡  GENERAR OPINIÓN IMSS")
+                if error:
+                    self._imss_log(f"✖  {error}", "err")
+                    messagebox.showerror("Error IMSS", error, parent=self)
+                elif pdf_path:
+                    self._imss_pdf_path = pdf_path
+                    self._imss_lbl_res.config(text=f"✅  {os.path.basename(pdf_path)}")
+                    self._imss_btn_abrir.config(state="normal")
+                    self._imss_btn_guardar.config(state="normal")
+                    self._imss_log(f"✅ PDF guardado en: {pdf_path}", "ok")
+            self.after(0, _ui)
+
+        # Verificar playwright instalado
+        try:
+            importlib.import_module("playwright")
+        except ImportError:
+            log("  playwright no instalado. Instalando…")
+            r = subprocess.run([sys.executable, "-m", "pip", "install", "playwright"],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                done(error=f"No se pudo instalar playwright:\n{r.stderr[-500:]}")
+                return
+            log("  playwright instalado. Instalando Chromium…")
+            r2 = subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"],
+                                capture_output=True, text=True)
+            if r2.returncode != 0:
+                done(error=f"No se pudo instalar Chromium:\n{r2.stderr[-500:]}")
+                return
+
+        # Script playwright inline
+        script = f"""
+import sys, os, time, tempfile
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    print("ERR:playwright no disponible")
+    sys.exit(1)
+
+CER  = {repr(cer)}
+KEY  = {repr(key)}
+PWD  = {repr(pwd)}
+NRP  = {repr(nrp)}
+OUT  = os.path.join(tempfile.gettempdir(), "Opinion_IMSS_tmp.pdf")
+
+def run(p):
+    br = p.chromium.launch(headless=True)
+    ctx = br.new_context(accept_downloads=True)
+    page = ctx.new_page()
+    page.goto("https://buzon.imss.gob.mx/buzonimss/login", timeout=60000)
+    print("INFO:pagina cargada")
+    time.sleep(2)
+    # Upload .cer
+    try:
+        page.set_input_files("input[type=file][accept*='cer']", CER)
+        print("INFO:cer subido")
+    except Exception as e:
+        print(f"WARN:input cer: {{e}}")
+    # Upload .key
+    try:
+        page.set_input_files("input[type=file][accept*='key']", KEY)
+        print("INFO:key subido")
+    except Exception as e:
+        print(f"WARN:input key: {{e}}")
+    # Password
+    try:
+        page.fill("input[type=password]", PWD)
+        print("INFO:password llenado")
+    except Exception as e:
+        print(f"WARN:password: {{e}}")
+    # Opcional: NRP
+    if NRP:
+        try:
+            page.fill("input[placeholder*='NRP']", NRP)
+            print(f"INFO:NRP {{NRP}} llenado")
+        except Exception:
+            pass
+    # Click ingresar
+    try:
+        page.click("button:has-text('Ingresar')", timeout=10000)
+        print("INFO:click ingresar OK")
+        time.sleep(3)
+    except Exception as e:
+        print(f"ERR:no se pudo hacer click en Ingresar: {{e}}")
+        br.close(); sys.exit(2)
+    # Buscar link de Opinión de Cumplimiento
+    try:
+        page.click("text=Opinión", timeout=15000)
+        print("INFO:navegando a Opinión")
+        time.sleep(3)
+    except Exception as e:
+        print(f"WARN:link Opinion: {{e}}")
+    # Intentar descarga
+    try:
+        with ctx.expect_download(timeout=60000) as dl_info:
+            page.click("button:has-text('Descargar')", timeout=15000)
+        dl = dl_info.value
+        dl.save_as(OUT)
+        print(f"OK:{{OUT}}")
+        br.close()
+        return
+    except Exception as e:
+        print(f"WARN:download: {{e}}")
+    # Fallback: PDF de la página actual
+    try:
+        page.pdf(path=OUT)
+        print(f"OK:{{OUT}}")
+    except Exception as e:
+        print(f"ERR:pdf fallback: {{e}}")
+        br.close(); sys.exit(3)
+    br.close()
+
+with sync_playwright() as p:
+    run(p)
+"""
+        tmp_script = tempfile.NamedTemporaryFile(delete=False, suffix=".py",
+                                                  mode="w", encoding="utf-8")
+        tmp_script.write(script)
+        tmp_script.close()
+
+        try:
+            import subprocess, sys
+            proc = subprocess.Popen(
+                [sys.executable, tmp_script.name],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace")
+            pdf_out = None
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line.startswith("OK:"):
+                    pdf_out = line[3:]
+                    log(f"  {line}", "ok")
+                elif line.startswith("ERR:"):
+                    log(f"  ✖ {line[4:]}", "err")
+                elif line.startswith("INFO:"):
+                    log(f"  → {line[5:]}")
+                elif line.startswith("WARN:"):
+                    log(f"  ⚠ {line[5:]}")
+                else:
+                    log(f"  {line}")
+            proc.wait()
+            os.unlink(tmp_script.name)
+
+            if pdf_out and os.path.isfile(pdf_out):
+                # Mover a carpeta del .cer
+                import shutil, datetime
+                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+                rfc_dir = os.path.dirname(cer)
+                rfc_name = os.path.splitext(os.path.basename(cer))[0]
+                dest = os.path.join(rfc_dir, f"{rfc_name}_Opinion_IMSS_{ts}.pdf")
+                shutil.move(pdf_out, dest)
+                done(pdf_path=dest)
+            else:
+                done(error="No se generó el PDF. Revisa el log para más detalles.")
+        except Exception as ex:
+            try:
+                os.unlink(tmp_script.name)
+            except Exception:
+                pass
+            done(error=str(ex))
+
+    def _imss_abrir_pdf(self):
+        if self._imss_pdf_path and os.path.isfile(self._imss_pdf_path):
+            os.startfile(self._imss_pdf_path)
+
+    def _imss_guardar_pdf(self):
+        if not self._imss_pdf_path or not os.path.isfile(self._imss_pdf_path):
+            return
+        dest = filedialog.asksaveasfilename(
+            parent=self,
+            title="Guardar Opinión IMSS como…",
+            defaultextension=".pdf",
+            initialfile=os.path.basename(self._imss_pdf_path),
+            filetypes=[("PDF", "*.pdf"), ("Todos", "*.*")])
+        if not dest:
+            return
+        import shutil
+        shutil.copy2(self._imss_pdf_path, dest)
+        self._imss_log(f"💾 Guardado: {dest}", "ok")
+
+    # ================================================================ #
+    # MÓDULO: Buzón Tributario SAT
+    # ================================================================ #
+
+    _BUZON_ACENTO   = "#1565C0"
+    _BUZON_ACENTO_L = "#E3F2FD"
+
+    # ── JSON / DPAPI ────────────────────────────────────────────────
+
+    def _buzon_json_path(self):
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "sat_buzon_efirmas.json")
+
+    def _buzon_protect(self, data: bytes) -> str:
+        import base64
+        try:
+            import ctypes, ctypes.wintypes as wt
+            class DATA_BLOB(ctypes.Structure):
+                _fields_ = [("cbData", wt.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+            buf = ctypes.create_string_buffer(data)
+            inn = DATA_BLOB(len(data), buf)
+            out = DATA_BLOB()
+            ok  = ctypes.windll.crypt32.CryptProtectData(
+                ctypes.byref(inn), None, None, None, None, 0, ctypes.byref(out))
+            if ok:
+                enc = bytes(out.pbData[:out.cbData])
+                ctypes.windll.kernel32.LocalFree(out.pbData)
+                return base64.b64encode(enc).decode()
+        except Exception:
+            pass
+        return base64.b64encode(data).decode()
+
+    def _buzon_unprotect(self, b64: str) -> bytes:
+        import base64
+        raw = base64.b64decode(b64)
+        try:
+            import ctypes, ctypes.wintypes as wt
+            class DATA_BLOB(ctypes.Structure):
+                _fields_ = [("cbData", wt.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+            buf = ctypes.create_string_buffer(raw)
+            inn = DATA_BLOB(len(raw), buf)
+            out = DATA_BLOB()
+            ok  = ctypes.windll.crypt32.CryptUnprotectData(
+                ctypes.byref(inn), None, None, None, None, 0, ctypes.byref(out))
+            if ok:
+                dec = bytes(out.pbData[:out.cbData])
+                ctypes.windll.kernel32.LocalFree(out.pbData)
+                return dec
+        except Exception:
+            pass
+        return raw
+
+    def _buzon_cargar_empresas(self):
+        """Carga empresas de sat_buzon_efirmas.json + sat_efirmas.json (Constancia SAT).
+        Las de sat_efirmas.json tienen _sat_docs=True y cer/key como rutas de archivo."""
+        import json, os
+        # 1. Buzón nativo
+        buzon = []
+        try:
+            with open(self._buzon_json_path(), "r", encoding="utf-8") as f:
+                buzon = json.load(f)
+        except Exception:
+            pass
+        rfcs_buzon = {e.get("rfc", "") for e in buzon}
+        # 2. SAT Docs (sat_efirmas.json)
+        sat_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sat_efirmas.json")
+        sat_docs = []
+        try:
+            with open(sat_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            empresas = data.get("empresas", data) if isinstance(data, dict) else data
+            for emp in empresas:
+                rfc = emp.get("rfc", "")
+                if rfc and rfc not in rfcs_buzon:
+                    sat_docs.append({
+                        "rfc":       rfc,
+                        "nombre":    emp.get("nombre", rfc),
+                        "cer":       emp.get("cer", ""),
+                        "key":       emp.get("key", ""),
+                        "pwd":       emp.get("pwd", ""),
+                        "_sat_docs": True,
+                    })
+        except Exception:
+            pass
+        return buzon + sat_docs
+
+    def _buzon_guardar_empresas(self, lista):
+        import json
+        # Solo guardar las empresas nativas de Buzón (no las importadas de sat_efirmas.json)
+        solo_buzon = [e for e in lista if not e.get("_sat_docs")]
+        with open(self._buzon_json_path(), "w", encoding="utf-8") as f:
+            json.dump(solo_buzon, f, ensure_ascii=False, indent=2)
+
+    # ── UI principal ────────────────────────────────────────────────
+
+    def _tab_buzon_sat(self, nb):
+        outer = ttk.Frame(nb)
+        nb.add(outer, text="  🗂 Buzón SAT  ")
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
+
+        self._buzon_cer_path  = tk.StringVar()
+        self._buzon_key_path  = tk.StringVar()
+        self._buzon_pwd_var   = tk.StringVar()
+        self._buzon_notifs    = {}   # rfc → [lista de notifs]
+        self._buzon_pdf_path  = None
+        self._buzon_pdf_out   = None
+
+        # ── Header ────────────────────────────────────────────────
+        hdr = tk.Frame(outer, bg=COLOR_FONDO)
+        hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(10, 4))
+        tk.Label(hdr, text="🗂  Buzón Tributario SAT — Notificaciones y Comunicados",
+                 bg=COLOR_FONDO, fg=self._BUZON_ACENTO,
+                 font=("Segoe UI", 12, "bold")).pack(side="left")
+
+        # ── Área principal: izquierda | derecha ───────────────────
+        main = tk.Frame(outer, bg=COLOR_FONDO)
+        main.grid(row=1, column=0, sticky="nsew", padx=16, pady=4)
+        main.columnconfigure(0, weight=0)
+        main.columnconfigure(1, weight=1)
+        main.rowconfigure(0, weight=1)
+
+        # ── LEFT (300px) ──────────────────────────────────────────
+        lfrm = tk.Frame(main, bg=COLOR_FONDO, width=310)
+        lfrm.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        lfrm.grid_propagate(False)
+        lfrm.columnconfigure(1, weight=1)
+
+        tk.Label(lfrm, text="📁  Empresas guardadas", bg=COLOR_FONDO,
+                 fg=self._BUZON_ACENTO, font=("Segoe UI", 9, "bold")).grid(
+                 row=0, column=0, columnspan=3, sticky="w", pady=(0, 3))
+
+        self._buzon_lb = tk.Listbox(lfrm, height=6, font=("Consolas", 8),
+                                     bg="#F5F9FF", fg="#1A237E",
+                                     selectbackground=self._BUZON_ACENTO,
+                                     selectforeground="white", bd=1,
+                                     highlightthickness=1,
+                                     highlightcolor=self._BUZON_ACENTO)
+        self._buzon_lb.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 4))
+        self._buzon_lb.bind("<<ListboxSelect>>", self._buzon_on_select)
+
+        btn_row0 = tk.Frame(lfrm, bg=COLOR_FONDO)
+        btn_row0.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 4))
+        tk.Button(btn_row0, text="✅ Usar seleccionada",
+                  bg=self._BUZON_ACENTO, fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._buzon_usar_guardada).pack(side="left", padx=(0, 4))
+        tk.Button(btn_row0, text="🗑 Quitar",
+                  bg="#B71C1C", fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._buzon_quitar_empresa).pack(side="left")
+
+        self._buzon_btn_todas = tk.Button(
+            lfrm, text="🔄  Consultar TODAS las empresas",
+            bg="#0D47A1", fg="white", font=("Segoe UI", 9, "bold"),
+            relief="flat", cursor="hand2", height=2,
+            command=self._buzon_consultar_todas)
+        self._buzon_btn_todas.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 8))
+
+        ttk.Separator(lfrm).grid(row=4, column=0, columnspan=3, sticky="ew", pady=4)
+
+        tk.Label(lfrm, text="🔐  Nueva e.firma", bg=COLOR_FONDO,
+                 fg=self._BUZON_ACENTO, font=("Segoe UI", 9, "bold")).grid(
+                 row=5, column=0, columnspan=3, sticky="w", pady=(0, 4))
+
+        tk.Label(lfrm, text="Archivo .cer", bg=COLOR_FONDO, fg="#555555",
+                 font=("Segoe UI", 8)).grid(row=6, column=0, sticky="w", pady=2)
+        tk.Entry(lfrm, textvariable=self._buzon_cer_path, font=("Segoe UI", 8),
+                 bg="#EEF3FB", fg="#1A237E", relief="flat").grid(
+                 row=6, column=1, sticky="ew", padx=4)
+        tk.Button(lfrm, text="📂", bg="#1E3A5F", fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._buzon_elegir_cer).grid(row=6, column=2)
+
+        tk.Label(lfrm, text="Archivo .key", bg=COLOR_FONDO, fg="#555555",
+                 font=("Segoe UI", 8)).grid(row=7, column=0, sticky="w", pady=2)
+        tk.Entry(lfrm, textvariable=self._buzon_key_path, font=("Segoe UI", 8),
+                 bg="#EEF3FB", fg="#1A237E", relief="flat").grid(
+                 row=7, column=1, sticky="ew", padx=4)
+        tk.Button(lfrm, text="📂", bg="#1E3A5F", fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._buzon_elegir_key).grid(row=7, column=2)
+
+        tk.Label(lfrm, text="Contraseña", bg=COLOR_FONDO, fg="#555555",
+                 font=("Segoe UI", 8)).grid(row=8, column=0, sticky="w", pady=2)
+        tk.Entry(lfrm, textvariable=self._buzon_pwd_var, show="*",
+                 font=("Segoe UI", 8), bg="#EEF3FB", fg="#1A237E",
+                 relief="flat").grid(row=8, column=1, columnspan=2, sticky="ew",
+                                     padx=(4, 0))
+
+        tk.Button(lfrm, text="💾  Guardar e.firma en este equipo",
+                  bg=self._BUZON_ACENTO, fg="white", font=("Segoe UI", 8),
+                  relief="flat", cursor="hand2",
+                  command=self._buzon_guardar_empresa_ui).grid(
+                  row=9, column=0, columnspan=3, sticky="ew", pady=(8, 4))
+
+        self._buzon_btn_una = tk.Button(
+            lfrm, text="🔍  Consultar esta empresa",
+            bg="#1976D2", fg="white", font=("Segoe UI", 9, "bold"),
+            relief="flat", cursor="hand2", height=2,
+            command=self._buzon_consultar_seleccionada)
+        self._buzon_btn_una.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+
+        # ── RIGHT ─────────────────────────────────────────────────
+        rfrm = tk.Frame(main, bg=COLOR_FONDO)
+        rfrm.grid(row=0, column=1, sticky="nsew")
+        rfrm.columnconfigure(0, weight=1)
+        rfrm.rowconfigure(1, weight=2)
+        rfrm.rowconfigure(3, weight=1)
+
+        # Treeview de notificaciones
+        tk.Label(rfrm, text="  📬  Notificaciones y Comunicados",
+                 bg=COLOR_FONDO, fg=self._BUZON_ACENTO,
+                 font=("Segoe UI", 9, "bold"), anchor="w").grid(
+                 row=0, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+
+        tv_frame = tk.Frame(rfrm, bg=COLOR_FONDO)
+        tv_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=4)
+        tv_frame.columnconfigure(0, weight=1)
+        tv_frame.rowconfigure(0, weight=1)
+
+        cols = ("tipo", "asunto", "fecha", "estado")
+        self._buzon_tv = ttk.Treeview(tv_frame, columns=cols, show="headings",
+                                       selectmode="browse", height=8)
+        self._buzon_tv.heading("tipo",   text="Tipo")
+        self._buzon_tv.heading("asunto", text="Asunto")
+        self._buzon_tv.heading("fecha",  text="Fecha")
+        self._buzon_tv.heading("estado", text="Estado")
+        self._buzon_tv.column("tipo",   width=110, stretch=False)
+        self._buzon_tv.column("asunto", width=280)
+        self._buzon_tv.column("fecha",  width=90,  stretch=False)
+        self._buzon_tv.column("estado", width=100, stretch=False)
+        self._buzon_tv.tag_configure("pendiente", foreground="#B71C1C",
+                                      font=("Segoe UI", 8, "bold"))
+        self._buzon_tv.tag_configure("leida", foreground="#555555")
+        self._buzon_tv.grid(row=0, column=0, sticky="nsew")
+
+        tv_sb = ttk.Scrollbar(tv_frame, orient="vertical",
+                               command=self._buzon_tv.yview)
+        tv_sb.grid(row=0, column=1, sticky="ns")
+        self._buzon_tv.configure(yscrollcommand=tv_sb.set)
+
+        # Botón descargar PDF para la notif seleccionada
+        dl_row = tk.Frame(rfrm, bg=COLOR_FONDO)
+        dl_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 4))
+        self._buzon_btn_dl = tk.Button(
+            dl_row, text="⬇  Descargar PDF de notificación seleccionada",
+            bg=self._BUZON_ACENTO, fg="white", font=("Segoe UI", 8, "bold"),
+            relief="flat", cursor="hand2", state="disabled",
+            command=self._buzon_descargar_pdf)
+        self._buzon_btn_dl.pack(side="left")
+        self._buzon_tv.bind("<<TreeviewSelect>>",
+                             lambda e: self._buzon_btn_dl.config(state="normal"))
+
+        # Log panel
+        tk.Label(rfrm, text="  📋  Progreso", bg=COLOR_FONDO,
+                 fg=self._BUZON_ACENTO, font=("Segoe UI", 9, "bold"),
+                 anchor="w").grid(row=3, column=0, columnspan=2,
+                                  sticky="ew", pady=(4, 0))
+
+        self._buzon_log_txt = tk.Text(
+            rfrm, bg="#F5F9FF", fg="#1A237E", font=("Consolas", 8),
+            wrap="word", state="disabled", relief="flat", height=6,
+            selectbackground=self._BUZON_ACENTO)
+        self._buzon_log_txt.grid(row=4, column=0, sticky="nsew", pady=4)
+        rfrm.rowconfigure(4, weight=1)
+
+        log_sb = ttk.Scrollbar(rfrm, orient="vertical",
+                                command=self._buzon_log_txt.yview)
+        log_sb.grid(row=4, column=1, sticky="ns", pady=4)
+        self._buzon_log_txt.config(yscrollcommand=log_sb.set)
+
+        self._buzon_log_txt.tag_configure("ok",  foreground="#1565C0")
+        self._buzon_log_txt.tag_configure("err", foreground="#CC0000")
+        self._buzon_log_txt.tag_configure("hdr", foreground=self._BUZON_ACENTO,
+                                           font=("Consolas", 8, "bold"))
+
+        # ── BOTTOM ────────────────────────────────────────────────
+        bot = tk.Frame(outer, bg=COLOR_FONDO, height=42)
+        bot.grid(row=2, column=0, sticky="ew")
+        bot.grid_propagate(False)
+
+        self._buzon_lbl_res = tk.Label(bot, text="", bg=COLOR_FONDO,
+                                        fg=self._BUZON_ACENTO,
+                                        font=("Segoe UI", 8), anchor="w")
+        self._buzon_lbl_res.pack(side="left", padx=12, fill="x", expand=True)
+
+        self._buzon_btn_guardar_pdf = tk.Button(
+            bot, text="💾 Guardar PDF como…", bg="#1E3A5F", fg="white",
+            font=("Segoe UI", 8), relief="flat", cursor="hand2",
+            state="disabled", command=self._buzon_guardar_pdf_como)
+        self._buzon_btn_guardar_pdf.pack(side="right", padx=4, pady=7)
+
+        self._buzon_btn_abrir_pdf = tk.Button(
+            bot, text="📂 Abrir PDF", bg=self._BUZON_ACENTO, fg="white",
+            font=("Segoe UI", 8), relief="flat", cursor="hand2",
+            state="disabled", command=self._buzon_abrir_pdf)
+        self._buzon_btn_abrir_pdf.pack(side="right", padx=(4, 0), pady=7)
+
+        self._buzon_refrescar_lista()
+
+    # ── Log ─────────────────────────────────────────────────────────
+
+    def _buzon_log(self, msg, tag=""):
+        def _do():
+            w = self._buzon_log_txt
+            w.config(state="normal")
+            w.insert("end", msg + "\n", tag)
+            w.see("end")
+            w.config(state="disabled")
+        try:
+            self.after(0, _do)
+        except Exception:
+            pass
+
+    # ── Lista / credenciales ─────────────────────────────────────────
+
+    def _buzon_refrescar_lista(self):
+        try:
+            self._buzon_lb.delete(0, "end")
+        except Exception:
+            return
+        for emp in self._buzon_cargar_empresas():
+            rfc    = emp.get("rfc", "")
+            nombre = emp.get("nombre", "")
+            notifs = self._buzon_notifs.get(rfc, [])
+            pend   = sum(1 for n in notifs
+                         if "pendiente" in n.get("estado", "").lower()
+                         or "no leída" in n.get("estado", "").lower()
+                         or "no leida" in n.get("estado", "").lower())
+            badge  = f"  ({pend})" if pend > 0 else ""
+            origen = "  [↗SAT]" if emp.get("_sat_docs") else ""
+            self._buzon_lb.insert("end", f"{rfc}  {nombre}{origen}{badge}")
+
+    def _buzon_on_select(self, event=None):
+        sel = self._buzon_lb.curselection()
+        if not sel:
+            return
+        idx  = sel[0]
+        emps = self._buzon_cargar_empresas()
+        if idx >= len(emps):
+            return
+        rfc = emps[idx].get("rfc", "")
+        self._buzon_mostrar_notifs(rfc, self._buzon_notifs.get(rfc, []))
+
+    def _buzon_usar_guardada(self):
+        sel = self._buzon_lb.curselection()
+        if not sel:
+            messagebox.showwarning("Buzón SAT", "Selecciona una empresa.", parent=self)
+            return
+        emps = self._buzon_cargar_empresas()
+        emp  = emps[sel[0]]
+        import tempfile
+        tmp = tempfile.gettempdir()
+        rfc = emp.get("rfc", "RFC")
+        if emp.get("_sat_docs"):
+            # Empresa importada de sat_efirmas.json: usa rutas de archivo directamente
+            cer_file = emp.get("cer", "")
+            key_file = emp.get("key", "")
+            pwd_bytes = self._buzon_unprotect(emp["pwd"])
+        else:
+            cer_bytes = self._buzon_unprotect(emp["cer_enc"])
+            key_bytes = self._buzon_unprotect(emp["key_enc"])
+            pwd_bytes = self._buzon_unprotect(emp["pwd_enc"])
+            cer_file  = os.path.join(tmp, f"{rfc}_buzon.cer")
+            key_file  = os.path.join(tmp, f"{rfc}_buzon.key")
+            with open(cer_file, "wb") as f: f.write(cer_bytes)
+            with open(key_file, "wb") as f: f.write(key_bytes)
+        self._buzon_cer_path.set(cer_file)
+        self._buzon_key_path.set(key_file)
+        self._buzon_pwd_var.set(pwd_bytes.decode("utf-8", errors="replace"))
+
+    def _buzon_quitar_empresa(self):
+        sel = self._buzon_lb.curselection()
+        if not sel:
+            return
+        emps = self._buzon_cargar_empresas()
+        emp  = emps[sel[0]]
+        if emp.get("_sat_docs"):
+            messagebox.showinfo("Buzón SAT",
+                f"{emp.get('rfc','')} proviene de Constancia y Opinión SAT.\n"
+                "Adminístrala desde ese módulo.", parent=self)
+            return
+        if not messagebox.askyesno("Buzón SAT",
+                f"¿Eliminar e.firma de {emp.get('rfc','')}?", parent=self):
+            return
+        emps.pop(sel[0])
+        self._buzon_guardar_empresas(emps)
+        self._buzon_refrescar_lista()
+
+    def _buzon_guardar_empresa_ui(self):
+        cer = self._buzon_cer_path.get().strip()
+        key = self._buzon_key_path.get().strip()
+        pwd = self._buzon_pwd_var.get().strip()
+        if not cer or not key or not pwd:
+            messagebox.showwarning("Buzón SAT",
+                "Completa CER, KEY y contraseña.", parent=self)
+            return
+        if not os.path.isfile(cer):
+            messagebox.showerror("Buzón SAT", "Archivo .cer no encontrado.", parent=self)
+            return
+        if not os.path.isfile(key):
+            messagebox.showerror("Buzón SAT", "Archivo .key no encontrado.", parent=self)
+            return
+        rfc    = os.path.splitext(os.path.basename(cer))[0].upper()
+        nombre = rfc
+        try:
+            from satcfdi.models import Signer
+            signer  = Signer.load(
+                certificate=open(cer,"rb").read(),
+                key=open(key,"rb").read(),
+                password=pwd.encode())
+            rfc    = signer.rfc
+            nombre = getattr(signer, "legal_name", rfc)
+        except Exception:
+            pass
+        with open(cer, "rb") as f: cer_bytes = f.read()
+        with open(key, "rb") as f: key_bytes = f.read()
+        emps = self._buzon_cargar_empresas()
+        # Actualizar si ya existe
+        for emp in emps:
+            if emp.get("rfc", "") == rfc:
+                emp["cer_enc"] = self._buzon_protect(cer_bytes)
+                emp["key_enc"] = self._buzon_protect(key_bytes)
+                emp["pwd_enc"] = self._buzon_protect(pwd.encode("utf-8"))
+                emp["nombre"]  = nombre
+                self._buzon_guardar_empresas(emps)
+                self._buzon_refrescar_lista()
+                messagebox.showinfo("Buzón SAT",
+                    f"E.firma de {rfc} actualizada.", parent=self)
+                return
+        emps.append({"rfc": rfc, "nombre": nombre,
+                     "cer_enc": self._buzon_protect(cer_bytes),
+                     "key_enc": self._buzon_protect(key_bytes),
+                     "pwd_enc": self._buzon_protect(pwd.encode("utf-8"))})
+        self._buzon_guardar_empresas(emps)
+        self._buzon_refrescar_lista()
+        messagebox.showinfo("Buzón SAT", f"E.firma de {rfc} guardada.", parent=self)
+
+    def _buzon_elegir_cer(self):
+        p = filedialog.askopenfilename(parent=self, title="Seleccionar .cer",
+            filetypes=[("Certificado", "*.cer"), ("Todos", "*.*")])
+        if p: self._buzon_cer_path.set(p)
+
+    def _buzon_elegir_key(self):
+        p = filedialog.askopenfilename(parent=self, title="Seleccionar .key",
+            filetypes=[("Llave privada", "*.key"), ("Todos", "*.*")])
+        if p: self._buzon_key_path.set(p)
+
+    # ── Consulta ─────────────────────────────────────────────────────
+
+    def _buzon_consultar_seleccionada(self):
+        cer = self._buzon_cer_path.get().strip()
+        key = self._buzon_key_path.get().strip()
+        pwd = self._buzon_pwd_var.get().strip()
+        if not cer or not key or not pwd:
+            messagebox.showwarning("Buzón SAT",
+                "Completa CER, KEY y contraseña (o usa 'Usar seleccionada').",
+                parent=self)
+            return
+        self._buzon_btn_una.config(state="disabled", text="⏳ Consultando…")
+        self._buzon_btn_todas.config(state="disabled")
+        rfc = os.path.splitext(os.path.basename(cer))[0].upper()
+        try:
+            from satcfdi.models import Signer
+            s = Signer.load(open(cer,"rb").read(), open(key,"rb").read(),
+                            pwd.encode())
+            rfc = s.rfc
+        except Exception:
+            pass
+        import threading
+        threading.Thread(target=self._buzon_hilo,
+                         args=({"rfc": rfc, "cer": cer, "key": key, "pwd": pwd},),
+                         daemon=True).start()
+
+    def _buzon_consultar_todas(self):
+        emps = self._buzon_cargar_empresas()
+        if not emps:
+            messagebox.showinfo("Buzón SAT",
+                "No hay empresas guardadas. Guarda al menos una e.firma.", parent=self)
+            return
+        self._buzon_btn_todas.config(state="disabled",
+                                      text=f"⏳ Consultando 0/{len(emps)}…")
+        self._buzon_btn_una.config(state="disabled")
+        import threading, tempfile
+        def _run_all():
+            for i, emp in enumerate(emps):
+                self.after(0, lambda i=i, n=len(emps):
+                    self._buzon_btn_todas.config(
+                        text=f"⏳ Consultando {i+1}/{n}…"))
+                tmp = tempfile.gettempdir()
+                rfc = emp.get("rfc", "RFC")
+                if emp.get("_sat_docs"):
+                    cer_file = emp.get("cer", "")
+                    key_file = emp.get("key", "")
+                    pwd = self._buzon_unprotect(emp["pwd"]).decode("utf-8", errors="replace")
+                else:
+                    cer_bytes = self._buzon_unprotect(emp["cer_enc"])
+                    key_bytes = self._buzon_unprotect(emp["key_enc"])
+                    pwd_bytes = self._buzon_unprotect(emp["pwd_enc"])
+                    cer_file = os.path.join(tmp, f"{rfc}_buzon_tmp.cer")
+                    key_file = os.path.join(tmp, f"{rfc}_buzon_tmp.key")
+                    with open(cer_file, "wb") as f: f.write(cer_bytes)
+                    with open(key_file, "wb") as f: f.write(key_bytes)
+                    pwd = pwd_bytes.decode("utf-8", errors="replace")
+                self._buzon_hilo({"rfc": rfc, "cer": cer_file,
+                                   "key": key_file, "pwd": pwd},
+                                  sync=True)
+            self.after(0, self._buzon_done_all)
+        threading.Thread(target=_run_all, daemon=True).start()
+
+    def _buzon_done_all(self):
+        self._buzon_btn_todas.config(state="normal",
+                                      text="🔄  Consultar TODAS las empresas")
+        self._buzon_btn_una.config(state="normal")
+        self._buzon_refrescar_lista()
+        self._buzon_actualizar_badge()
+
+    def _buzon_hilo(self, empresa, sync=False):
+        """Subprocess Playwright para consultar el buzón de una empresa."""
+        import subprocess, sys, tempfile, json as _json
+
+        rfc = empresa.get("rfc", "RFC")
+        cer = empresa.get("cer", "")
+        key = empresa.get("key", "")
+        pwd = empresa.get("pwd", "")
+
+        def log(msg, tag=""):
+            self.after(0, lambda m=msg, t=tag: self._buzon_log(m, t))
+
+        def done_ui(notifs=None, error=None):
+            def _ui():
+                if error:
+                    self._buzon_log(f"✖ [{rfc}] {error}", "err")
+                elif notifs is not None:
+                    self._buzon_notifs[rfc] = notifs
+                    pend = sum(1 for n in notifs
+                               if "pendiente" in n.get("estado","").lower()
+                               or "no leída" in n.get("estado","").lower()
+                               or "no leida" in n.get("estado","").lower())
+                    self._buzon_log(
+                        f"✅ [{rfc}] {len(notifs)} item(s) — {pend} pendiente(s)", "ok")
+                    self._buzon_lbl_res.config(
+                        text=f"[{rfc}]  {len(notifs)} notificaciones  |  {pend} pendientes")
+                    # Si esta empresa está seleccionada, refrescar treeview
+                    sel = self._buzon_lb.curselection()
+                    if sel:
+                        emps = self._buzon_cargar_empresas()
+                        if sel[0] < len(emps) and emps[sel[0]].get("rfc") == rfc:
+                            self._buzon_mostrar_notifs(rfc, notifs)
+                if not sync:
+                    self._buzon_btn_una.config(state="normal",
+                                                text="🔍  Consultar esta empresa")
+                    self._buzon_btn_todas.config(state="normal")
+                    self._buzon_refrescar_lista()
+                    self._buzon_actualizar_badge()
+            self.after(0, _ui)
+
+        log(f"─── Consultando buzón de {rfc}…", "hdr")
+
+        script = f"""
+import sys, os, time, json as _json
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    print("ERR:playwright no disponible"); sys.exit(1)
+
+CER = {repr(cer)}
+KEY = {repr(key)}
+PWD = {repr(pwd)}
+
+SAT_LOGIN   = "https://wwwmat.sat.gob.mx/personas/iniciar-sesion"
+SAT_NOTIFS  = "https://wwwmat.sat.gob.mx/iniciar-expediente/mis-notificaciones/"
+SAT_COMUNS  = "https://wwwmat.sat.gob.mx/iniciar-expediente/mis-comunicados/"
+
+def efirma_login(page):
+    page.goto(SAT_LOGIN, timeout=60000)
+    print("INFO:login page loaded")
+    time.sleep(2)
+    # Seleccionar pestaña e.firma
+    for sel in ["text=e.firma", "a:has-text('e.firma')",
+                "button:has-text('e.firma')", "[id*='efirma']", "[class*='efirma']"]:
+        try:
+            page.click(sel, timeout=5000); time.sleep(1); break
+        except Exception: pass
+    # Cargar .cer
+    try:
+        inputs = page.query_selector_all("input[type='file']")
+        if inputs:
+            inputs[0].set_input_files(CER); print("INFO:.cer cargado"); time.sleep(1)
+    except Exception as e:
+        print(f"WARN:cer: {{e}}")
+    # Cargar .key
+    try:
+        inputs = page.query_selector_all("input[type='file']")
+        if len(inputs) >= 2:
+            inputs[1].set_input_files(KEY); print("INFO:.key cargado"); time.sleep(1)
+    except Exception as e:
+        print(f"WARN:key: {{e}}")
+    # Contraseña
+    try:
+        page.fill("input[type='password']", PWD); print("INFO:pwd ingresada")
+    except Exception as e:
+        print(f"WARN:pwd: {{e}}")
+    # Enviar login
+    for btn in ["button[type='submit']",
+                "button:has-text('Enviar')",
+                "button:has-text('Ingresar')",
+                "input[type='submit']"]:
+        try:
+            page.click(btn, timeout=8000); print("INFO:login enviado"); time.sleep(4); break
+        except Exception: pass
+    cur = page.url
+    if "iniciar-sesion" in cur or "login" in cur.lower():
+        print("ERR:login fallido — verifica credenciales"); sys.exit(2)
+    print("INFO:login OK →", cur)
+
+def parse_table(page):
+    items = []
+    rows = page.query_selector_all("table tbody tr, .expediente-row, [class*='row']")
+    for row in rows:
+        cells = row.query_selector_all("td")
+        if len(cells) < 2:
+            continue
+        texts = [c.inner_text().strip() for c in cells]
+        link  = row.query_selector("a")
+        href  = link.get_attribute("href") if link else ""
+        nid   = href.split("/")[-1].split("?")[0] if href else ""
+        items.append({{
+            "id":     nid or str(hash(texts[0])),
+            "asunto": texts[1] if len(texts) > 1 else texts[0],
+            "fecha":  texts[2] if len(texts) > 2 else "",
+            "estado": texts[3] if len(texts) > 3 else texts[-1],
+            "href":   href,
+        }})
+    return items
+
+with sync_playwright() as pw:
+    br  = pw.chromium.launch(headless=True)
+    ctx = br.new_context(accept_downloads=True)
+    pg  = ctx.new_page()
+    try:
+        efirma_login(pg)
+        # Notificaciones electrónicas
+        pg.goto(SAT_NOTIFS, timeout=60000); time.sleep(3)
+        print("INFO:consultando notificaciones")
+        notifs = parse_table(pg)
+        for n in notifs: n["tipo"] = "Notificación"
+        # Mensajes de interés
+        pg.goto(SAT_COMUNS, timeout=60000); time.sleep(3)
+        print("INFO:consultando comunicados")
+        comuns = parse_table(pg)
+        for c in comuns: c["tipo"] = "Comunicado"
+        all_items = notifs + comuns
+        print(f"OK_LIST:{{_json.dumps(all_items, ensure_ascii=False)}}")
+    except SystemExit:
+        raise
+    except Exception as ex:
+        print(f"ERR:{{ex}}")
+    finally:
+        br.close()
+"""
+        tmp_f = tempfile.NamedTemporaryFile(delete=False, suffix=".py",
+                                             mode="w", encoding="utf-8")
+        tmp_f.write(script)
+        tmp_f.close()
+
+        notifs_out = None
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, tmp_f.name],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace")
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line.startswith("OK_LIST:"):
+                    try:
+                        notifs_out = _json.loads(line[8:])
+                        log(f"  → {len(notifs_out)} item(s) recibidos", "ok")
+                    except Exception:
+                        log(f"  ⚠ parse error: {line}", "err")
+                elif line.startswith("ERR:"):
+                    log(f"  ✖ {line[4:]}", "err")
+                elif line.startswith("INFO:"):
+                    log(f"  → {line[5:]}")
+                elif line.startswith("WARN:"):
+                    log(f"  ⚠ {line[5:]}")
+                else:
+                    if line.strip():
+                        log(f"  {line}")
+            proc.wait()
+            os.unlink(tmp_f.name)
+            if notifs_out is not None:
+                done_ui(notifs=notifs_out)
+            else:
+                done_ui(error="No se obtuvieron notificaciones. Revisa el log.")
+        except Exception as ex:
+            try: os.unlink(tmp_f.name)
+            except Exception: pass
+            done_ui(error=str(ex))
+
+    def _buzon_mostrar_notifs(self, rfc, notifs):
+        self._buzon_tv.delete(*self._buzon_tv.get_children())
+        for n in notifs:
+            estado = n.get("estado", "")
+            es_pend = ("pendiente" in estado.lower()
+                       or "no leída" in estado.lower()
+                       or "no leida" in estado.lower())
+            tag = "pendiente" if es_pend else "leida"
+            self._buzon_tv.insert("", "end",
+                values=(n.get("tipo",""), n.get("asunto",""),
+                        n.get("fecha",""), estado),
+                tags=(tag,),
+                iid=n.get("id",""))
+
+    def _buzon_actualizar_badge(self):
+        total_pend = sum(
+            sum(1 for n in notifs
+                if "pendiente" in n.get("estado","").lower()
+                or "no leída" in n.get("estado","").lower()
+                or "no leida" in n.get("estado","").lower())
+            for notifs in self._buzon_notifs.values()
+        )
+        try:
+            lbl_tx = self._ribbon_btns.get("buzon_sat", (None,None,None))[2]
+            if lbl_tx:
+                txt = (f"  🗂 Buzón SAT  ({total_pend})"
+                       if total_pend > 0 else "  🗂 Buzón SAT  ")
+                lbl_tx.config(text=txt)
+        except Exception:
+            pass
+
+    # ── Descarga PDF ─────────────────────────────────────────────────
+
+    def _buzon_descargar_pdf(self):
+        sel = self._buzon_tv.selection()
+        if not sel:
+            messagebox.showinfo("Buzón SAT",
+                "Selecciona una notificación en la tabla.", parent=self)
+            return
+        notif_id = sel[0]
+        # Obtener tipo y datos de empresa actual
+        lb_sel = self._buzon_lb.curselection()
+        if not lb_sel:
+            messagebox.showwarning("Buzón SAT",
+                "Selecciona una empresa primero.", parent=self)
+            return
+        emps = self._buzon_cargar_empresas()
+        if lb_sel[0] >= len(emps):
+            return
+        emp    = emps[lb_sel[0]]
+        rfc    = emp.get("rfc","RFC")
+        notifs = self._buzon_notifs.get(rfc, [])
+        notif  = next((n for n in notifs if n.get("id") == notif_id), None)
+        if not notif:
+            messagebox.showerror("Buzón SAT",
+                "No se encontró la notificación seleccionada.", parent=self)
+            return
+
+        import tempfile
+        tmp   = tempfile.gettempdir()
+        cer_b = self._buzon_unprotect(emp["cer_enc"])
+        key_b = self._buzon_unprotect(emp["key_enc"])
+        pwd_b = self._buzon_unprotect(emp["pwd_enc"])
+        cer_f = os.path.join(tmp, f"{rfc}_buzonpdf.cer")
+        key_f = os.path.join(tmp, f"{rfc}_buzonpdf.key")
+        with open(cer_f,"wb") as f: f.write(cer_b)
+        with open(key_f,"wb") as f: f.write(key_b)
+
+        safe_asunto = "".join(c for c in notif.get("asunto","notif")
+                               if c.isalnum() or c in " _-")[:40]
+        out_pdf = os.path.join(tmp,
+                               f"{rfc}_{safe_asunto}.pdf".replace(" ","_"))
+
+        self._buzon_btn_dl.config(state="disabled", text="⏳ Descargando…")
+        import threading
+        threading.Thread(
+            target=self._buzon_hilo_pdf,
+            args=({"rfc":rfc,"cer":cer_f,"key":key_f,
+                   "pwd":pwd_b.decode("utf-8","replace")},
+                  notif, out_pdf),
+            daemon=True).start()
+
+    def _buzon_hilo_pdf(self, empresa, notif, out_pdf):
+        import subprocess, sys, tempfile
+
+        rfc      = empresa.get("rfc","RFC")
+        cer      = empresa.get("cer","")
+        key      = empresa.get("key","")
+        pwd      = empresa.get("pwd","")
+        notif_id = notif.get("id","")
+        href     = notif.get("href","")
+        tipo     = notif.get("tipo","Notificación")
+
+        def log(msg, tag=""):
+            self.after(0, lambda m=msg, t=tag: self._buzon_log(m, t))
+
+        def done_ui(pdf=None, error=None):
+            def _ui():
+                self._buzon_btn_dl.config(
+                    state="normal",
+                    text="⬇  Descargar PDF de notificación seleccionada")
+                if error:
+                    self._buzon_log(f"✖ {error}", "err")
+                    messagebox.showerror("Buzón SAT", error, parent=self)
+                elif pdf:
+                    self._buzon_pdf_out = pdf
+                    self._buzon_lbl_res.config(
+                        text=f"✅  {os.path.basename(pdf)}")
+                    self._buzon_btn_abrir_pdf.config(state="normal")
+                    self._buzon_btn_guardar_pdf.config(state="normal")
+                    self._buzon_log(f"✅ PDF: {pdf}", "ok")
+            self.after(0, _ui)
+
+        log(f"─── Descargando PDF [{tipo}] {notif.get('asunto','')}…", "hdr")
+
+        SAT_BASE = ("https://wwwmat.sat.gob.mx/iniciar-expediente/mis-notificaciones/"
+                    if tipo == "Notificación"
+                    else "https://wwwmat.sat.gob.mx/iniciar-expediente/mis-comunicados/")
+
+        script = f"""
+import sys, os, time
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    print("ERR:playwright no disponible"); sys.exit(1)
+
+CER      = {repr(cer)}
+KEY      = {repr(key)}
+PWD      = {repr(pwd)}
+HREF     = {repr(href)}
+SAT_BASE = {repr(SAT_BASE)}
+OUT_PDF  = {repr(out_pdf)}
+SAT_LOGIN= "https://wwwmat.sat.gob.mx/personas/iniciar-sesion"
+
+def efirma_login(page):
+    page.goto(SAT_LOGIN, timeout=60000); time.sleep(2)
+    for sel in ["text=e.firma","a:has-text('e.firma')","button:has-text('e.firma')"]:
+        try: page.click(sel, timeout=5000); time.sleep(1); break
+        except Exception: pass
+    try:
+        ins = page.query_selector_all("input[type='file']")
+        if ins: ins[0].set_input_files(CER); time.sleep(1)
+        if len(ins)>=2: ins[1].set_input_files(KEY); time.sleep(1)
+    except Exception as e: print(f"WARN:files: {{e}}")
+    try: page.fill("input[type='password']", PWD)
+    except Exception: pass
+    for btn in ["button[type='submit']","button:has-text('Enviar')",
+                "button:has-text('Ingresar')","input[type='submit']"]:
+        try: page.click(btn, timeout=8000); time.sleep(4); break
+        except Exception: pass
+    if "iniciar-sesion" in page.url or "login" in page.url.lower():
+        print("ERR:login fallido"); sys.exit(2)
+
+with sync_playwright() as pw:
+    br  = pw.chromium.launch(headless=True)
+    ctx = br.new_context(accept_downloads=True)
+    pg  = ctx.new_page()
+    try:
+        efirma_login(pg)
+        # Navegar a la notificación
+        target = HREF if HREF.startswith("http") else (SAT_BASE + HREF)
+        pg.goto(target, timeout=60000); time.sleep(3)
+        print("INFO:notificación abierta")
+        # Intentar descarga directa
+        pdf_saved = False
+        for btn_sel in ["a:has-text('PDF')","a[href*='.pdf']",
+                        "button:has-text('Descargar')","*:has-text('Ver / Acto')"]:
+            try:
+                with ctx.expect_download(timeout=20000) as dl_i:
+                    pg.click(btn_sel, timeout=5000)
+                dl = dl_i.value; dl.save_as(OUT_PDF)
+                print(f"OK_PDF:{{OUT_PDF}}"); pdf_saved = True; break
+            except Exception: pass
+        if not pdf_saved:
+            # Fallback: imprimir página como PDF
+            try:
+                pg.pdf(path=OUT_PDF)
+                print(f"OK_PDF:{{OUT_PDF}}")
+            except Exception as e:
+                print(f"ERR:pdf fallback: {{e}}")
+    except SystemExit: raise
+    except Exception as ex: print(f"ERR:{{ex}}")
+    finally: br.close()
+"""
+        tmp_f = tempfile.NamedTemporaryFile(delete=False, suffix=".py",
+                                             mode="w", encoding="utf-8")
+        tmp_f.write(script)
+        tmp_f.close()
+
+        pdf_out = None
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, tmp_f.name],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace")
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line.startswith("OK_PDF:"):
+                    pdf_out = line[7:]
+                    log(f"  ✅ {pdf_out}", "ok")
+                elif line.startswith("ERR:"):
+                    log(f"  ✖ {line[4:]}", "err")
+                elif line.startswith("INFO:"):
+                    log(f"  → {line[5:]}")
+                elif line.startswith("WARN:"):
+                    log(f"  ⚠ {line[5:]}")
+                else:
+                    if line.strip(): log(f"  {line}")
+            proc.wait()
+            os.unlink(tmp_f.name)
+            if pdf_out and os.path.isfile(pdf_out):
+                import shutil, datetime
+                ts      = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+                cer_dir = os.path.dirname(cer)
+                safe    = "".join(c for c in notif.get("asunto","notif")
+                                   if c.isalnum() or c in " _-")[:40]
+                dest    = os.path.join(cer_dir,
+                                       f"BUZON_{rfc}_{safe}_{ts}.pdf".replace(" ","_"))
+                shutil.move(pdf_out, dest)
+                done_ui(pdf=dest)
+            else:
+                done_ui(error="No se generó el PDF. Revisa el log.")
+        except Exception as ex:
+            try: os.unlink(tmp_f.name)
+            except Exception: pass
+            done_ui(error=str(ex))
+
+    def _buzon_abrir_pdf(self):
+        if self._buzon_pdf_out and os.path.isfile(self._buzon_pdf_out):
+            os.startfile(self._buzon_pdf_out)
+
+    def _buzon_guardar_pdf_como(self):
+        if not self._buzon_pdf_out or not os.path.isfile(self._buzon_pdf_out):
+            return
+        dest = filedialog.asksaveasfilename(
+            parent=self, title="Guardar PDF como…",
+            defaultextension=".pdf",
+            initialfile=os.path.basename(self._buzon_pdf_out),
+            filetypes=[("PDF", "*.pdf"), ("Todos", "*.*")])
+        if not dest:
+            return
+        import shutil
+        shutil.copy2(self._buzon_pdf_out, dest)
+        self._buzon_log(f"💾 Guardado: {dest}", "ok")
+
+    # ---------------------------------------------------------------- #
+    # UTILIDADES: Drag & Drop + Archivos Recientes
+    # ---------------------------------------------------------------- #
+
+    def _bind_drop(self, entry_widget, var, accept_exts=(".pdf", ".xlsx", ".xls")):
+        """Habilita drag & drop en un Entry (si TkinterDnD está disponible)."""
+        if not _DND_OK:
+            return
+        try:
+            from tkinterdnd2 import DND_FILES
+            def _on_drop(event):
+                raw = event.data.strip()
+                # tkinterdnd2 puede envolver rutas con llaves en Windows
+                if raw.startswith("{") and raw.endswith("}"):
+                    raw = raw[1:-1]
+                # Tomar el primer archivo si hay varios
+                path = raw.split("} {")[0].strip("{ }")
+                if any(path.lower().endswith(ext) for ext in accept_exts):
+                    var.set(path)
+                else:
+                    ext_str = ", ".join(accept_exts)
+                    self._log(f"⚠  Archivo ignorado — solo se aceptan: {ext_str}", True)
+            entry_widget.drop_target_register(DND_FILES)
+            entry_widget.dnd_bind("<<Drop>>", _on_drop)
+        except Exception:
+            pass
+
+    def _recent_add(self, modulo, path):
+        """Guarda una ruta en el historial de archivos recientes (JSON config)."""
+        try:
+            cfg_path = self.__class__._CONFIG if hasattr(self.__class__, '_CONFIG') else None
+            # Buscar config en App
+            import sys as _sys
+            app = _sys.modules['__main__']
+            cfg_path = getattr(app, '_cfg_path', None) or os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), 'auxiliar_config.json')
+            try:
+                with open(cfg_path, encoding='utf-8') as f:
+                    cfg = json.load(f)
+            except Exception:
+                cfg = {}
+            recent = cfg.setdefault('recent_files', {}).setdefault(modulo, [])
+            if path in recent:
+                recent.remove(path)
+            recent.insert(0, path)
+            cfg['recent_files'][modulo] = recent[:8]  # máx 8 recientes
+            with open(cfg_path, 'w', encoding='utf-8') as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _recent_get(self, modulo):
+        """Retorna lista de rutas recientes para el módulo dado."""
+        try:
+            cfg_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), 'auxiliar_config.json')
+            with open(cfg_path, encoding='utf-8') as f:
+                cfg = json.load(f)
+            return [p for p in cfg.get('recent_files', {}).get(modulo, [])
+                    if os.path.isfile(p)]
+        except Exception:
+            return []
+
+    def _recent_menu(self, entry_widget, var, modulo, event=None):
+        """Muestra menú contextual con archivos recientes sobre el Entry."""
+        recent = self._recent_get(modulo)
+        if not recent:
+            return
+        menu = tk.Menu(entry_widget, tearoff=0)
+        for p in recent:
+            label = os.path.basename(p)
+            menu.add_command(
+                label=f"  {label}",
+                command=lambda _p=p: var.set(_p))
+        try:
+            x = entry_widget.winfo_rootx()
+            y = entry_widget.winfo_rooty() + entry_widget.winfo_height()
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    # Los métodos _tab_poliza_nomina y _pnom_* viven en
+    # modules/poliza_nomina.py (PolizaNominaMixin)
+
+
+
 class App(TkinterDnD.Tk if _DND_OK else tk.Tk):
     _CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auxiliar_config.json")
 
     def __init__(self):
         super().__init__()
-        # Root siempre oculto â evita que withdraw afecte a los workspaces hijos
+        # Root siempre oculto — evita que withdraw afecte a los workspaces hijos
         self.withdraw()
         self.title("AUXILIAR DE REGISTROS")
         self.workspaces = {}
@@ -10600,7 +12668,7 @@ class App(TkinterDnD.Tk if _DND_OK else tk.Tk):
         """Cerrar el selector no cierra la app si hay workspaces abiertos."""
         import os as _os
         activos = {k: v for k, v in self.workspaces.items() if v.winfo_exists()}
-        # Log de diagnÃ³stico para detectar estado inconsistente
+        # Log de diagnóstico para detectar estado inconsistente
         try:
             _log_path = _os.path.join(_os.path.dirname(__file__), "debug_launcher.txt")
             import time as _t
@@ -10613,7 +12681,7 @@ class App(TkinterDnD.Tk if _DND_OK else tk.Tk):
         except Exception:
             pass
         if activos or self.workspaces:
-            # alpha=0: invisible sin withdraw â no afecta otras ventanas en Windows
+            # alpha=0: invisible sin withdraw — no afecta otras ventanas en Windows
             self._launcher_top.wm_attributes("-alpha", 0.0)
         else:
             self.destroy()
@@ -10767,7 +12835,7 @@ class App(TkinterDnD.Tk if _DND_OK else tk.Tk):
                     _lf.write(f"ERROR abriendo workspace '{nombre}':\n{_tb.format_exc()}\n")
             except Exception:
                 pass
-            # Destruir ventana parcial si quedÃ³ creada
+            # Destruir ventana parcial si quedó creada
             if ws is not None:
                 try:
                     ws.destroy()
@@ -10872,7 +12940,6 @@ class App(TkinterDnD.Tk if _DND_OK else tk.Tk):
 
     def _set_progreso(self, pct, texto=""):
         pass
-
 
 if __name__ == "__main__":
     import traceback as _tb

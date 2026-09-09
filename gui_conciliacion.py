@@ -10886,12 +10886,24 @@ class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
                 dat(3,r["ref"],al=AL); dat(4,r["ref"],al=AL)
                 for col in [5,6,7,8]: dat(col,None)
                 dat(r["col_cargo"]+1,m,FMT_N,AR)
-                dat(12,m,FMT_N,AR)
+                # TOTAL CARGOS (col 12) = SUM de cols cargo individuales (I=9,J=10,K=11)
+                # number_format se fija ANTES del value para evitar que Excel lo muestre como texto
+                _ctc=ws_p.cell(row=fn_num,column=12)
+                _ctc.number_format=FMT_N
+                _ctc.value=f"=SUM(I{fn_num}:K{fn_num})"
+                _ctc.font=fd; _ctc.fill=fr; _ctc.alignment=AR
                 dat(r["col_abono"]+1,m,FMT_N,AR)
-                dat(COL_TOTAL_ABONOS,m,FMT_N,AR)
-                # Calcular en Python para evitar que Excel muestre formula como texto
-                cd=ws_p.cell(row=fn_num,column=COL_DIFERENCIA,value=round(m-m,2))
-                cd.font=fd; cd.fill=fr; cd.alignment=AR; cd.number_format=FMT_N
+                # TOTAL ABONOS = SUM de columnas de cuentas de abono individuales
+                _cta_last=get_column_letter(COL_TOTAL_ABONOS-1)
+                _cta=ws_p.cell(row=fn_num,column=COL_TOTAL_ABONOS)
+                _cta.number_format=FMT_N
+                _cta.value=f"=SUM(M{fn_num}:{_cta_last}{fn_num})"
+                _cta.font=fd; _cta.fill=fr; _cta.alignment=AR
+                # DIFERENCIA = TOTAL CARGOS (L) − TOTAL ABONOS
+                _cdf=ws_p.cell(row=fn_num,column=COL_DIFERENCIA)
+                _cdf.number_format=FMT_N
+                _cdf.value=f"=L{fn_num}-{get_column_letter(COL_TOTAL_ABONOS)}{fn_num}"
+                _cdf.font=fd; _cdf.fill=fr; _cdf.alignment=AR
 
             _col_widths = {1:14.4,2:13.0,3:36.9,4:26.3,5:6.7,6:5.3,7:11.3,8:11.6,
                            9:16.0,10:16.0,11:16.0,12:16.3}

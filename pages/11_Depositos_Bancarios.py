@@ -494,7 +494,15 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         _cargo_col = cargos_col_map.get(r["banco"])
         if _cargo_col:
             dat(_cargo_col, monto, num_fmt=FMT_NUM, align=A_RIGHT)
-        dat(COL_TOT_CARGOS, monto, num_fmt=FMT_NUM, align=A_RIGHT)
+        # TOTAL CARGOS = SUM de columnas de bancos individuales
+        # (number_format se fija ANTES del value para evitar que Excel lo muestre como texto)
+        _cL_first = get_column_letter(CARGO_START)
+        _cL_last  = get_column_letter(COL_TOT_CARGOS - 1)
+        _c_tc = ws.cell(row=fila_num, column=COL_TOT_CARGOS)
+        _c_tc.number_format = FMT_NUM
+        _c_tc.value     = f"=SUM({_cL_first}{fila_num}:{_cL_last}{fila_num})"
+        _c_tc.font      = fn_dat; _c_tc.fill = fill_row
+        _c_tc.alignment = A_RIGHT; _c_tc.border = BORDER
 
         # Abono: col semántico → col real
         _actual_ab = semantic_to_actual.get(r["col_abono"])
@@ -509,14 +517,24 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
                     break
         if _actual_ab is not None:
             dat(_actual_ab, monto, num_fmt=FMT_NUM, align=A_RIGHT)
-        dat(COL_TOT_ABONOS, monto, num_fmt=FMT_NUM, align=A_RIGHT)
+        # TOTAL ABONOS = SUM de columnas de cuentas de abono individuales
+        _cA_first = get_column_letter(ABONO_START)
+        _cA_last  = get_column_letter(COL_TOT_ABONOS - 1)
+        _c_ta = ws.cell(row=fila_num, column=COL_TOT_ABONOS)
+        _c_ta.number_format = FMT_NUM
+        _c_ta.value     = f"=SUM({_cA_first}{fila_num}:{_cA_last}{fila_num})"
+        _c_ta.font      = fn_dat; _c_ta.fill = fill_row
+        _c_ta.alignment = A_RIGHT; _c_ta.border = BORDER
 
-        # Calcular en Python para evitar que Excel muestre la formula como texto
-        _dif = round(monto - monto, 2)   # cargo = abono = monto → siempre 0
-        _cd  = ws.cell(row=fila_num, column=COL_DIFERENCIA, value=_dif)
-        _cd.font = fnt(bold=True, color="4C1D95")
-        _cd.fill = fill_row; _cd.border = BORDER
-        _cd.alignment = A_RIGHT; _cd.number_format = FMT_NUM
+        # DIFERENCIA = TOTAL CARGOS − TOTAL ABONOS
+        _cL = get_column_letter(COL_TOT_CARGOS)
+        _cU = get_column_letter(COL_TOT_ABONOS)
+        _cd = ws.cell(row=fila_num, column=COL_DIFERENCIA)
+        _cd.number_format = FMT_NUM
+        _cd.value     = f"={_cL}{fila_num}-{_cU}{fila_num}"
+        _cd.font      = fnt(bold=True, color="4C1D95")
+        _cd.fill      = fill_row; _cd.border = BORDER
+        _cd.alignment = A_RIGHT
         ws.row_dimensions[fila_num].height = 18
         fila_num += 1
 

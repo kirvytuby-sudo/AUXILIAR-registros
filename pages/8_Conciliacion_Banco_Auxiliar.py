@@ -389,7 +389,7 @@ def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_
         tot_a4 = sum(am["monto"]   for am    in a_items)
         if abs(tot_b4 - tot_a4) <= 5.0:
             n_b = len(b_items); n_a = len(a_items)
-            tipo = f"🟰 GLOBAL ({n_b}b×{n_a}a)"
+            tipo = f"[GLOBAL] ({n_b}b×{n_a}a)"
             # Registrar un resultado por cada entrada banco con sus aux
             results.append({"tipo": tipo,
                              "banco": b_items[0][1],
@@ -501,7 +501,7 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
     def _row_fill(tipo):
         if tipo.startswith("✅"): return EXACTO
         if tipo.startswith("🔀"): return COMBO
-        if tipo.startswith("🟰"): return GLOBAL
+        if tipo.startswith("[GLOBAL]"): return GLOBAL
         return TEXTO
 
     BANCO_HDR_FILLS = {

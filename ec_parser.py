@@ -175,7 +175,8 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
                 utiles = [c for c in cur_conts if _util_cont(c)]
                 desc_final = cur_desc
                 if utiles:
-                    desc_final = cur_desc + " | " + " | ".join(utiles[:3])
+                    # Unir tal como aparece en el PDF: espacio simple, sin límite artificial
+                    desc_final = (cur_desc + " " + " ".join(utiles)).strip()
                 if cur_saldo is not None:
                     movimientos.append((cur_fecha, desc_final, cur_dep, cur_ret, cur_saldo))
                 else:
@@ -337,7 +338,7 @@ def _parsear_bbva_cashmanagement(ruta, pdfplumber_mod):
             if cur_fecha is None or cur_desc is None:
                 return
             utiles = [c for c in cur_conts if _util_cont_ocr(c)]
-            desc_f = cur_desc + (" | " + " | ".join(utiles[:3]) if utiles else "")
+            desc_f = (cur_desc + " " + " ".join(utiles)).strip() if utiles else cur_desc
             if cur_saldo is not None:
                 movimientos.append((cur_fecha, desc_f, cur_dep, cur_ret, cur_saldo))
             else:

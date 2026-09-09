@@ -80,7 +80,7 @@ Banco: {banco_hint or 'desconocido'}
 
 Extrae TODOS los movimientos del siguiente texto. Para cada uno devuelve:
 - fecha: DD/MM/YYYY
-- descripcion: descripción del movimiento (sin montos)
+- descripcion: copia EXACTA del texto de la descripción tal como aparece en el estado de cuenta — NO parafrasees, NO resumas, NO omitas caracteres. Incluye referencias, claves, nombres completos y cualquier texto adicional del movimiento.
 - deposito: monto depositado/abonado (0 si no aplica)
 - retiro: monto retirado/cargado (0 si no aplica)
 

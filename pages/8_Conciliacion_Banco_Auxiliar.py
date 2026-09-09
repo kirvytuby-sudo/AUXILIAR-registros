@@ -326,6 +326,70 @@ def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_
                                  "aux_entries": [aux], "diferencia": aux["monto"] - target})
                 aux["matched"] = True; matched_idx.add(bi); break
 
+    # Paso 4 — GLOBAL por proveedor
+    # Agrupa los restantes por proveedor extraído (CLABE banco / /PROV: aux).
+    # Si el total banco ≈ total aux dentro de tol_global ($5), marca TODO como conciliado.
+    _RE_CLABE = re.compile(r'CLABE[:\s]+(\d{18})', re.IGNORECASE)
+    _RE_BEND  = re.compile(r'\|\s*(.+?)\s+RFC:', re.IGNORECASE)
+
+    def _banco_vendor(desc):
+        """Extrae token de proveedor desde descripción banco (nombre antes de RFC: o CLABE)."""
+        m = _RE_BEND.search(desc)
+        if m:
+            return m.group(1).strip().upper()
+        m = _RE_CLABE.search(desc)
+        if m:
+            return m.group(1).strip()
+        return None
+
+    def _aux_vendor(concepto):
+        m = _RE_PROV.search(concepto)
+        return m.group(1).strip().upper() if m else None
+
+    libres_p4_b = [banco_movs[i] for i in range(len(banco_movs)) if i not in matched_idx]
+    libres_p4_a = [a for a in libre if not a["matched"]]
+
+    # Agrupar banco por vendor
+    grupos_b: dict = {}
+    for bi_orig, bm in zip([i for i in range(len(banco_movs)) if i not in matched_idx],
+                            libres_p4_b):
+        v = _banco_vendor(bm.get("desc", ""))
+        if v:
+            grupos_b.setdefault(v, []).append((bi_orig, bm))
+
+    # Agrupar aux por vendor
+    grupos_a: dict = {}
+    for am in libres_p4_a:
+        v = _aux_vendor(am.get("concepto", ""))
+        if v:
+            grupos_a.setdefault(v, []).append(am)
+
+    # Cruzar por vendor con similitud >= 0.60
+    used_vb: set = set(); used_va: set = set()
+    for vb, b_items in grupos_b.items():
+        best_va = None; best_sim = 0.0
+        for va in grupos_a:
+            s = difflib.SequenceMatcher(None, vb, va).ratio()
+            if s > best_sim:
+                best_sim = s; best_va = va
+        if best_va is None or best_sim < 0.60:
+            continue
+        a_items = grupos_a[best_va]
+        tot_b4 = sum(bm[monto_key] for _, bm in b_items)
+        tot_a4 = sum(am["monto"]   for am    in a_items)
+        if abs(tot_b4 - tot_a4) <= 5.0:
+            n_b = len(b_items); n_a = len(a_items)
+            tipo = f"🟰 GLOBAL ({n_b}b×{n_a}a)"
+            # Registrar un resultado por cada entrada banco con sus aux
+            results.append({"tipo": tipo,
+                             "banco": b_items[0][1],
+                             "aux_entries": [am for am in a_items],
+                             "diferencia": round(tot_b4 - tot_a4, 2),
+                             "_extra_banco": [bm for _, bm in b_items[1:]]})
+            for bi_orig, _ in b_items: matched_idx.add(bi_orig)
+            for am in a_items:         am["matched"] = True
+            used_vb.add(vb); used_va.add(best_va)
+
     sin_banco = [banco_movs[i] for i in range(len(banco_movs)) if i not in matched_idx]
     sin_aux   = [a for a in libre if not a["matched"]]
     return results, sin_banco, sin_aux
@@ -391,6 +455,7 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
     EXACTO  = PatternFill("solid", fgColor="D1FAE5")   # verde
     COMBO   = PatternFill("solid", fgColor="FCE4D6")   # naranja claro
     TEXTO   = PatternFill("solid", fgColor="EDE9FE")   # lila
+    GLOBAL  = PatternFill("solid", fgColor="E0F2FE")   # azul cielo — GLOBAL por proveedor
     AUXF    = PatternFill("solid", fgColor="FFF3CD")
     DEP_M   = PatternFill("solid", fgColor="1E40AF")
     RET_M   = PatternFill("solid", fgColor="831843")
@@ -426,6 +491,7 @@ def _generar_excel(res_dep, sin_dep_banco, sin_dep_aux,
     def _row_fill(tipo):
         if tipo.startswith("✅"): return EXACTO
         if tipo.startswith("🔀"): return COMBO
+        if tipo.startswith("🟰"): return GLOBAL
         return TEXTO
 
     BANCO_HDR_FILLS = {

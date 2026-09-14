@@ -1060,19 +1060,6 @@ if generar:
                 archivos_leidos.append(f"{bf.name} ({len(movs_bf)} movimientos)")
             movs_banco.sort(key=lambda m: m["fecha"])
 
-            # Deduplicar movimientos bancarios: mismo (fecha, dep, ret, desc) → conservar solo uno.
-            # Ocurre cuando se cargan archivos de distintos períodos con fechas solapadas,
-            # o el mismo archivo se carga dos veces.  Preserva el orden (ya está sorted).
-            _seen_mov: set = set()
-            _movs_dedup = []
-            for _mv in movs_banco:
-                _key = (_mv["fecha"], _mv["dep"], _mv["ret"], _mv["desc"])
-                if _key not in _seen_mov:
-                    _seen_mov.add(_key)
-                    _movs_dedup.append(_mv)
-            if len(_movs_dedup) < len(movs_banco):
-                st.info(f"ℹ️ Se eliminaron {len(movs_banco) - len(_movs_dedup)} movimientos bancarios duplicados.")
-            movs_banco = _movs_dedup
 
             wb_aux = load_workbook(filename=io.BytesIO(aux_file.read()), read_only=True, data_only=True)
             aux_cargo_raw, aux_abono_raw = _read_auxiliar(wb_aux); wb_aux.close()

@@ -336,6 +336,50 @@ def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_
                                  "aux_entries": [aux], "diferencia": aux["monto"] - target})
                 aux["matched"] = True; matched_idx.add(bi); break
 
+    # Paso 4 — Suma de auxiliar por proveedor contra 1 banco
+    # Para cada banco sin conciliar, busca todos los aux sin conciliar del mismo
+    # proveedor cuya SUMA sea igual al monto banco (tolerancia $1). Si coincide,
+    # marca banco + todos esos aux como conciliados.
+    _RE_BEND = re.compile(r'\|\s*(.+?)\s+(?:RFC:|BEM\s)', re.IGNORECASE)
+
+    def _vendor_banco(desc):
+        m = _RE_BEND.search(desc)
+        if m:
+            return m.group(1).strip().upper()
+        # fallback: últimas palabras antes de RFC o BEM
+        return desc.strip().upper()
+
+    def _vendor_aux(concepto):
+        m = _RE_PROV.search(concepto)
+        return m.group(1).strip().upper() if m else None
+
+    for bi, banco in enumerate(banco_movs):
+        if bi in matched_idx:
+            continue
+        target   = banco[monto_key]
+        vb       = _vendor_banco(banco.get("desc", ""))
+        # Candidatos aux con mismo proveedor y sin conciliar
+        cands = [
+            a for a in libre
+            if not a["matched"]
+            and _vendor_aux(a.get("concepto", "")) is not None
+            and difflib.SequenceMatcher(
+                    None, vb, _vendor_aux(a.get("concepto", ""))).ratio() >= 0.60
+        ]
+        if not cands:
+            continue
+        total_cands = sum(a["monto"] for a in cands)
+        if abs(total_cands - target) <= 1.0:
+            results.append({
+                "tipo"        : "🌐",
+                "banco"       : banco,
+                "aux_entries" : cands,
+                "diferencia"  : round(total_cands - target, 2),
+            })
+            matched_idx.add(bi)
+            for a in cands:
+                a["matched"] = True
+
     sin_banco = [banco_movs[i] for i in range(len(banco_movs)) if i not in matched_idx]
     sin_aux   = [a for a in libre if not a["matched"]]
     return results, sin_banco, sin_aux

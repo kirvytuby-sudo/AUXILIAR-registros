@@ -380,6 +380,68 @@ def conciliar(banco_movs, aux_pool, monto_key, tol1, tol_n, dias, tol_text, sim_
             for a in cands:
                 a["matched"] = True
 
+    # Paso 4 — 1 banco vs N auxiliar del mismo proveedor (subset-sum)
+    # Para cada mov. banco sin conciliar, extrae proveedor; busca aux libres
+    # del mismo proveedor cuya SUMA coincida con el monto banco (±$5).
+    _RE_CLABE = re.compile(r'CLABE[:\s]+(\d{18})', re.IGNORECASE)
+    _RE_BEND  = re.compile(r'\|\s*(.+?)\s+RFC:', re.IGNORECASE)
+
+    def _banco_vendor(desc):
+        m = _RE_BEND.search(desc)
+        if m:
+            return m.group(1).strip().upper()
+        m = _RE_CLABE.search(desc)
+        if m:
+            return m.group(1).strip()
+        return None
+
+    def _aux_vendor(concepto):
+        m = _RE_PROV.search(concepto)
+        return m.group(1).strip().upper() if m else None
+
+    def _find_subset(montos, target, tol=5.0):
+        """Subset-sum: devuelve lista de índices cuya suma == target ±tol, o None."""
+        n = len(montos)
+        for r in range(1, n + 1):
+            for combo in itertools.combinations(range(n), r):
+                if abs(sum(montos[i] for i in combo) - target) <= tol:  # tol=$2
+                    return list(combo)
+        return None
+
+    for bi in list(range(len(banco_movs))):
+        if bi in matched_idx:
+            continue
+        banco = banco_movs[bi]
+        vb = _banco_vendor(banco.get("desc", ""))
+        if not vb:
+            continue
+        target = banco[monto_key]
+        # Aux libres del mismo proveedor (similitud ≥ 0.60)
+        candidatos = [
+            a for a in libre
+            if not a["matched"]
+            and _aux_vendor(a.get("concepto", "")) is not None
+            and difflib.SequenceMatcher(
+                None, vb, _aux_vendor(a.get("concepto", ""))).ratio() >= 0.60
+        ]
+        if not candidatos:
+            continue
+        # Limitar a 20 candidatos para evitar explosión combinatoria
+        candidatos = candidatos[:20]
+        montos_c = [a["monto"] for a in candidatos]
+        idxs = _find_subset(montos_c, target, tol=2.0)
+        if idxs is not None:
+            aux_match = [candidatos[i] for i in idxs]
+            results.append({
+                "tipo": "🌐",
+                "banco": banco,
+                "aux_entries": aux_match,
+                "diferencia": round(sum(a["monto"] for a in aux_match) - target, 2),
+            })
+            matched_idx.add(bi)
+            for a in aux_match:
+                a["matched"] = True
+
     sin_banco = [banco_movs[i] for i in range(len(banco_movs)) if i not in matched_idx]
     sin_aux   = [a for a in libre if not a["matched"]]
     return results, sin_banco, sin_aux

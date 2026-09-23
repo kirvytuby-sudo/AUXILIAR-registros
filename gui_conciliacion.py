@@ -1746,6 +1746,8 @@ class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
         btn_bar.grid(row=2, column=0, sticky="e", padx=10, pady=(0, 8))
         ttk.Button(btn_bar, text="➕  Agregar XMLs",
                    command=self._prov_agregar_xmls).pack(side="left", padx=3)
+        ttk.Button(btn_bar, text="📁  Desde carpeta",
+                   command=self._prov_agregar_carpeta).pack(side="left", padx=3)
         ttk.Button(btn_bar, text="➖  Quitar",
                    command=self._prov_quitar_xml).pack(side="left", padx=3)
         ttk.Button(btn_bar, text="🗑  Limpiar todo",
@@ -1823,6 +1825,31 @@ class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
             if r not in self.prov_xmls:
                 self.prov_xmls.append(r)
                 self.lb_prov_xml.insert("end", os.path.basename(r))
+
+    def _prov_agregar_carpeta(self):
+        self.lift()
+        self.focus_force()
+        self.update()
+        _cur = self.prov_plantilla.get()
+        _init = os.path.dirname(_cur) if _cur and os.path.exists(_cur) else os.getcwd()
+        carpeta = filedialog.askdirectory(
+            parent=self,
+            initialdir=_init,
+            title="Selecciona carpeta (busca XMLs en subcarpetas)",
+        )
+        if not carpeta:
+            return
+        encontrados = 0
+        for raiz, _dirs, archivos in os.walk(carpeta):
+            for nombre in sorted(archivos):
+                if nombre.lower().endswith(".xml"):
+                    ruta = os.path.join(raiz, nombre)
+                    if ruta not in self.prov_xmls:
+                        self.prov_xmls.append(ruta)
+                        self.lb_prov_xml.insert("end", os.path.relpath(ruta, carpeta))
+                        encontrados += 1
+        if encontrados == 0:
+            messagebox.showinfo("Sin XMLs", f"No se encontraron archivos XML en:\n{carpeta}")
 
     def _prov_quitar_xml(self):
         sel = list(self.lb_prov_xml.curselection())

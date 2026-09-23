@@ -47,16 +47,45 @@ with col_xmls:
     )
 
 # ── Carpeta local con subcarpetas ──────────────────────────────────────────────
+def _abrir_explorador_carpeta():
+    """Abre el diálogo nativo de selección de carpeta (solo funciona en local)."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        _root = tk.Tk()
+        _root.withdraw()
+        _root.wm_attributes('-topmost', 1)
+        carpeta = filedialog.askdirectory(
+            parent=_root,
+            title="Seleccionar carpeta de XMLs de Nómina",
+        )
+        _root.destroy()
+        return carpeta or ""
+    except Exception:
+        return ""
+
 with st.expander("📂  Agregar XMLs desde carpeta local (incluye subcarpetas)", expanded=False):
-    carpeta_input = st.text_input(
-        "Ruta de la carpeta",
-        placeholder=r"Ej: C:\NOMINA\XMLS\AGOSTO",
-        key="pn_carpeta_input",
-    )
+    # Fila superior: campo de ruta + botón explorador
+    col_ruta, col_explorar = st.columns([5, 1])
+    with col_ruta:
+        carpeta_input = st.text_input(
+            "Ruta de la carpeta",
+            placeholder=r"Ej: C:\NOMINA\XMLS\AGOSTO",
+            key="pn_carpeta_input",
+        )
+    with col_explorar:
+        st.write("")   # espaciador para alinear con el input
+        if st.button("📂", use_container_width=True, help="Abrir explorador de carpetas"):
+            _sel = _abrir_explorador_carpeta()
+            if _sel:
+                st.session_state.pn_carpeta_input = _sel
+                st.rerun()
+
+    # Fila inferior: escanear + limpiar
     col_scan, col_limpiar = st.columns([1, 1])
     with col_scan:
         if st.button("🔍  Escanear carpeta", use_container_width=True):
-            carpeta = carpeta_input.strip()
+            carpeta = (st.session_state.get("pn_carpeta_input") or "").strip()
             if not carpeta or not os.path.isdir(carpeta):
                 st.error("Ruta no válida o carpeta no encontrada.")
             else:
@@ -73,14 +102,15 @@ with st.expander("📂  Agregar XMLs desde carpeta local (incluye subcarpetas)",
                 else:
                     st.info("No se encontraron XMLs nuevos en esa carpeta.")
     with col_limpiar:
-        if st.button("🗑  Limpiar lista carpeta", use_container_width=True):
+        if st.button("🗑  Limpiar lista", use_container_width=True):
             st.session_state.pn_carpeta_xmls = []
-            st.success("Lista limpiada.")
+            st.rerun()
+
     if st.session_state.pn_carpeta_xmls:
+        _base = (st.session_state.get("pn_carpeta_input") or "").strip()
         st.caption(f"**{len(st.session_state.pn_carpeta_xmls)} XML(s) en lista:**")
         st.code("\n".join(
-            os.path.relpath(p, carpeta_input.strip()) if carpeta_input.strip() and os.path.isdir(carpeta_input.strip())
-            else p
+            os.path.relpath(p, _base) if _base and os.path.isdir(_base) else p
             for p in st.session_state.pn_carpeta_xmls
         ), language=None)
 

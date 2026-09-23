@@ -48,19 +48,38 @@ with col_xmls:
 
 # ── Carpeta local con subcarpetas ──────────────────────────────────────────────
 def _abrir_explorador_carpeta():
-    """Abre el diálogo nativo de selección de carpeta (solo funciona en local)."""
+    """Abre el diálogo nativo de Windows para seleccionar carpeta (vía ctypes)."""
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-        _root = tk.Tk()
-        _root.withdraw()
-        _root.wm_attributes('-topmost', 1)
-        carpeta = filedialog.askdirectory(
-            parent=_root,
-            title="Seleccionar carpeta de XMLs de Nómina",
-        )
-        _root.destroy()
-        return carpeta or ""
+        import ctypes, ctypes.wintypes
+
+        class BROWSEINFOW(ctypes.Structure):
+            _fields_ = [
+                ("hwndOwner",      ctypes.wintypes.HWND),
+                ("pidlRoot",       ctypes.c_void_p),
+                ("pszDisplayName", ctypes.c_wchar_p),
+                ("lpszTitle",      ctypes.c_wchar_p),
+                ("ulFlags",        ctypes.c_uint),
+                ("lpfn",           ctypes.c_void_p),
+                ("lParam",         ctypes.c_long),
+                ("iImage",         ctypes.c_int),
+            ]
+
+        shell32 = ctypes.windll.shell32
+        ole32   = ctypes.windll.ole32
+        ole32.CoInitialize(None)
+
+        bi = BROWSEINFOW()
+        bi.lpszTitle = "Seleccionar carpeta de XMLs de Nómina"
+        bi.ulFlags   = 0x0041   # BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
+
+        pidl = shell32.SHBrowseForFolderW(ctypes.byref(bi))
+        if not pidl:
+            return ""
+
+        buf = ctypes.create_unicode_buffer(32768)
+        shell32.SHGetPathFromIDListW(pidl, buf)
+        ole32.CoTaskMemFree(pidl)
+        return buf.value
     except Exception:
         return ""
 

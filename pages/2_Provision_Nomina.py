@@ -20,6 +20,8 @@ if "pn_resultado_bytes" not in st.session_state:
     st.session_state.pn_resultado_bytes = None
 if "pn_tmp" not in st.session_state:
     st.session_state.pn_tmp = tempfile.mkdtemp(prefix="pn_")
+if "pn_carpeta_xmls" not in st.session_state:
+    st.session_state.pn_carpeta_xmls = []   # rutas locales encontradas
 
 TMP = st.session_state.pn_tmp
 
@@ -44,17 +46,58 @@ with col_xmls:
         accept_multiple_files=True,
     )
 
+# ── Carpeta local con subcarpetas ──────────────────────────────────────────────
+with st.expander("📂  Agregar XMLs desde carpeta local (incluye subcarpetas)", expanded=False):
+    carpeta_input = st.text_input(
+        "Ruta de la carpeta",
+        placeholder=r"Ej: C:\NOMINA\XMLS\AGOSTO",
+        key="pn_carpeta_input",
+    )
+    col_scan, col_limpiar = st.columns([1, 1])
+    with col_scan:
+        if st.button("🔍  Escanear carpeta", use_container_width=True):
+            carpeta = carpeta_input.strip()
+            if not carpeta or not os.path.isdir(carpeta):
+                st.error("Ruta no válida o carpeta no encontrada.")
+            else:
+                encontrados = []
+                for raiz, _dirs, archivos in os.walk(carpeta):
+                    for nombre in sorted(archivos):
+                        if nombre.lower().endswith(".xml"):
+                            ruta = os.path.join(raiz, nombre)
+                            if ruta not in st.session_state.pn_carpeta_xmls:
+                                encontrados.append(ruta)
+                st.session_state.pn_carpeta_xmls.extend(encontrados)
+                if encontrados:
+                    st.success(f"Se agregaron {len(encontrados)} XML(s).")
+                else:
+                    st.info("No se encontraron XMLs nuevos en esa carpeta.")
+    with col_limpiar:
+        if st.button("🗑  Limpiar lista carpeta", use_container_width=True):
+            st.session_state.pn_carpeta_xmls = []
+            st.success("Lista limpiada.")
+    if st.session_state.pn_carpeta_xmls:
+        st.caption(f"**{len(st.session_state.pn_carpeta_xmls)} XML(s) en lista:**")
+        st.code("\n".join(
+            os.path.relpath(p, carpeta_input.strip()) if carpeta_input.strip() and os.path.isdir(carpeta_input.strip())
+            else p
+            for p in st.session_state.pn_carpeta_xmls
+        ), language=None)
+
+_xmls_carpeta = st.session_state.pn_carpeta_xmls
+_total_xmls = len(xml_files or []) + len(_xmls_carpeta)
+
 if not plantilla_file:
     st.info("👆 Carga la plantilla Excel SINUBE y los XMLs de nómina para comenzar.")
     st.stop()
 
-if not xml_files:
-    st.warning("⚠️ Carga al menos un archivo XML para procesar.")
+if _total_xmls == 0:
+    st.warning("⚠️ Carga al menos un archivo XML (o escanea una carpeta) para procesar.")
     st.stop()
 
 # ── Sección 2: Procesar ────────────────────────────────────────────────────────
 st.subheader("2️⃣  Generar provisión")
-st.caption(f"Plantilla: **{plantilla_file.name}** · XMLs cargados: **{len(xml_files)}**")
+st.caption(f"Plantilla: **{plantilla_file.name}** · XMLs: **{_total_xmls}** ({len(xml_files or [])} subidos + {len(_xmls_carpeta)} de carpeta)")
 
 if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_container_width=False):
     logs = []
@@ -134,11 +177,20 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                 st.error("❌ No se encontraron columnas TOTAL 1 / TOTAL 2 en fila 3 de la plantilla.")
                 st.stop()
 
-            # ── Parsear XMLs ──────────────────────────────────────────────────
+            # ── Parsear XMLs (subidos + carpeta local) ────────────────────────
+            # Construir lista unificada: (bytes, nombre)
+            _fuentes = []
+            for uf in (xml_files or []):
+                _fuentes.append((uf.read(), uf.name))
+            for ruta in _xmls_carpeta:
+                try:
+                    with open(ruta, "rb") as _f:
+                        _fuentes.append((_f.read(), os.path.basename(ruta)))
+                except Exception as _e:
+                    errores.append(f"No se pudo leer {ruta}: {_e}")
+
             filas = []
-            for uf in xml_files:
-                xml_bytes = uf.read()
-                xml_name  = uf.name
+            for xml_bytes, xml_name in _fuentes:
                 try:
                     root = ET.fromstring(xml_bytes)
                     receptor = nomina = None

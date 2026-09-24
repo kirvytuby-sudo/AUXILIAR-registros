@@ -84,21 +84,29 @@ def _abrir_explorador_carpeta():
     return ""
 
 with st.expander("📂  Agregar XMLs desde carpeta local (incluye subcarpetas)", expanded=False):
+    _es_windows = os.name == "nt"
+    if not _es_windows:
+        st.info("ℹ️ Esta función solo está disponible cuando ejecutas la app **localmente en Windows**.")
     # Fila superior: campo de ruta + botón explorador
-    col_ruta, col_explorar = st.columns([5, 1])
+    if _es_windows:
+        col_ruta, col_explorar = st.columns([5, 1])
+    else:
+        col_ruta = st.container()
+        col_explorar = None
     with col_ruta:
         carpeta_input = st.text_input(
             "Ruta de la carpeta",
             placeholder=r"Ej: C:\NOMINA\XMLS\AGOSTO",
             key="pn_carpeta_input",
         )
-    with col_explorar:
-        st.write("")   # espaciador para alinear con el input
-        if st.button("📂", use_container_width=True, help="Abrir explorador de carpetas"):
-            _sel = _abrir_explorador_carpeta()
-            if _sel:
-                st.session_state.pn_carpeta_input = _sel
-                st.rerun()
+    if _es_windows and col_explorar is not None:
+        with col_explorar:
+            st.write("")   # espaciador para alinear con el input
+            if st.button("📂", use_container_width=True, help="Abrir explorador de carpetas"):
+                _sel = _abrir_explorador_carpeta()
+                if _sel:
+                    st.session_state.pn_carpeta_input = _sel
+                    st.rerun()
 
     # Fila inferior: escanear + limpiar
     col_scan, col_limpiar = st.columns([1, 1])

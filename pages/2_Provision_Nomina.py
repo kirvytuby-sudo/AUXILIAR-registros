@@ -20,8 +20,6 @@ if "pn_resultado_bytes" not in st.session_state:
     st.session_state.pn_resultado_bytes = None
 if "pn_tmp" not in st.session_state:
     st.session_state.pn_tmp = tempfile.mkdtemp(prefix="pn_")
-if "pn_carpeta_xmls" not in st.session_state:
-    st.session_state.pn_carpeta_xmls = []   # rutas locales encontradas
 
 TMP = st.session_state.pn_tmp
 
@@ -46,103 +44,8 @@ with col_xmls:
         accept_multiple_files=True,
     )
 
-# ── Carpeta local con subcarpetas ──────────────────────────────────────────────
-def _abrir_explorador_carpeta():
-    """Abre el diálogo nativo de Windows en un proceso Python separado."""
-    import subprocess, sys, tempfile, os
-
-    tmp = tempfile.mktemp(suffix=".txt")
-    # Script mínimo: corre tkinter en SU propio proceso (hilo principal real)
-    py_script = (
-        "import tkinter as tk\n"
-        "from tkinter import filedialog\n"
-        "root = tk.Tk()\n"
-        "root.withdraw()\n"
-        "root.wm_attributes('-topmost', True)\n"
-        "root.update()\n"
-        "path = filedialog.askdirectory(parent=root, title='Seleccionar carpeta de XMLs')\n"
-        "root.destroy()\n"
-        "if path:\n"
-        "    open('" + tmp.replace("\\", "\\\\") + "', 'w', encoding='utf-8').write(path)\n"
-    )
-    py_file = tempfile.mktemp(suffix=".py")
-    try:
-        with open(py_file, "w", encoding="utf-8") as fh:
-            fh.write(py_script)
-        subprocess.run([sys.executable, py_file], timeout=120)
-        if os.path.exists(tmp):
-            with open(tmp, encoding="utf-8") as fh:
-                return fh.read().strip()
-    except Exception:
-        pass
-    finally:
-        for p in (py_file, tmp):
-            try:
-                os.unlink(p)
-            except Exception:
-                pass
-    return ""
-
-with st.expander("📂  Agregar XMLs desde carpeta local (incluye subcarpetas)", expanded=False):
-    _es_windows = os.name == "nt"
-    if not _es_windows:
-        st.info("ℹ️ Esta función solo está disponible cuando ejecutas la app **localmente en Windows**.")
-    # Fila superior: campo de ruta + botón explorador
-    if _es_windows:
-        col_ruta, col_explorar = st.columns([5, 1])
-    else:
-        col_ruta = st.container()
-        col_explorar = None
-    with col_ruta:
-        carpeta_input = st.text_input(
-            "Ruta de la carpeta",
-            placeholder=r"Ej: C:\NOMINA\XMLS\AGOSTO",
-            key="pn_carpeta_input",
-        )
-    if _es_windows and col_explorar is not None:
-        with col_explorar:
-            st.write("")   # espaciador para alinear con el input
-            if st.button("📂", use_container_width=True, help="Abrir explorador de carpetas"):
-                _sel = _abrir_explorador_carpeta()
-                if _sel:
-                    st.session_state.pn_carpeta_input = _sel
-                    st.rerun()
-
-    # Fila inferior: escanear + limpiar
-    col_scan, col_limpiar = st.columns([1, 1])
-    with col_scan:
-        if st.button("🔍  Escanear carpeta", use_container_width=True):
-            carpeta = (st.session_state.get("pn_carpeta_input") or "").strip()
-            if not carpeta or not os.path.isdir(carpeta):
-                st.error("Ruta no válida o carpeta no encontrada.")
-            else:
-                encontrados = []
-                for raiz, _dirs, archivos in os.walk(carpeta):
-                    for nombre in sorted(archivos):
-                        if nombre.lower().endswith(".xml"):
-                            ruta = os.path.join(raiz, nombre)
-                            if ruta not in st.session_state.pn_carpeta_xmls:
-                                encontrados.append(ruta)
-                st.session_state.pn_carpeta_xmls.extend(encontrados)
-                if encontrados:
-                    st.success(f"Se agregaron {len(encontrados)} XML(s).")
-                else:
-                    st.info("No se encontraron XMLs nuevos en esa carpeta.")
-    with col_limpiar:
-        if st.button("🗑  Limpiar lista", use_container_width=True):
-            st.session_state.pn_carpeta_xmls = []
-            st.rerun()
-
-    if st.session_state.pn_carpeta_xmls:
-        _base = (st.session_state.get("pn_carpeta_input") or "").strip()
-        st.caption(f"**{len(st.session_state.pn_carpeta_xmls)} XML(s) en lista:**")
-        st.code("\n".join(
-            os.path.relpath(p, _base) if _base and os.path.isdir(_base) else p
-            for p in st.session_state.pn_carpeta_xmls
-        ), language=None)
-
-_xmls_carpeta = st.session_state.pn_carpeta_xmls
-_total_xmls = len(xml_files or []) + len(_xmls_carpeta)
+_xmls_carpeta = []
+_total_xmls = len(xml_files or [])
 
 if not plantilla_file:
     st.info("👆 Carga la plantilla Excel SINUBE y los XMLs de nómina para comenzar.")
@@ -154,7 +57,7 @@ if _total_xmls == 0:
 
 # ── Sección 2: Procesar ────────────────────────────────────────────────────────
 st.subheader("2️⃣  Generar provisión")
-st.caption(f"Plantilla: **{plantilla_file.name}** · XMLs: **{_total_xmls}** ({len(xml_files or [])} subidos + {len(_xmls_carpeta)} de carpeta)")
+st.caption(f"Plantilla: **{plantilla_file.name}** · XMLs cargados: **{_total_xmls}**")
 
 if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_container_width=False):
     logs = []
@@ -234,20 +137,9 @@ if st.button("⚙️  Procesar Provisión de Nómina", type="primary", use_conta
                 st.error("❌ No se encontraron columnas TOTAL 1 / TOTAL 2 en fila 3 de la plantilla.")
                 st.stop()
 
-            # ── Parsear XMLs (subidos + carpeta local) ────────────────────────
-            # Construir lista unificada: (bytes, nombre)
-            _fuentes = []
-            for uf in (xml_files or []):
-                _fuentes.append((uf.read(), uf.name))
-            for ruta in _xmls_carpeta:
-                try:
-                    with open(ruta, "rb") as _f:
-                        _fuentes.append((_f.read(), os.path.basename(ruta)))
-                except Exception as _e:
-                    errores.append(f"No se pudo leer {ruta}: {_e}")
-
+            # ── Parsear XMLs subidos ───────────────────────────────────────────
             filas = []
-            for xml_bytes, xml_name in _fuentes:
+            for xml_bytes, xml_name in [(uf.read(), uf.name) for uf in (xml_files or [])]:
                 try:
                     root = ET.fromstring(xml_bytes)
                     receptor = nomina = None

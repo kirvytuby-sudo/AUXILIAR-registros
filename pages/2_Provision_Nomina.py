@@ -48,37 +48,34 @@ with col_xmls:
 
 # ── Carpeta local con subcarpetas ──────────────────────────────────────────────
 def _abrir_explorador_carpeta():
-    """Abre el diálogo nativo de Windows via VBScript + wscript.exe."""
-    import subprocess, tempfile, os
+    """Abre el diálogo nativo de Windows corriendo tkinter en su propio hilo."""
+    import threading, queue
+    result_q: queue.Queue = queue.Queue()
 
-    tmp_result = tempfile.mktemp(suffix=".txt")
-    # VBScript usa Shell.Application.BrowseForFolder — siempre muestra el diálogo
-    vbs_code = (
-        'Set sh = CreateObject("Shell.Application")\n'
-        'Set f  = sh.BrowseForFolder(0, "Seleccionar carpeta de XMLs de Nomina", 0)\n'
-        'If Not f Is Nothing Then\n'
-        '    Open "' + tmp_result.replace("\\", "\\\\") + '" For Output As #1\n'
-        '    Print #1, f.Self.Path\n'
-        '    Close #1\n'
-        'End If\n'
-    )
-    vbs_file = tempfile.mktemp(suffix=".vbs")
+    def _run():
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.wm_attributes("-topmost", True)
+            root.update()
+            path = filedialog.askdirectory(
+                parent=root,
+                title="Seleccionar carpeta de XMLs de Nómina",
+            )
+            root.destroy()
+            result_q.put(path or "")
+        except Exception as exc:
+            result_q.put("")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=120)
     try:
-        with open(vbs_file, "w", encoding="utf-8") as fh:
-            fh.write(vbs_code)
-        subprocess.run(["wscript", vbs_file], timeout=120)
-        if os.path.exists(tmp_result):
-            with open(tmp_result, encoding="utf-8", errors="ignore") as fh:
-                return fh.read().strip()
-    except Exception:
-        pass
-    finally:
-        for p in (vbs_file, tmp_result):
-            try:
-                os.unlink(p)
-            except Exception:
-                pass
-    return ""
+        return result_q.get_nowait()
+    except queue.Empty:
+        return ""
 
 with st.expander("📂  Agregar XMLs desde carpeta local (incluye subcarpetas)", expanded=False):
     # Fila superior: campo de ruta + botón explorador

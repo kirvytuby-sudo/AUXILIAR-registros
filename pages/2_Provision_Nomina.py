@@ -63,7 +63,7 @@ def _abrir_explorador_carpeta():
         "path = filedialog.askdirectory(parent=root, title='Seleccionar carpeta de XMLs')\n"
         "root.destroy()\n"
         "if path:\n"
-        "    open(r'" + tmp.replace("\\", "\\\\") + "', 'w', encoding='utf-8').write(path)\n"
+        "    open('" + tmp.replace("\\", "\\\\") + "', 'w', encoding='utf-8').write(path)\n"
     )
     py_file = tempfile.mktemp(suffix=".py")
     try:

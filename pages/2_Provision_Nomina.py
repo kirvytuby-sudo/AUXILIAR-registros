@@ -48,40 +48,37 @@ with col_xmls:
 
 # ── Carpeta local con subcarpetas ──────────────────────────────────────────────
 def _abrir_explorador_carpeta():
-    """Abre el diálogo nativo de Windows para seleccionar carpeta (vía ctypes)."""
+    """Abre el diálogo nativo de Windows via VBScript + wscript.exe."""
+    import subprocess, tempfile, os
+
+    tmp_result = tempfile.mktemp(suffix=".txt")
+    # VBScript usa Shell.Application.BrowseForFolder — siempre muestra el diálogo
+    vbs_code = (
+        'Set sh = CreateObject("Shell.Application")\n'
+        'Set f  = sh.BrowseForFolder(0, "Seleccionar carpeta de XMLs de Nomina", 0)\n'
+        'If Not f Is Nothing Then\n'
+        '    Open "' + tmp_result.replace("\\", "\\\\") + '" For Output As #1\n'
+        '    Print #1, f.Self.Path\n'
+        '    Close #1\n'
+        'End If\n'
+    )
+    vbs_file = tempfile.mktemp(suffix=".vbs")
     try:
-        import ctypes, ctypes.wintypes
-
-        class BROWSEINFOW(ctypes.Structure):
-            _fields_ = [
-                ("hwndOwner",      ctypes.wintypes.HWND),
-                ("pidlRoot",       ctypes.c_void_p),
-                ("pszDisplayName", ctypes.c_wchar_p),
-                ("lpszTitle",      ctypes.c_wchar_p),
-                ("ulFlags",        ctypes.c_uint),
-                ("lpfn",           ctypes.c_void_p),
-                ("lParam",         ctypes.c_long),
-                ("iImage",         ctypes.c_int),
-            ]
-
-        shell32 = ctypes.windll.shell32
-        ole32   = ctypes.windll.ole32
-        ole32.CoInitialize(None)
-
-        bi = BROWSEINFOW()
-        bi.lpszTitle = "Seleccionar carpeta de XMLs de Nómina"
-        bi.ulFlags   = 0x0041   # BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
-
-        pidl = shell32.SHBrowseForFolderW(ctypes.byref(bi))
-        if not pidl:
-            return ""
-
-        buf = ctypes.create_unicode_buffer(32768)
-        shell32.SHGetPathFromIDListW(pidl, buf)
-        ole32.CoTaskMemFree(pidl)
-        return buf.value
+        with open(vbs_file, "w", encoding="utf-8") as fh:
+            fh.write(vbs_code)
+        subprocess.run(["wscript", vbs_file], timeout=120)
+        if os.path.exists(tmp_result):
+            with open(tmp_result, encoding="utf-8", errors="ignore") as fh:
+                return fh.read().strip()
     except Exception:
-        return ""
+        pass
+    finally:
+        for p in (vbs_file, tmp_result):
+            try:
+                os.unlink(p)
+            except Exception:
+                pass
+    return ""
 
 with st.expander("📂  Agregar XMLs desde carpeta local (incluye subcarpetas)", expanded=False):
     # Fila superior: campo de ruta + botón explorador

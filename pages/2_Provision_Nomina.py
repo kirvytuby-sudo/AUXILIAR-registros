@@ -48,34 +48,40 @@ with col_xmls:
 
 # ── Carpeta local con subcarpetas ──────────────────────────────────────────────
 def _abrir_explorador_carpeta():
-    """Abre el diálogo nativo de Windows corriendo tkinter en su propio hilo."""
-    import threading, queue
-    result_q: queue.Queue = queue.Queue()
+    """Abre el diálogo nativo de Windows en un proceso Python separado."""
+    import subprocess, sys, tempfile, os
 
-    def _run():
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-            root = tk.Tk()
-            root.withdraw()
-            root.wm_attributes("-topmost", True)
-            root.update()
-            path = filedialog.askdirectory(
-                parent=root,
-                title="Seleccionar carpeta de XMLs de Nómina",
-            )
-            root.destroy()
-            result_q.put(path or "")
-        except Exception as exc:
-            result_q.put("")
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(timeout=120)
+    tmp = tempfile.mktemp(suffix=".txt")
+    # Script mínimo: corre tkinter en SU propio proceso (hilo principal real)
+    py_script = (
+        "import tkinter as tk\n"
+        "from tkinter import filedialog\n"
+        "root = tk.Tk()\n"
+        "root.withdraw()\n"
+        "root.wm_attributes('-topmost', True)\n"
+        "root.update()\n"
+        "path = filedialog.askdirectory(parent=root, title='Seleccionar carpeta de XMLs')\n"
+        "root.destroy()\n"
+        "if path:\n"
+        "    open(r'" + tmp.replace("\\", "\\\\") + "', 'w', encoding='utf-8').write(path)\n"
+    )
+    py_file = tempfile.mktemp(suffix=".py")
     try:
-        return result_q.get_nowait()
-    except queue.Empty:
-        return ""
+        with open(py_file, "w", encoding="utf-8") as fh:
+            fh.write(py_script)
+        subprocess.run([sys.executable, py_file], timeout=120)
+        if os.path.exists(tmp):
+            with open(tmp, encoding="utf-8") as fh:
+                return fh.read().strip()
+    except Exception:
+        pass
+    finally:
+        for p in (py_file, tmp):
+            try:
+                os.unlink(p)
+            except Exception:
+                pass
+    return ""
 
 with st.expander("📂  Agregar XMLs desde carpeta local (incluye subcarpetas)", expanded=False):
     # Fila superior: campo de ruta + botón explorador

@@ -467,7 +467,24 @@ _guardadas = _sb_load_empresas() if _USE_SUPABASE else (_get_secret("empresas", 
 if _guardadas:
     st.subheader("🔐 Empresas guardadas")
     st.caption("Estas e.firmas están guardadas en los Secrets de la app — solo marca y genera.")
-    for clave_emp in sorted(_guardadas.keys()):
+
+    # ── Seleccionar / Deseleccionar todos ────────────────────────────────────
+    _claves_ord = sorted(_guardadas.keys())
+    _todos_marcados = all(st.session_state.get(f"sec_{c}", True) for c in _claves_ord)
+    _col_sel, _ = st.columns([2, 6])
+    with _col_sel:
+        if _todos_marcados:
+            if st.button("☑️ Deseleccionar todos", key="btn_desel_todos", use_container_width=True):
+                for _c in _claves_ord:
+                    st.session_state[f"sec_{_c}"] = False
+                st.rerun()
+        else:
+            if st.button("✅ Seleccionar todos", key="btn_sel_todos", use_container_width=True):
+                for _c in _claves_ord:
+                    st.session_state[f"sec_{_c}"] = True
+                st.rerun()
+
+    for clave_emp in _claves_ord:
         datos = _guardadas[clave_emp]
         try:
             cer_b = base64.b64decode(datos["cer_b64"])

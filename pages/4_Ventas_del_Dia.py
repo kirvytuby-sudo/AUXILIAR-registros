@@ -171,11 +171,16 @@ def _detectar_columnas(header_row, logs):
         if h is not None:
             col_map[str(h).strip()] = i
     # Columnas esperadas con fallbacks seguros
+    n_cols = len(header_row)
     defaults = {
         'FechaHora': 0, 'Producto': 3, 'Subtotal': 6,
         'Iva': 7, 'Ieps': 8, 'Importe': 9, 'Cliente': 16,
     }
     result = {k: col_map.get(k, v) for k, v in defaults.items()}
+    # Si la columna Cliente apunta fuera del rango, marcar como ausente (-1)
+    if result['Cliente'] >= n_cols and 'Cliente' not in col_map:
+        result['Cliente'] = -1
+        logs.append("  ℹ Sin columna 'Cliente' en el archivo — se usará 'Contado' para todas las filas.")
     logs.append(
         f"  Columnas detectadas → Producto:{result['Producto']} "
         f"Importe:{result['Importe']} Cliente:{result['Cliente']}"
@@ -187,52 +192,58 @@ def _leer_despachos(file_bytes, filename, logs):
     """Lee el archivo de despachos (.xlsx o .xls).
     Retorna (data, col_map) — data sin encabezado, col_map con índices detectados."""
     ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'xlsx'
+
+    def _leer_como_xlsx(fb):
+        wb = openpyxl.load_workbook(io.BytesIO(fb), data_only=True, read_only=True)
+        rows = list(wb.active.iter_rows(values_only=True))
+        wb.close()
+        return rows
+
     if ext == 'xls':
+        # Intento 1: xlrd (formato binario antiguo .xls)
         try:
             import xlrd
             wb_xls = xlrd.open_workbook(file_contents=file_bytes)
             ws_xls = wb_xls.sheet_by_index(0)
-            rows = [tuple(ws_xls.row_values(r)) for r in range(ws_xls.nrows)]
-            col_map = _detectar_columnas(rows[0], logs)
-            data = rows[1:]
-            logs.append(f"  {len(data):,} registros leídos (.xls vía xlrd).")
-            return data, col_map
+            all_rows = [tuple(ws_xls.row_values(r)) for r in range(ws_xls.nrows)]
+            logs.append(f"  {len(all_rows)-1:,} registros leídos (.xls vía xlrd).")
         except ImportError:
             raise RuntimeError(
                 "El archivo está en formato antiguo .xls y la librería 'xlrd' no está instalada.\n"
                 "Solución: Abre el archivo en Excel y guárdalo como .xlsx."
             )
         except Exception as _xlrd_err:
-            # El .xls es en realidad un CSV/TSV con extensión renombrada (ej. exportación de sistema)
-            logs.append(f"  ⚠ xlrd no pudo leer el .xls ({_xlrd_err}); intentando como CSV/TSV...")
-            import csv as _csv
-            for enc in ("latin-1", "utf-8-sig", "utf-8"):
-                try:
-                    text = file_bytes.decode(enc)
-                    break
-                except Exception:
-                    text = None
-            if text is None:
-                raise RuntimeError("No se pudo decodificar el archivo .xls como texto CSV/TSV.")
-            # Detectar delimitador: si hay más tabuladores que comas en la primera línea, usar TSV
-            first_line = text.split("\n", 1)[0]
-            delim = "\t" if first_line.count("\t") >= first_line.count(",") else ","
-            reader = _csv.reader(text.splitlines(), delimiter=delim)
-            all_rows = [tuple(r) for r in reader if any(c.strip() for c in r)]
-            if len(all_rows) < 2:
-                raise RuntimeError("El archivo CSV/TSV no tiene suficientes filas.")
-            col_map = _detectar_columnas(all_rows[0], logs)
-            data = all_rows[1:]
-            logs.append(f"  {len(data):,} registros leídos (.xls como CSV/TSV, delim={repr(delim)}).")
-            return data, col_map
+            # Intento 2: el .xls es en realidad un XLSX renombrado (Excel 2007+)
+            logs.append(f"  ⚠ xlrd no pudo ({_xlrd_err}); intentando como xlsx...")
+            try:
+                all_rows = _leer_como_xlsx(file_bytes)
+                logs.append(f"  {len(all_rows)-1:,} registros leídos (.xls como xlsx).")
+            except Exception as _xlsx_err:
+                # Intento 3: CSV/TSV
+                logs.append(f"  ⚠ openpyxl tampoco pudo ({_xlsx_err}); intentando como CSV/TSV...")
+                import csv as _csv
+                text = None
+                for enc in ("latin-1", "utf-8-sig", "utf-8"):
+                    try:
+                        text = file_bytes.decode(enc); break
+                    except Exception:
+                        pass
+                if text is None:
+                    raise RuntimeError("No se pudo leer el archivo .xls con ningún método.")
+                first_line = text.split("\n", 1)[0]
+                delim = "\t" if first_line.count("\t") >= first_line.count(",") else ","
+                reader = _csv.reader(text.splitlines(), delimiter=delim)
+                all_rows = [tuple(r) for r in reader if any(c.strip() for c in r)]
+                if len(all_rows) < 2:
+                    raise RuntimeError("El archivo CSV/TSV no tiene suficientes filas.")
+                logs.append(f"  {len(all_rows)-1:,} registros leídos (.xls como CSV, delim={repr(delim)}).")
     else:
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
-        all_rows = list(wb.active.iter_rows(values_only=True))
-        wb.close()
-        col_map = _detectar_columnas(all_rows[0], logs)
-        data = all_rows[1:]
-        logs.append(f"  {len(data):,} registros leídos (.xlsx).")
-        return data, col_map
+        all_rows = _leer_como_xlsx(file_bytes)
+        logs.append(f"  {len(all_rows)-1:,} registros leídos (.xlsx).")
+
+    col_map = _detectar_columnas(all_rows[0], logs)
+    data = all_rows[1:]
+    return data, col_map
 
 
 def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
@@ -313,7 +324,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     for r in data:
         try:
             fecha       = _fecha_norm(r[C_FECHA])
-            cliente_raw = str(r[C_CLIENTE] or "").strip()
+            cliente_raw = str(r[C_CLIENTE] or "").strip() if C_CLIENTE >= 0 and C_CLIENTE < len(r) else ""
             cliente     = _match_cliente(cliente_raw, _clientes_tpl)
             prod        = str(r[C_PROD] or "")
             cli_day[(fecha, cliente)]  += float(r[C_IMPORTE]  or 0)

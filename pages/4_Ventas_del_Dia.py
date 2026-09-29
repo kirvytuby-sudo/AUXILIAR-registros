@@ -49,14 +49,18 @@ CTAS_PROD = [
 
 @st.cache_data(show_spinner=False)
 def _leer_cuentas_plantilla(plantilla_bytes):
-    """Lee la hoja CUENTAS de la plantilla; retorna (cuentas_map, dyn_clientes, dyn_prods)."""
+    """Lee la hoja CUENTAS de la plantilla; retorna (cuentas_map, dyn_clientes, dyn_prods, desc_sub_entry).
+    desc_sub_entry = (cta, nom) si se detectó cuenta de descuento en H/I (nombre contiene 'DESCUENTO'),
+    de lo contrario ('', '').
+    """
     cuentas_map = {
         IEPS_GS: "IEPS De Gasolina Magna",
         IEPS_GP: "IEPS de Premium",
         IEPS_GD: "IEPS de Diesel",
     }
-    dyn_clientes = []  # [(num_cuenta, nombre)] — col H/I (7,8)
-    dyn_prods    = []  # [(num_cuenta, nombre)] — col L/M (11,12)
+    dyn_clientes  = []  # [(num_cuenta, nombre)] — col H/I (7,8), sin entrada de descuento
+    dyn_prods     = []  # [(num_cuenta, nombre)] — col L/M (11,12), solo cuentas numéricas
+    desc_sub_entry = ("", "")  # cuenta de DescuentoSubtotal detectada en H/I
     try:
         wb = openpyxl.load_workbook(io.BytesIO(plantilla_bytes), data_only=True)
         hoja = None
@@ -72,22 +76,27 @@ def _leer_cuentas_plantilla(plantilla_bytes):
                 if _nc is not None and _nm is not None:
                     _ncs = str(_nc).strip()
                     _nms = str(_nm).strip().replace('\n', '').strip()
-                    if _ncs and _nms:          # sin filtro isdigit() — acepta cualquier clave
-                        cuentas_map[_ncs] = _nms
-                        dyn_clientes.append((_ncs, _nms))
-                # Productos — col L(11) cuenta, M(12) nombre
+                    if _ncs and _nms:
+                        # Si el nombre dice "descuento" → cuenta de cargo descuento, no es cliente
+                        if "DESCUENTO" in _nms.upper():
+                            desc_sub_entry = (_ncs, _nms)
+                        else:
+                            cuentas_map[_ncs] = _nms
+                            dyn_clientes.append((_ncs, _nms))
+                # Productos — col L(11) cuenta, M(12) nombre; solo filas con cuenta numérica real
                 _pc = r[11] if len(r) > 11 else None
                 _pm = r[12] if len(r) > 12 else None
                 if _pc is not None and _pm is not None:
                     _pcs = str(_pc).strip()
                     _pms = str(_pm).strip().replace('\n', '').strip()
-                    if _pcs and _pms:
+                    # Filtrar encabezados: la cuenta debe tener al menos un dígito
+                    if _pcs and _pms and any(ch.isdigit() for ch in _pcs):
                         cuentas_map[_pcs] = _pms
                         dyn_prods.append((_pcs, _pms))
         wb.close()
     except Exception:
         pass
-    return cuentas_map, dyn_clientes, dyn_prods
+    return cuentas_map, dyn_clientes, dyn_prods, desc_sub_entry
 
 
 import re as _re
@@ -270,7 +279,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     # ── Leer plantilla de cuentas ──────────────────────────────────────────
     if plantilla_bytes:
         logs.append("⛽ Leyendo plantilla de cuentas...")
-        cuentas_map, _dyn_cli, _dyn_prods = _leer_cuentas_plantilla(plantilla_bytes)
+        cuentas_map, _dyn_cli, _dyn_prods, _desc_sub_entry = _leer_cuentas_plantilla(plantilla_bytes)
         logs.append(f"  {len(cuentas_map)} cuentas cargadas.")
     else:
         cuentas_map = {
@@ -278,7 +287,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             IEPS_GP: "IEPS de Premium",
             IEPS_GD: "IEPS de Diesel",
         }
-        _dyn_cli, _dyn_prods = [], []
+        _dyn_cli, _dyn_prods, _desc_sub_entry = [], [], ("", "")
         logs.append("  ℹ Sin plantilla — usando nombres predeterminados.")
 
     # Listas dinámicas (desde hoja CUENTAS) o fallback hardcoded
@@ -289,13 +298,19 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     else:
         _cuentas_tpl  = CUENTAS_TPL
         _clientes_tpl = CLIENTES_TPL
-    _desc_sub_cta, _desc_sub_nom = "", "Descuento en Ventas"
+    # Cuenta DescuentoSubtotal: primero desde H/I (si nombre incluye 'DESCUENTO'),
+    # luego desde L/M posición 8 (legacy), fallback vacío.
+    if _desc_sub_entry[0]:
+        _desc_sub_cta, _desc_sub_nom = _desc_sub_entry
+        logs.append(f"  Cuenta descuento (H/I): {_desc_sub_cta} — {_desc_sub_nom}")
+    else:
+        _desc_sub_cta, _desc_sub_nom = "", "Descuento en Ventas"
     if len(_dyn_prods) >= 7:
         _ctas_prod = [pc for pc, _ in _dyn_prods[:7]]
         _prods     = [pm for _, pm in _dyn_prods[:7]]
-        if len(_dyn_prods) >= 8:
+        if not _desc_sub_cta and len(_dyn_prods) >= 8:
             _desc_sub_cta, _desc_sub_nom = _dyn_prods[7]
-            logs.append(f"  Cuenta descuento: {_desc_sub_cta} — {_desc_sub_nom}")
+            logs.append(f"  Cuenta descuento (L/M): {_desc_sub_cta} — {_desc_sub_nom}")
     else:
         _ctas_prod = CTAS_PROD
         _prods     = PRODS
@@ -352,7 +367,12 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     logs.append(f"  {len(fechas)} fecha(s) detectada(s): {fechas[0]} … {fechas[-1]}")
 
     # ── Detectar si hay descuentos ─────────────────────────────────────────
-    hay_desc = any(v > 0.001 for v in desc_sub.values()) or any(v > 0.001 for v in desc_iva.values())
+    # La columna de descuento se muestra si:
+    # a) hay valores de descuento en los despachos, O
+    # b) la plantilla tiene definida una cuenta de descuento (402-01, etc.)
+    hay_desc = (any(v > 0.001 for v in desc_sub.values()) or
+                any(v > 0.001 for v in desc_iva.values()) or
+                bool(_desc_sub_cta))
     if hay_desc:
         total_ds = sum(desc_sub.values())
         total_di = sum(desc_iva.values())

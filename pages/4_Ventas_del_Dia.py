@@ -174,7 +174,9 @@ def _detectar_columnas(header_row, logs):
     n_cols = len(header_row)
     defaults = {
         'FechaHora': 0, 'Producto': 3, 'Subtotal': 6,
-        'Iva': 7, 'Ieps': 8, 'Importe': 9, 'Cliente': 16,
+        'Iva': 7, 'Ieps': 8, 'Importe': 9,
+        'DescuentoSubtotal': 10, 'DescuentoIva': 11,
+        'Cliente': 16,
     }
     result = {k: col_map.get(k, v) for k, v in defaults.items()}
     # Si la columna Cliente apunta fuera del rango, marcar como ausente (-1)
@@ -262,6 +264,8 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     C_IEPS     = col_map['Ieps']
     C_IMPORTE  = col_map['Importe']
     C_CLIENTE  = col_map['Cliente']
+    C_DESC_SUB = col_map.get('DescuentoSubtotal', 10)
+    C_DESC_IVA = col_map.get('DescuentoIva', 11)
 
     # ── Leer plantilla de cuentas ──────────────────────────────────────────
     if plantilla_bytes:
@@ -285,9 +289,13 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     else:
         _cuentas_tpl  = CUENTAS_TPL
         _clientes_tpl = CLIENTES_TPL
-    if len(_dyn_prods) == 7:
-        _ctas_prod = [pc for pc, _ in _dyn_prods]
-        _prods     = [pm for _, pm in _dyn_prods]
+    _desc_sub_cta, _desc_sub_nom = "", "Descuento en Ventas"
+    if len(_dyn_prods) >= 7:
+        _ctas_prod = [pc for pc, _ in _dyn_prods[:7]]
+        _prods     = [pm for _, pm in _dyn_prods[:7]]
+        if len(_dyn_prods) >= 8:
+            _desc_sub_cta, _desc_sub_nom = _dyn_prods[7]
+            logs.append(f"  Cuenta descuento: {_desc_sub_cta} — {_desc_sub_nom}")
     else:
         _ctas_prod = CTAS_PROD
         _prods     = PRODS
@@ -320,6 +328,8 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     prod_day  = defaultdict(float)
     iva_day   = defaultdict(float)
     ieps_prod = defaultdict(float)
+    desc_sub  = defaultdict(float)   # DescuentoSubtotal por fecha
+    desc_iva  = defaultdict(float)   # DescuentoIva por fecha
 
     for r in data:
         try:
@@ -331,6 +341,8 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             prod_day[(fecha, prod)]    += float(r[C_SUBTOTAL] or 0)
             iva_day[fecha]             += float(r[C_IVA]      or 0)
             ieps_prod[(fecha, prod)]   += float(r[C_IEPS]     or 0)
+            if C_DESC_SUB < len(r): desc_sub[fecha] += float(r[C_DESC_SUB] or 0)
+            if C_DESC_IVA < len(r): desc_iva[fecha] += float(r[C_DESC_IVA] or 0)
         except Exception:
             continue
 
@@ -338,6 +350,20 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     if not fechas:
         raise RuntimeError("No se encontraron datos de ventas en el archivo.")
     logs.append(f"  {len(fechas)} fecha(s) detectada(s): {fechas[0]} … {fechas[-1]}")
+
+    # ── Detectar si hay descuentos ─────────────────────────────────────────
+    hay_desc = any(v > 0.001 for v in desc_sub.values()) or any(v > 0.001 for v in desc_iva.values())
+    if hay_desc:
+        total_ds = sum(desc_sub.values())
+        total_di = sum(desc_iva.values())
+        logs.append(f"  💰 Descuentos detectados — DescSub: {total_ds:,.2f} | DescIva: {total_di:,.2f}")
+        # Renombrar IVA → "IVA trasladado no cobrado" (índice 3 de PRODS)
+        _prods_display = list(_prods)
+        if len(_prods_display) > 3:
+            _prods_display[3] = "IVA trasladado no cobrado"
+        NOMS_PROD = [cuentas_map.get(c, p) for c, p in zip(_ctas_prod, _prods_display)]
+    else:
+        logs.append("  ℹ Sin descuentos en el archivo.")
 
     # ── Diagnóstico clientes ───────────────────────────────────────────────
     all_cli_despachos = sorted(set(k[1] for k in cli_day.keys() if k[1]))
@@ -381,11 +407,20 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     N_CLI     = len(_clientes_tpl)
     N_PROD    = len(_prods)
     OFF       = N_META            # 8  → inicio clientes
-    COL_TOT1  = OFF + N_CLI       # TOTAL B2 clientes (solo clientes)
-    COL_PROD0 = OFF + N_CLI + 1   # inicio productos
-    COL_ADJ   = OFF + N_CLI + 1 + N_PROD   # ajuste 101-01-0002 (lado abonos)
-    COL_TOT2  = OFF + N_CLI + 1 + N_PROD + 1  # TOTAL B2 productos (incluye ajuste)
-    COL_CONC  = OFF + N_CLI + 1 + N_PROD + 2  # CONCILIACION
+
+    # Si hay descuentos: insertar columna DescuentoSubtotal (cargo) antes de TOTAL B2
+    if hay_desc:
+        COL_DESC_SUB = OFF + N_CLI        # nueva col DescuentoSubtotal en cargos
+        COL_TOT1     = OFF + N_CLI + 1    # TOTAL B2 cargos (clientes + desc_sub)
+        COL_PROD0    = OFF + N_CLI + 2    # inicio productos
+    else:
+        COL_DESC_SUB = None
+        COL_TOT1     = OFF + N_CLI        # TOTAL B2 clientes
+        COL_PROD0    = OFF + N_CLI + 1    # inicio productos
+
+    COL_ADJ   = COL_PROD0 + N_PROD
+    COL_TOT2  = COL_PROD0 + N_PROD + 1
+    COL_CONC  = COL_PROD0 + N_PROD + 2
     TOTAL_COLS = COL_CONC + 1
 
     # ── Generar Excel con xlsxwriter ───────────────────────────────────────
@@ -446,14 +481,26 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
     # ── Fila 1: número de cuenta (solo cuentas contables, sin numeración) ─
     for i, acct in enumerate(_cuentas_tpl): ws.write(1, OFF + i, acct, f_acct)
+    if hay_desc:
+        ws.write(1, COL_DESC_SUB, _desc_sub_cta, f_acct)
     for i, acct in enumerate(_ctas_prod): ws.write(1, COL_PROD0 + i, acct, f_acct)
     ws.write(1, COL_ADJ, _CTA_ADJ, f_acct)
+
+    # Formato encabezado descuento (cargos — mismo color que clientes)
+    f_hdr_ds = fmt({**BASE, 'bold': True, 'bg_color': '#0D47A1', 'font_color': '#FFFFFF',
+                    'align': 'center', 'text_wrap': True, 'font_size': 8})
+    f_ds0 = fmt({**BASE, 'bg_color': '#E3F2FD', 'align': 'right', 'num_format': CURR})
+    f_ds1 = fmt({**BASE, 'bg_color': '#BBDEFB', 'align': 'right', 'num_format': CURR})
+    f_grand_ds = fmt({**BASE, 'bold': True, 'bg_color': '#1565C0', 'font_color': '#FFFFFF',
+                      'align': 'right', 'num_format': CURR, 'border': 2, 'border_color': '#000000'})
 
     # ── Fila 2: encabezados ────────────────────────────────────────────────
     for i, h in enumerate(META_HDRS):
         ws.write(2, i, h, f_hdr_m)
     for i, nom in enumerate(NOMBRES_TPL):
         ws.write(2, OFF + i, nom, f_hdr_c)
+    if hay_desc:
+        ws.write(2, COL_DESC_SUB, _desc_sub_nom, f_hdr_ds)
     ws.write(2, COL_TOT1, "TOTAL B2",     f_hdr_tot)
     for i, nom in enumerate(NOMS_PROD):
         ws.write(2, COL_PROD0 + i, nom, f_hdr_p)
@@ -468,6 +515,8 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         ws.set_column(c, c, 20)
     for i in range(N_CLI):
         ws.set_column(OFF + i, OFF + i, 14)
+    if hay_desc:
+        ws.set_column(COL_DESC_SUB, COL_DESC_SUB, 16)
     ws.set_column(COL_TOT1, COL_TOT1, 13)
     for i in range(N_PROD):
         ws.set_column(COL_PROD0 + i, COL_PROD0 + i, 13)
@@ -476,17 +525,19 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.freeze_panes(3, 2)
 
     # ── Letras de columna para fórmulas ───────────────────────────────────
-    _L_cli_s  = _xcn(OFF)           # primera col clientes
-    _L_cli_e  = _xcn(OFF + N_CLI - 1)  # última col clientes
-    _L_tot1   = _xcn(COL_TOT1)      # TOTAL B2 clientes
-    _L_prod_s = _xcn(COL_PROD0)     # primera col productos
-    _L_adj    = _xcn(COL_ADJ)       # col ajuste (lado abonos)
-    _L_prod_e = _xcn(COL_ADJ - 1)  # última col productos (justo antes del ajuste)
-    _L_tot2   = _xcn(COL_TOT2)      # TOTAL B2 productos (incluye ajuste)
-    _L_conc   = _xcn(COL_CONC)      # CONCILIACION
+    _L_cli_s  = _xcn(OFF)                  # primera col clientes
+    _L_cli_e  = _xcn(OFF + N_CLI - 1)      # última col clientes
+    _L_ds     = _xcn(COL_DESC_SUB) if hay_desc else None  # col DescuentoSubtotal
+    _L_tot1   = _xcn(COL_TOT1)             # TOTAL B2 cargos
+    _L_prod_s = _xcn(COL_PROD0)            # primera col productos
+    _L_adj    = _xcn(COL_ADJ)              # col ajuste (lado abonos)
+    _L_prod_e = _xcn(COL_ADJ - 1)         # última col productos (justo antes del ajuste)
+    _L_tot2   = _xcn(COL_TOT2)             # TOTAL B2 productos (incluye ajuste)
+    _L_conc   = _xcn(COL_CONC)             # CONCILIACION
 
     # ── Filas de datos ─────────────────────────────────────────────────────
     gran_cli  = [0.0] * N_CLI
+    gran_ds   = 0.0    # grand total DescuentoSubtotal
     gran_adj  = 0.0
     gran_tot1 = 0.0
     gran_prod = [0.0] * N_PROD
@@ -524,12 +575,16 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             total_b2 += v
             gran_cli[i] += v
 
-        # Productos (se calculan antes del ajuste)
+        # DescuentoSubtotal (cargo) y valor neto de IVA
+        ds_v   = round(desc_sub.get(fecha, 0.0), 2) if hay_desc else 0.0
+        iva_v  = round(iva_day.get(fecha, 0.0) - (desc_iva.get(fecha, 0.0) if hay_desc else 0.0), 2)
+
+        # Productos (se calculan antes del ajuste; IVA ya es neto si hay descuentos)
         prod_vals = [
             prod_day.get((fecha, "GS"), 0.0),
             prod_day.get((fecha, "GP"), 0.0),
             prod_day.get((fecha, "GD"), 0.0),
-            iva_day.get(fecha, 0.0),
+            iva_v,
             ieps_prod.get((fecha, "GS"), 0.0),
             ieps_prod.get((fecha, "GP"), 0.0),
             ieps_prod.get((fecha, "GD"), 0.0),
@@ -538,29 +593,39 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
 
         er = row + 1  # fila Excel (1-indexed)
 
-        # TOTAL B2 clientes — fórmula SUM(solo clientes)
-        ws.write_formula(row, COL_TOT1,
-            f"=SUM({_L_cli_s}{er}:{_L_cli_e}{er})", ft, round(total_b2, 2))
-        gran_tot1 += total_b2
+        # DescuentoSubtotal — columna en cargos (antes de TOTAL B2)
+        if hay_desc:
+            fds = f_ds0 if ri % 2 == 0 else f_ds1
+            ws.write(row, COL_DESC_SUB, ds_v if ds_v else None, fds)
+            gran_ds += ds_v
+
+        # TOTAL B2 cargos — fórmula SUM(clientes [+ desc_sub si hay_desc])
+        if hay_desc:
+            ws.write_formula(row, COL_TOT1,
+                f"=SUM({_L_cli_s}{er}:{_L_ds}{er})", ft, round(total_b2 + ds_v, 2))
+            gran_tot1 += total_b2 + ds_v
+        else:
+            ws.write_formula(row, COL_TOT1,
+                f"=SUM({_L_cli_s}{er}:{_L_cli_e}{er})", ft, round(total_b2, 2))
+            gran_tot1 += total_b2
 
         for i, v in enumerate(prod_vals):
             ws.write(row, COL_PROD0 + i, round(v, 2) if v else None, fn)
             gran_prod[i] += v
 
-        # Ajuste 101-01-0002 en lado abonos: TOTAL_CLI - SUM(productos)
-        adj = round(total_b2 - total_prod, 2)
-        # ROUND(...,2) en la fórmula evita decimales flotantes en Excel
+        # Ajuste 101-01-0002 en lado abonos: TOTAL_CARGOS - SUM(productos)
+        adj = round((total_b2 + (ds_v if hay_desc else 0.0)) - total_prod, 2)
         ws.write_formula(row, COL_ADJ,
             f"=ROUND({_L_tot1}{er}-SUM({_L_prod_s}{er}:{_L_prod_e}{er}),2)",
             fa, round(adj, 2))
         gran_adj += adj
 
-        # TOTAL B2 productos — fórmula SUM(productos + ajuste) = TOTAL B2 cli
+        # TOTAL B2 productos — fórmula SUM(productos + ajuste)
         ws.write_formula(row, COL_TOT2,
             f"=SUM({_L_prod_s}{er}:{_L_adj}{er})", ft, round(total_prod + adj, 2))
-        gran_tot2 += total_b2  # = total_prod + adj
+        gran_tot2 += total_b2 + (ds_v if hay_desc else 0.0)
 
-        # CONCILIACION — fórmula TOTAL B2 cli - TOTAL B2 prod = 0
+        # CONCILIACION — fórmula TOTAL B2 cargos - TOTAL B2 abonos = 0
         ws.write_formula(row, COL_CONC,
             f"={_L_tot1}{er}-{_L_tot2}{er}", fc, 0)
         gran_conc += 0
@@ -572,6 +637,9 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     ws.merge_range(tr, 0, tr, N_META - 1, "TOTAL GENERAL", f_grand_l)
     for i in range(N_CLI):
         ws.write(tr, OFF + i, round(gran_cli[i], 2), f_grand)
+    # DescuentoSubtotal grand total
+    if hay_desc:
+        ws.write(tr, COL_DESC_SUB, round(gran_ds, 2), f_grand_ds)
     # Sumar la columna TOTAL B2 (no los rangos brutos) para que la conciliacion sea exactamente 0.
     # SUM(AE4:AE{tr2}) = SUM(AN4:AN{tr2}) porque cada fila tiene CONCILIACION=0.
     ws.write_formula(tr, COL_TOT1,

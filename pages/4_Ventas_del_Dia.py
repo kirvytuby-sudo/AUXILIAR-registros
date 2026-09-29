@@ -364,7 +364,9 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             cliente_raw = str(r[C_CLIENTE] or "").strip() if C_CLIENTE >= 0 and C_CLIENTE < len(r) else ""
             cliente     = _match_cliente(cliente_raw, _clientes_tpl)
             prod        = str(r[C_PROD] or "")
-            cli_day[(fecha, cliente)]  += float(r[C_IMPORTE]  or 0)
+            cli_day[(fecha, cliente)]  += (float(r[C_IMPORTE]  or 0)
+                                           - float(r[C_DESC_SUB] if C_DESC_SUB < len(r) else 0 or 0)
+                                           - float(r[C_DESC_IVA] if C_DESC_IVA < len(r) else 0 or 0))
             prod_day[(fecha, prod)]    += float(r[C_SUBTOTAL] or 0)
             iva_day[fecha]             += float(r[C_IVA]      or 0)
             ieps_prod[(fecha, prod)]   += float(r[C_IEPS]     or 0)

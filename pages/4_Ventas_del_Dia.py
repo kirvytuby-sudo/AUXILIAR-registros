@@ -49,20 +49,32 @@ CTAS_PROD = [
 
 @st.cache_data(show_spinner=False)
 def _leer_cuentas_plantilla(plantilla_bytes):
-    """Lee la hoja CUENTAS de la plantilla; retorna (cuentas_map, dyn_clientes, dyn_prods, desc_sub_entry).
-    desc_sub_entry = (cta, nom) si se detectó cuenta de descuento en H/I (nombre contiene 'DESCUENTO'),
-    de lo contrario ('', '').
+    """Lee la plantilla; retorna (cuentas_map, dyn_clientes, dyn_prods, desc_sub_entry, tipo_poliza).
+    - desc_sub_entry = (cta, nom) si se detectó cuenta de descuento en H/I (nombre contiene 'DESCUENTO').
+    - tipo_poliza = valor de celda A4 en hoja 'poliza IA' (ej. 'CLI', 'D'), default 'D'.
     """
     cuentas_map = {
         IEPS_GS: "IEPS De Gasolina Magna",
         IEPS_GP: "IEPS de Premium",
         IEPS_GD: "IEPS de Diesel",
     }
-    dyn_clientes  = []  # [(num_cuenta, nombre)] — col H/I (7,8), sin entrada de descuento
-    dyn_prods     = []  # [(num_cuenta, nombre)] — col L/M (11,12), solo cuentas numéricas
+    dyn_clientes   = []  # [(num_cuenta, nombre)] — col H/I (7,8), sin entrada de descuento
+    dyn_prods      = []  # [(num_cuenta, nombre)] — col L/M (11,12), solo cuentas numéricas
     desc_sub_entry = ("", "")  # cuenta de DescuentoSubtotal detectada en H/I
+    tipo_poliza    = "D"       # default
     try:
         wb = openpyxl.load_workbook(io.BytesIO(plantilla_bytes), data_only=True)
+        # ── Leer tipo de póliza desde hoja 'poliza IA', celda A4 (fila 3, col 0) ──
+        for sn in wb.sheetnames:
+            if sn.strip().upper() == "POLIZA IA":
+                _ws_pol = wb[sn]
+                _rows_pol = list(_ws_pol.iter_rows(min_row=4, max_row=4, max_col=1, values_only=True))
+                if _rows_pol and _rows_pol[0] and _rows_pol[0][0] is not None:
+                    _tp = str(_rows_pol[0][0]).strip()
+                    if _tp:
+                        tipo_poliza = _tp
+                break
+        # ── Leer hoja CUENTAS ──────────────────────────────────────────────────
         hoja = None
         for sn in wb.sheetnames:
             if sn.strip().upper() == "CUENTAS":
@@ -96,7 +108,7 @@ def _leer_cuentas_plantilla(plantilla_bytes):
         wb.close()
     except Exception:
         pass
-    return cuentas_map, dyn_clientes, dyn_prods, desc_sub_entry
+    return cuentas_map, dyn_clientes, dyn_prods, desc_sub_entry, tipo_poliza
 
 
 import re as _re
@@ -279,15 +291,15 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     # ── Leer plantilla de cuentas ──────────────────────────────────────────
     if plantilla_bytes:
         logs.append("⛽ Leyendo plantilla de cuentas...")
-        cuentas_map, _dyn_cli, _dyn_prods, _desc_sub_entry = _leer_cuentas_plantilla(plantilla_bytes)
-        logs.append(f"  {len(cuentas_map)} cuentas cargadas.")
+        cuentas_map, _dyn_cli, _dyn_prods, _desc_sub_entry, _tipo_poliza = _leer_cuentas_plantilla(plantilla_bytes)
+        logs.append(f"  {len(cuentas_map)} cuentas cargadas. Tipo de póliza: {_tipo_poliza}")
     else:
         cuentas_map = {
             IEPS_GS: "IEPS De Gasolina Magna",
             IEPS_GP: "IEPS de Premium",
             IEPS_GD: "IEPS de Diesel",
         }
-        _dyn_cli, _dyn_prods, _desc_sub_entry = [], [], ("", "")
+        _dyn_cli, _dyn_prods, _desc_sub_entry, _tipo_poliza = [], [], ("", ""), "D"
         logs.append("  ℹ Sin plantilla — usando nombres predeterminados.")
 
     # Listas dinámicas (desde hoja CUENTAS) o fallback hardcoded
@@ -580,7 +592,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             fecha_display = fecha
             _fecha_val = fecha
 
-        ws.write(row, 0, "D", f_meta)
+        ws.write(row, 0, _tipo_poliza, f_meta)
         ws.write_datetime(row, 1, _fecha_val, f_fecha)
         ws.write(row, 2, "VENTA DEL DIA " + fecha_display, f_meta)
         ws.write(row, 3, "VENTA DEL DIA " + fecha_display, f_meta)

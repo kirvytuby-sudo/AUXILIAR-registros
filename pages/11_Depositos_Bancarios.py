@@ -283,10 +283,10 @@ def generar_excel(registros: list, plantilla=None) -> bytes:
         (["EFECTIVALE"],                           13),
         (["EDENRED", "TICKET", "TICKETCARD"],      14),
         (["FONDO", "CAJA", "EFECTIVO"],             15),
+        (["INBURSA"],                              19),  # antes de TRANSITO para evitar falso match
         (["GASNGO", "GASN", "BANORTE", "TRANSITO"], 16),
         (["SHELL", "SMARTBT", "ICIGAS"],           17),
         (["BANCOMER", "BBVA", "TDC", "VISA"],      18),
-        (["INBURSA"],                              19),
         (["PLUXE", "PLUXEE"],                      20),
     ]
     # Col semántico → color header de abono

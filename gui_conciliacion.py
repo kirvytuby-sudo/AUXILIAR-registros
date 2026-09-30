@@ -4191,10 +4191,20 @@ class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
         return self._ec_parsear_santander(texto)
 
     def _ec_parsear_inbursa(self, texto):
-        """Parser para estados de cuenta Inbursa.
-        Formato: MMM. DD <referencia> <CONCEPTO> <monto> <saldo>
-        Ejemplo:  MAY. 04 ansaccion_ DEPOSITO INBURED 718.48 2,596,167.41
-        El saldo viene explícito en el PDF; se detecta dep vs ret por cambio de saldo.
+        """Parser Inbursa — soporta dos formatos según año/versión del PDF:
+
+        Formato A (PDF ≥ 2024): "OCT. [DD?] REF CONCEPTO  cargo/abono  saldo"
+            · Mes con punto: 'OCT.', 'ENE.', etc.
+            · Los montos están en la MISMA línea que el mes.
+            · El día puede estar en la misma línea ('OCT. 11 ref concepto')
+              o en la SIGUIENTE ('OCT. ref concepto … \\n02 ref2').
+
+        Formato B (PDF ≤ 2023): "ENE 02 REF CONCEPTO"  (sin punto)
+            · Los montos están en líneas POSTERIORES al encabezado.
+            · Todos los datos hasta el siguiente 'MMM DD' forman el bloque.
+
+        Detección automática: si el texto contiene 'MMM.\\s' (con punto) → Formato A,
+        de lo contrario → Formato B.
         """
         import re
         from datetime import date as _date
@@ -4202,65 +4212,116 @@ class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
         MESES = {"ENE": 1, "FEB": 2, "MAR": 3, "ABR": 4, "MAY": 5, "JUN": 6,
                  "JUL": 7, "AGO": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DIC": 12}
 
-        # Detectar año del encabezado (ej. "Del 01 May. 2026")
         year_m = re.search(r"\b(20\d{2})\b", texto)
         anio = int(year_m.group(1)) if year_m else 2026
-
-        pat_linea = re.compile(r"^([A-Z]{3})\.\s{1,3}(\d{1,2})\s+(.*)", re.MULTILINE)
         pat_monto = re.compile(r"([\d,]+\.\d{2})")
-
         movimientos = []
         saldo_ant = None
+        lineas = texto.splitlines()
 
-        for m in pat_linea.finditer(texto):
-            mes_str = m.group(1)
-            dia_str = m.group(2)
-            resto = m.group(3).strip()
+        usa_punto = bool(re.search(r"^[A-Z]{3}\.\s", texto, re.MULTILINE))
 
-            if mes_str not in MESES:
-                continue
-            if re.search(r"\b(REFERENCIA|CONCEPTO|FECHA)\b", resto):
-                continue
-
-            try:
-                fecha = _date(anio, MESES[mes_str], int(dia_str))
-            except Exception:
-                continue
-
-            montos_raw = pat_monto.findall(resto)
-            montos = []
-            for s in montos_raw:
+        # ── Formato A: montos en la misma línea, día a veces en línea siguiente ──
+        if usa_punto:
+            pat_enc = re.compile(r"^([A-Z]{3})\.\s+(.*)")
+            pat_dia_ini = re.compile(r"^(\d{1,2})\s+(.*)")
+            pat_dia_sola = re.compile(r"^(\d{1,2})\s*$")
+            i = 0
+            while i < len(lineas):
+                m = pat_enc.match(lineas[i])
+                if not m or m.group(1) not in MESES:
+                    i += 1; continue
+                mes_str = m.group(1)
+                resto   = m.group(2).strip()
+                if re.search(r"\b(REFERENCIA|CONCEPTO|FECHA)\b", resto):
+                    i += 1; continue
+                dia = None
+                m_dia = pat_dia_ini.match(resto)
+                if m_dia:
+                    d = int(m_dia.group(1))
+                    if 1 <= d <= 31:
+                        dia   = d
+                        resto = m_dia.group(2).strip()
+                if dia is None and i + 1 < len(lineas):
+                    sig = lineas[i + 1].strip()
+                    m_dia2 = pat_dia_ini.match(sig) or pat_dia_sola.match(sig)
+                    if m_dia2:
+                        d = int(m_dia2.group(1))
+                        if 1 <= d <= 31:
+                            dia = d
+                if dia is None:
+                    dia = 1
                 try:
-                    montos.append(float(s.replace(",", "")))
+                    fecha = _date(anio, MESES[mes_str], dia)
                 except Exception:
-                    pass
-
-            if not montos:
-                continue
-
-            saldo = montos[-1]
-
-            # Línea de saldo inicial
-            if "BALANCE INICIAL" in resto.upper():
+                    i += 1; continue
+                montos = []
+                for s in pat_monto.findall(resto):
+                    try: montos.append(float(s.replace(",", "")))
+                    except Exception: pass
+                if "BALANCE INICIAL" in resto.upper():
+                    if montos: saldo_ant = montos[-1]
+                    i += 1; continue
+                if not montos:
+                    i += 1; continue
+                saldo = montos[-1]
+                monto = montos[-2] if len(montos) >= 2 else abs(saldo - (saldo_ant or saldo))
+                if saldo_ant is not None:
+                    diff = round(saldo - saldo_ant, 2)
+                    dep, ret = (monto, 0.0) if diff >= 0 else (0.0, monto)
+                else:
+                    dep, ret = monto, 0.0
+                desc = pat_monto.sub("", resto).strip()
+                desc = re.sub(r"^\S+\s+", "", desc).strip()
+                desc = re.sub(r"\s+", " ", desc).strip() or "—"
                 saldo_ant = saldo
-                continue
+                movimientos.append((fecha, desc, dep, ret, saldo))
+                i += 1
 
-            monto = montos[-2] if len(montos) >= 2 else abs(saldo - (saldo_ant or saldo))
-
-            # Determinar dep vs ret por cambio de saldo
-            if saldo_ant is not None:
-                diff = round(saldo - saldo_ant, 2)
-                dep, ret = (monto, 0.0) if diff >= 0 else (0.0, monto)
-            else:
-                dep, ret = monto, 0.0
-
-            # Descripción: quitar montos y referencia inicial
-            desc = pat_monto.sub("", resto).strip()
-            desc = re.sub(r"^\S+\s+", "", desc).strip()   # quitar referencia
-            desc = re.sub(r"\s+", " ", desc).strip() or "—"
-
-            saldo_ant = saldo
-            movimientos.append((fecha, desc, dep, ret, saldo))
+        # ── Formato B: sin punto, montos en líneas posteriores ────────────────────
+        else:
+            pat_enc = re.compile(r"^([A-Z]{3})\s+(\d{1,2})\s+(.*)")
+            headers = []
+            for i, linea in enumerate(lineas):
+                m = pat_enc.match(linea)
+                if m and m.group(1) in MESES:
+                    headers.append((i, m))
+            for idx, (li, m) in enumerate(headers):
+                mes_str = m.group(1)
+                dia_str = m.group(2)
+                resto   = m.group(3).strip()
+                if re.search(r"\b(REFERENCIA|CONCEPTO|FECHA)\b", resto):
+                    continue
+                try:
+                    fecha = _date(anio, MESES[mes_str], int(dia_str))
+                except Exception:
+                    continue
+                if idx + 1 < len(headers):
+                    next_li = headers[idx + 1][0]
+                else:
+                    next_li = min(li + 10, len(lineas))
+                bloque = "\n".join(lineas[li:next_li])
+                montos = []
+                for s in pat_monto.findall(bloque):
+                    try: montos.append(float(s.replace(",", "")))
+                    except Exception: pass
+                if "BALANCE INICIAL" in resto.upper():
+                    if montos: saldo_ant = montos[-1]
+                    continue
+                if not montos:
+                    continue
+                saldo = montos[-1]
+                monto = montos[-2] if len(montos) >= 2 else abs(saldo - (saldo_ant or saldo))
+                if saldo_ant is not None:
+                    diff = round(saldo - saldo_ant, 2)
+                    dep, ret = (monto, 0.0) if diff >= 0 else (0.0, monto)
+                else:
+                    dep, ret = monto, 0.0
+                desc = pat_monto.sub("", resto).strip()
+                desc = re.sub(r"^\S+\s+", "", desc).strip()
+                desc = re.sub(r"\s+", " ", desc).strip() or "—"
+                saldo_ant = saldo
+                movimientos.append((fecha, desc, dep, ret, saldo))
 
         return movimientos
 

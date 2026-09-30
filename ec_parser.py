@@ -1752,22 +1752,45 @@ def leer_pdf(ruta, pdfplumber_mod, banco_key=""):
         if movs: return movs
 
     # ── Auto-detección ──────────────────────────────────────────────────────
-    # Afirme: marcadores únicos del banco
+    # Afirme
     if any(k in texto_total.upper() for k in ("BANCA AFIRME", "AFIRME GRUPO FINANCIERO",
                                                "BAF-950102-JP5", "AFIRMENET")):
         movs = _parsear_afirme(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs
-    # American Express: "Corporate Card" (Formato A) o "Detalle de Transacción" (Formato B)
+    # American Express
     if any(k in texto_total for k in ("Corporate Card", "American Express", "Detalle de Transacción")):
         movs = _parsear_amex(texto_total)
         if movs: return movs
+    # Inbursa
+    if any(k in texto_total.upper() for k in ("BANCO INBURSA", "BII931004P61",
+                                               "GRUPO FINANCIERO INBURSA", "INBURSA")):
+        movs = _parsear_inbursa(texto_total)
+        if movs: return movs
+    # BANSI
     if any(k in texto_total.upper() for k in ("BANSI", "BAN950525MD6")):
         movs = _parsear_bansi(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs
+    # Banorte: patrón de fecha DD-MMM-YY
     BANORTE_PAT = re.compile(r"\d{2}-(?:ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)-\d{2}")
-    if BANORTE_PAT.search(texto_total):
-        movs = _parsear_banorte(texto_total)
+    if BANORTE_PAT.search(texto_total) or any(k in texto_total.upper() for k in
+                                               ("BANORTE", "BXON830831LJ4")):
+        movs = _parsear_banorte(texto_total, ruta=ruta, pdfplumber_mod=pdfplumber_mod)
         if movs: return movs
+    # Banamex / Citibanamex
+    if any(k in texto_total.upper() for k in ("BANAMEX", "CITIBANAMEX", "CITI BANAMEX",
+                                               "CNB970115PN4")):
+        movs = _parsear_banamex(texto_total, "Banamex Débito")
+        if movs: return movs
+    # Santander / HSBC / Banregio (mismo parser)
+    if any(k in texto_total.upper() for k in ("BANCO SANTANDER", "HSBC MEXICO", "HSBC MÉXICO",
+                                               "BANREGIO", "BANCO REGIONAL")):
+        movs = _parsear_santander(texto_total)
+        if movs: return movs
+    # Scotiabank
+    if any(k in texto_total.upper() for k in ("SCOTIABANK", "BBSC950831")):
+        movs = _parsear_scotiabank(texto_total, paginas_tablas)
+        if movs: return movs
+    # BBVA variantes
     if any(k in texto_total.upper() for k in ("LIBRETON","LIBRETÓN","CUENTA DIGITAL")):
         movs = _parsear_bbva_libreton(ruta, pdfplumber_mod)
         if movs: return movs

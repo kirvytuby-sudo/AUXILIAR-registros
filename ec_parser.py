@@ -778,35 +778,67 @@ def _parsear_scotiabank(texto, tablas=None):
 
 
 def _parsear_inbursa(texto):
-    """Parser Inbursa: MMM. DD CONCEPTO monto saldo."""
+    """Parser Inbursa: MMM DD REFERENCIA CONCEPTO (multi-línea).
+
+    El PDF Inbursa usa 'ENE 02' (sin punto) y coloca CARGO/ABONO + SALDO
+    en líneas siguientes al encabezado del movimiento.  El parser anterior
+    buscaba 'ENE.' (con punto) en la misma línea que los montos → nunca
+    encontraba nada.  Esta versión:
+      1. Detecta encabezados con r"^([A-Z]{3})\\s+(\\d{1,2})\\s+(.*)" (sin punto).
+      2. Agrupa todas las líneas hasta el siguiente encabezado en un bloque.
+      3. Extrae los montos del bloque completo (no sólo de la primera línea).
+    """
     MESES = {"ENE":1,"FEB":2,"MAR":3,"ABR":4,"MAY":5,"JUN":6,
              "JUL":7,"AGO":8,"SEP":9,"OCT":10,"NOV":11,"DIC":12}
     year_m = re.search(r"\b(20\d{2})\b", texto)
     anio = int(year_m.group(1)) if year_m else date.today().year
-    pat_linea = re.compile(r"^([A-Z]{3})\.\s{1,3}(\d{1,2})\s+(.*)", re.MULTILINE)
+    # Formato real del PDF: "ENE 02 TRANS33987 DEPOSITO INBURED" (sin punto)
+    pat_encab = re.compile(r"^([A-Z]{3})\s+(\d{1,2})\s+(.*)")
     pat_monto = re.compile(r"([\d,]+\.\d{2})")
-    movimientos = []; saldo_ant = None
-    for m in pat_linea.finditer(texto):
-        mes_str = m.group(1); dia_str = m.group(2); resto = m.group(3).strip()
-        if mes_str not in MESES: continue
-        if re.search(r"\b(REFERENCIA|CONCEPTO|FECHA)\b", resto): continue
-        try: fecha = date(anio, MESES[mes_str], int(dia_str))
-        except Exception: continue
+    movimientos = []
+    saldo_ant = None
+    lineas = texto.splitlines()
+    # Identificar índices de líneas que son encabezado de movimiento
+    headers = []
+    for i, linea in enumerate(lineas):
+        m = pat_encab.match(linea)
+        if m and m.group(1) in MESES:
+            headers.append((i, m))
+    for idx, (li, m) in enumerate(headers):
+        mes_str = m.group(1)
+        dia_str = m.group(2)
+        resto   = m.group(3).strip()
+        if re.search(r"\b(REFERENCIA|CONCEPTO|FECHA)\b", resto):
+            continue
+        try:
+            fecha = date(anio, MESES[mes_str], int(dia_str))
+        except Exception:
+            continue
+        # Bloque: desde esta línea hasta el inicio del siguiente encabezado
+        next_li = headers[idx + 1][0] if idx + 1 < len(headers) else len(lineas)
+        bloque = "\n".join(lineas[li:next_li])
         montos = []
-        for s in pat_monto.findall(resto):
-            try: montos.append(float(s.replace(",","")))
-            except Exception: pass
-        if not montos: continue
+        for s in pat_monto.findall(bloque):
+            try:
+                montos.append(float(s.replace(",", "")))
+            except Exception:
+                pass
+        if "BALANCE INICIAL" in resto.upper():
+            if montos:
+                saldo_ant = montos[-1]
+            continue
+        if not montos:
+            continue
         saldo = montos[-1]
-        if "BALANCE INICIAL" in resto.upper(): saldo_ant = saldo; continue
         monto = montos[-2] if len(montos) >= 2 else abs(saldo - (saldo_ant or saldo))
         if saldo_ant is not None:
             diff = round(saldo - saldo_ant, 2)
             dep, ret = (monto, 0.0) if diff >= 0 else (0.0, monto)
         else:
             dep, ret = monto, 0.0
+        # Descripción: primera línea del bloque, sin referencia ni montos
         desc = pat_monto.sub("", resto).strip()
-        desc = re.sub(r"^\S+\s+", "", desc).strip()
+        desc = re.sub(r"^\S+\s+", "", desc).strip()   # quitar primer token (referencia)
         desc = re.sub(r"\s+", " ", desc).strip() or "—"
         saldo_ant = saldo
         movimientos.append((fecha, desc, dep, ret, saldo))

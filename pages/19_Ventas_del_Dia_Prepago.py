@@ -23,6 +23,44 @@ except ImportError as _e:
     st.error(f"❌ Librería faltante: {_e}. Verifica requirements.txt.")
     st.stop()
 
+def _leer_despachos_bytes(file_bytes: bytes, filename: str):
+    """Lee el Control de Despachos desde .xlsx o .xls y retorna lista de filas (sin cabecera)."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "xlsx"
+    if ext == "xlsx":
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        wb.close()
+        return rows
+    else:
+        # .xls — intentar con xlrd, fallback a TSV/CSV si no es binario real
+        try:
+            import xlrd
+            wb = xlrd.open_workbook(file_contents=file_bytes)
+            ws = wb.sheet_by_index(0)
+            rows = []
+            for i in range(1, ws.nrows):
+                row = ws.row_values(i)
+                # xlrd devuelve fechas como float → convertir col 0
+                try:
+                    if isinstance(row[0], float) and row[0] > 0:
+                        from datetime import datetime as _dt
+                        import xlrd as _xl
+                        tup = _xl.xldate_as_tuple(row[0], wb.datemode)
+                        row[0] = _dt(*tup)
+                except Exception:
+                    pass
+                rows.append(row)
+            return rows
+        except Exception:
+            # Fallback: leer como texto CSV/TSV
+            import csv
+            text = file_bytes.decode("utf-8", errors="replace")
+            dialect = "excel-tab" if "\t" in text[:500] else "excel"
+            reader = csv.reader(io.StringIO(text), dialect=dialect)
+            all_rows = list(reader)
+            return all_rows[1:] if all_rows else []
+
 # ── Cuentas fijas de pago ────────────────────────────────────────────────────
 # V.EDENRED y V.EFECTIVALE acumulan en la misma columna que T.EDENRED / T.EFECTIVALE
 FIJAS_DEF = [
@@ -117,7 +155,7 @@ def _leer_plantilla(plantilla_bytes: bytes):
     return cred, prep
 
 # ── Motor de generación ───────────────────────────────────────────────────────
-def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None) -> tuple[bytes, list, list]:
+def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, despachos_nombre: str = "archivo.xlsx") -> tuple[bytes, list, list]:
     """
     Genera la póliza con separación Crédito/Prepago.
     Retorna (excel_bytes, logs, resumen_por_dia).
@@ -142,9 +180,9 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None) -> t
     cred_acct_idx = {a: i for i, (a, n) in enumerate(CRED_COLS)}
     prep_acct_idx = {a: i for i, (a, n) in enumerate(PREP_COLS)}
 
-    # Leer despachos
-    wb_src = openpyxl.load_workbook(io.BytesIO(despachos_bytes), data_only=True)
-    ws_src = wb_src.active
+    # Leer despachos (.xlsx o .xls)
+    src_rows = _leer_despachos_bytes(despachos_bytes, despachos_nombre)
+    logs.append(f"📂 {len(src_rows):,} filas leídas del archivo.")
 
     def new_day():
         return {
@@ -156,10 +194,25 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None) -> t
     day_data = defaultdict(new_day)
     sin_mapear = set()
 
-    for row in ws_src.iter_rows(min_row=2, values_only=True):
-        if row[0] is None:
+    def _parse_fecha(v):
+        """Normaliza cualquier representación de fecha a objeto date."""
+        if v is None or v == "" or v == 0 or v == 0.0:
+            return None
+        from datetime import date as _date, datetime as _dt
+        if isinstance(v, _dt): return v.date()
+        if isinstance(v, _date): return v
+        s = str(v).strip()[:10]  # tomar solo 'YYYY-MM-DD' del inicio
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+            try: return _dt.strptime(s, fmt).date()
+            except Exception: pass
+        return None
+
+    for row in src_rows:
+        if not row or row[0] is None or row[0] == "":
             continue
-        fecha   = row[0].date() if hasattr(row[0], "date") else row[0]
+        fecha = _parse_fecha(row[0])
+        if fecha is None:
+            continue
         prod    = str(row[3]).upper().strip() if row[3] else ""
         sub     = float(row[6] or 0)
         iva     = float(row[7] or 0)
@@ -203,8 +256,6 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None) -> t
                 d["prep"][prep_acct_idx[acct]] += cargo
             else:
                 sin_mapear.add(f"Prepago:{cliente}")
-
-    wb_src.close()
 
     if sin_mapear:
         logs.append(f"⚠ {len(sin_mapear)} clientes sin mapear: {', '.join(sorted(sin_mapear)[:10])}" +
@@ -428,8 +479,8 @@ col1, col2 = st.columns([1, 1])
 
 with col1:
     despachos_file = st.file_uploader(
-        "📊 Control de despachos (.xlsx)",
-        type=["xlsx"],
+        "📊 Control de despachos (.xlsx / .xls)",
+        type=["xlsx", "xls"],
         help="Archivo de control de despachos con columnas: Importe, DescuentoSubtotal, DescuentoIva, Cliente, Tipo.",
     )
 
@@ -457,6 +508,7 @@ if generar and despachos_file is not None and plantilla_file is not None:
             excel_bytes, logs, resumen = procesar_prepago(
                 despachos_file.read(),
                 plantilla_file.read(),
+                despachos_file.name,
             )
 
             base = despachos_file.name.rsplit(".", 1)[0]

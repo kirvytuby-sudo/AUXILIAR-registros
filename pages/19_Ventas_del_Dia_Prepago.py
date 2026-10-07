@@ -367,7 +367,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
     for ri, fecha in enumerate(sorted_dates):
         d = day_data[fecha]; r = ri + 4
         fecha_str = fecha.strftime("%d/%m/%Y") if hasattr(fecha, "strftime") else str(fecha)
-        fixed_vals = ["CLI", fecha, "VALLEJO", f"VENTAS DEL DIA {fecha_str}", None, None, None, None]
+        fixed_vals = ["CLI", fecha, f"VENTAS DEL DIA {fecha_str}", f"VENTAS DEL DIA {fecha_str}", None, None, None, None]
         for ci2, val in enumerate(fixed_vals):
             w(r, ci2+1, val, fill_=F_WHITE, font_=DARK,
               fmt=("DD/MM/YYYY" if ci2 == 1 else None))

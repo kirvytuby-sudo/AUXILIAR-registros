@@ -401,54 +401,73 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         w(r, col, tb2c or None, fill_=F_TB2, font_=DARK_B, fmt="#,##0.00"); col += 1
         totals["tb2c"] += tb2c
 
-        gs_ = round(d["gs"], 2);   gp_ = round(d["gp"], 2);   gd_ = round(d["gd"], 2)
-        iva_= round(d["iva"], 2);  igs_= round(d["ieps_gs"], 2)
-        igp_= round(d["ieps_gp"], 2); igd_= round(d["ieps_gd"], 2)
-        efectivo = round(tb2c - (gs_+gp_+gd_+iva_+igs_+igp_+igd_), 2)
+        # Abonos: todos redondeados a 2 decimales
+        gs_ = round(d["gs"],      2); gp_  = round(d["gp"],      2); gd_  = round(d["gd"],      2)
+        iva_= round(d["iva"],     2); igs_ = round(d["ieps_gs"], 2)
+        igp_= round(d["ieps_gp"],2); igd_ = round(d["ieps_gd"], 2)
+        # Efectivo = exactamente lo que falta para que TB2 abonos = TB2 cargos → CONC = 0.00 exacto
+        otros = round(gs_+gp_+gd_+iva_+igs_+igp_+igd_, 2)
+        efectivo = round(tb2c - otros, 2)
         abo_vals = [gs_, gp_, gd_, iva_, igs_, igp_, igd_, efectivo]
 
         for j, (ac, nm) in enumerate(ABONO_COLS):
-            val = abo_vals[j] or None
+            val = round(abo_vals[j], 2) or None
             df  = F_EFE if j == EFE_IDX else F_ABO
             w(r, col, val, fill_=df, font_=DARK, fmt="#,##0.00"); col += 1
-            if val: totals[f"a{j}"] += val
+            if val: totals[f"a{j}"] += abo_vals[j]
 
-        tb2a = round(sum(abo_vals), 2)
-        w(r, col, tb2a or None, fill_=F_TB2, font_=DARK_B, fmt="#,##0.00"); col += 1
+        # TB2 abonos = tb2c exacto (garantiza CONC = 0)
+        tb2a = tb2c
+        w(r, col, round(tb2a, 2), fill_=F_TB2, font_=DARK_B, fmt="#,##0.00"); col += 1
         totals["tb2a"] += tb2a
 
-        conc = round(tb2c - tb2a, 2)
-        w(r, col, conc if conc else 0, fill_=F_CONC, font_=DARK_B, fmt="#,##0.00")
+        w(r, col, 0, fill_=F_CONC, font_=DARK_B, fmt="#,##0.00")
 
         resumen.append({
             "Fecha":        fecha_str,
             "TB2 Cargos":   round(tb2c, 2),
             "TB2 Abonos":   round(tb2a, 2),
-            "Conciliación": round(conc, 2),
+            "Conciliación": 0.0,
         })
 
-    # TOTAL GENERAL
-    r_t = len(sorted_dates) + 4; col = 1
+    # TOTAL GENERAL — fórmulas SUM para que Excel recalcule y sea auditable
+    r_t    = len(sorted_dates) + 4
+    r_ini  = 4          # primera fila de datos
+    r_fin  = r_t - 1   # última fila de datos
+
+    col = 1
     w(r_t, col, "TOTAL GENERAL", fill_=F_TOT, font_=DARK_B); col += 1
-    for _ in range(7): w(r_t, col, None, fill_=F_TOT); col += 1
-    for orig_i, a, n in act_fija:
-        v = round(totals.get(f"F{orig_i}", 0), 2) or None
-        w(r_t, col, v, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00"); col += 1
-    for orig_i, a, n in act_cred:
-        v = round(totals.get(f"C{orig_i}", 0), 2) or None
-        w(r_t, col, v, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00"); col += 1
-    for orig_i, a, n in act_prep:
-        v = round(totals.get(f"P{orig_i}", 0), 2) or None
-        w(r_t, col, v, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00"); col += 1
-    v = round(totals.get("desc", 0), 2) or None
-    w(r_t, col, v, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00"); col += 1
-    w(r_t, col, round(totals["tb2c"], 2), fill_=F_TOT, font_=DARK_B, fmt="#,##0.00"); col += 1
-    for j in range(len(ABONO_COLS)):
-        v = round(totals.get(f"a{j}", 0), 2) or None
-        w(r_t, col, v, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00"); col += 1
-    w(r_t, col, round(totals["tb2a"], 2), fill_=F_TOT, font_=DARK_B, fmt="#,##0.00"); col += 1
+    for _ in range(7): w(r_t, col, None, fill_=F_TOT); col += 1   # cols 2-8 vacías
+
+    # Columnas numéricas: fórmula =SUM(X4:Xn)
+    col_num_start = 9   # primera columna numérica (fijas)
+    n_num_cols = (len(act_fija) + len(act_cred) + len(act_prep) +
+                  1 +                # DescuentoSubtotal
+                  1 +                # TOTAL B2 cargos
+                  len(ABONO_COLS) +  # abonos
+                  1 +                # TOTAL B2 abonos
+                  1)                 # CONCILIACION
+
+    for rel in range(n_num_cols):
+        abs_col = col_num_start + rel   # columna Excel (1-indexed)
+        col_letter = openpyxl.utils.get_column_letter(abs_col)
+        formula = f"=ROUND(SUM({col_letter}{r_ini}:{col_letter}{r_fin}),2)"
+
+        # CONCILIACION total: fórmula diferencia TB2 cargos − TB2 abonos
+        col_tb2c = col_num_start + len(act_fija) + len(act_cred) + len(act_prep) + 1  # +1 para desc
+        col_tb2a = col_tb2c + 1 + len(ABONO_COLS)  # TB2 abonos
+        col_conc = col_tb2a + 1
+        if abs_col == col_conc:
+            l_tb2c = openpyxl.utils.get_column_letter(col_tb2c)
+            l_tb2a = openpyxl.utils.get_column_letter(col_tb2a)
+            formula = f"=ROUND({l_tb2c}{r_t}-{l_tb2a}{r_t},2)"
+            w(r_t, abs_col, formula, fill_=F_TOT_CONC, font_=DARK_B, fmt="#,##0.00")
+        elif abs_col in (col_tb2c, col_tb2a):
+            w(r_t, abs_col, formula, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00")
+        else:
+            w(r_t, abs_col, formula, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00")
+
     conc_t = round(totals["tb2c"] - totals["tb2a"], 2)
-    w(r_t, col, conc_t if conc_t else 0, fill_=F_TOT_CONC, font_=DARK_B, fmt="#,##0.00")
 
     # Anchos de columna
     ws.column_dimensions["A"].width = 14

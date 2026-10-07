@@ -392,41 +392,59 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         w(r, col, desc, fill_=F_DESC, font_=DARK, fmt="#,##0.00"); col += 1
         if desc: totals["desc"] += desc
 
-        tb2c = round(
+        # Posiciones 1-indexed (para fórmulas Excel) — derivadas de los índices 0-indexed
+        L      = openpyxl.utils.get_column_letter
+        c_tb2c = NT1_ + 1          # columna TOTAL B2 Cargos  (1-indexed)
+        c_abo0 = NA_  + 1          # primera columna de abonos (1-indexed)
+        c_efe  = NA_  + EFE_IDX + 1  # columna Efectivo (última abono, 1-indexed)
+        c_tb2a = NT2_ + 1          # columna TOTAL B2 Abonos  (1-indexed)
+        c_conc = NT2_ + 2          # columna CONCILIACION      (1-indexed)
+
+        # TB2 Cargos — fórmula autosuma de todos los cargos (fija+cred+prep+desc)
+        tb2c_py = round(
             sum(d["fija"][i] for i, _, __ in act_fija) +
             sum(d["cred"][i] for i, _, __ in act_cred) +
             sum(d["prep"][i] for i, _, __ in act_prep) +
             (d["desc"] or 0), 2
         )
-        w(r, col, tb2c or None, fill_=F_TB2, font_=DARK_B, fmt="#,##0.00"); col += 1
-        totals["tb2c"] += tb2c
+        formula_tb2c = f"=ROUND(SUM({L(9)}{r}:{L(c_tb2c-1)}{r}),2)"
+        w(r, col, formula_tb2c, fill_=F_TB2, font_=DARK_B, fmt="#,##0.00"); col += 1
+        totals["tb2c"] += tb2c_py
 
-        # Abonos: todos redondeados a 2 decimales
+        # Abonos individuales (Python values, excepto Efectivo que es fórmula)
         gs_ = round(d["gs"],      2); gp_  = round(d["gp"],      2); gd_  = round(d["gd"],      2)
         iva_= round(d["iva"],     2); igs_ = round(d["ieps_gs"], 2)
         igp_= round(d["ieps_gp"],2); igd_ = round(d["ieps_gd"], 2)
-        # Efectivo = exactamente lo que falta para que TB2 abonos = TB2 cargos → CONC = 0.00 exacto
-        otros = round(gs_+gp_+gd_+iva_+igs_+igp_+igd_, 2)
-        efectivo = round(tb2c - otros, 2)
+        otros    = round(gs_+gp_+gd_+iva_+igs_+igp_+igd_, 2)
+        efectivo = round(tb2c_py - otros, 2)
         abo_vals = [gs_, gp_, gd_, iva_, igs_, igp_, igd_, efectivo]
 
         for j, (ac, nm) in enumerate(ABONO_COLS):
-            val = round(abo_vals[j], 2) or None
-            df  = F_EFE if j == EFE_IDX else F_ABO
-            w(r, col, val, fill_=df, font_=DARK, fmt="#,##0.00"); col += 1
-            if val: totals[f"a{j}"] += abo_vals[j]
+            df = F_EFE if j == EFE_IDX else F_ABO
+            if j == EFE_IDX:
+                # Efectivo = TB2 Cargos − suma de los demás abonos → garantiza CONC = 0
+                formula_efe = f"=ROUND({L(c_tb2c)}{r}-SUM({L(c_abo0)}{r}:{L(c_efe-1)}{r}),2)"
+                w(r, col, formula_efe, fill_=df, font_=DARK, fmt="#,##0.00")
+            else:
+                val = round(abo_vals[j], 2) or None
+                w(r, col, val, fill_=df, font_=DARK, fmt="#,##0.00")
+                if val: totals[f"a{j}"] += abo_vals[j]
+            col += 1
+        totals[f"a{EFE_IDX}"] += efectivo
 
-        # TB2 abonos = tb2c exacto (garantiza CONC = 0)
-        tb2a = tb2c
-        w(r, col, round(tb2a, 2), fill_=F_TB2, font_=DARK_B, fmt="#,##0.00"); col += 1
-        totals["tb2a"] += tb2a
+        # TB2 Abonos — autosuma de todos los abonos (incluye Efectivo)
+        formula_tb2a = f"=ROUND(SUM({L(c_abo0)}{r}:{L(c_efe)}{r}),2)"
+        w(r, col, formula_tb2a, fill_=F_TB2, font_=DARK_B, fmt="#,##0.00"); col += 1
+        totals["tb2a"] += tb2c_py  # por diseño tb2a = tb2c
 
-        w(r, col, 0, fill_=F_CONC, font_=DARK_B, fmt="#,##0.00")
+        # CONCILIACION = TB2 Cargos − TB2 Abonos (Excel calcula; debe ser 0)
+        formula_conc = f"=ROUND({L(c_tb2c)}{r}-{L(c_tb2a)}{r},2)"
+        w(r, col, formula_conc, fill_=F_CONC, font_=DARK_B, fmt="#,##0.00")
 
         resumen.append({
             "Fecha":        fecha_str,
-            "TB2 Cargos":   round(tb2c, 2),
-            "TB2 Abonos":   round(tb2a, 2),
+            "TB2 Cargos":   round(tb2c_py, 2),
+            "TB2 Abonos":   round(tb2c_py, 2),
             "Conciliación": 0.0,
         })
 

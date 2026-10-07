@@ -19,6 +19,7 @@ pg = st.navigation(
         ],
         "Ventas": [
             st.Page("pages/4_Ventas_del_Dia.py",              title="Ventas del Día",              icon="⛽"),
+            st.Page("pages/19_Ventas_del_Dia_Prepago.py",     title="Ventas del Día Prepago",      icon="🏷️"),
             st.Page("pages/10_Control_Despacho_vs_Ventas.py", title="Control Despacho vs Ventas",  icon="📊"),
         ],
         "Banco": [

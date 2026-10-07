@@ -7280,7 +7280,8 @@ class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
             self.after(0, self._log, "⛽ Leyendo control de despachos...")
             ext = os.path.splitext(despachos_path)[1].lower()
             if ext == '.xls':
-                # Formato antiguo: intentar con xlrd
+                # Formato antiguo: intentar con xlrd primero
+                _xls_ok = False
                 try:
                     import xlrd
                     _wb_xls = xlrd.open_workbook(despachos_path)
@@ -7292,17 +7293,49 @@ class WorkspaceWindow(PolizaNominaMixin, tk.Toplevel):
                     _col_map = _vd_detectar_columnas(_rows_raw[0])
                     data = _rows_raw[1:]  # saltar encabezado
                     self.after(0, self._log, f"  {len(data):,} registros leídos (.xls vía xlrd).")
+                    _xls_ok = True
                 except ImportError:
-                    self.after(0, self._pb_error, self._vd_pb, self._vd_pb_lbl)
-                    self.after(0, self._vd_pb_frame.grid_remove)
-                    self.after(0, messagebox.showerror, "Formato .xls no soportado",
-                        "El archivo de despachos está en formato antiguo .xls\n"
-                        "y la librería 'xlrd' no está instalada.\n\n"
-                        "Soluciones:\n"
-                        "  1. Abre el archivo en Excel y guárdalo como .xlsx\n"
-                        "  2. O instala xlrd:  pip install xlrd==1.2.0")
-                    self.after(0, self._vd_lbl_archivo.config, {"text": "Error"})
-                    return
+                    pass  # xlrd no instalado — intentar fallbacks abajo
+                except Exception:
+                    pass  # archivo no es .xls binario real — intentar fallbacks abajo
+                if not _xls_ok:
+                    # Fallback 1: el .xls es en realidad TSV (texto con tabuladores)
+                    # — común en exportaciones de sistemas de despacho
+                    _tsv_ok = False
+                    for _enc in ('latin-1', 'utf-8', 'utf-8-sig', 'cp1252'):
+                        try:
+                            with open(despachos_path, encoding=_enc, errors='strict') as _f:
+                                _lines = [l.rstrip('\r\n').split('\t') for l in _f if l.strip()]
+                            if len(_lines) > 1 and len(_lines[0]) > 3:
+                                _col_map = _vd_detectar_columnas(tuple(_lines[0]))
+                                data = [tuple(r) for r in _lines[1:]]
+                                self.after(0, self._log,
+                                    f"  {len(data):,} registros leídos (.xls/TSV vía texto, enc={_enc}).")
+                                _tsv_ok = True
+                                break
+                        except Exception:
+                            continue
+                    if not _tsv_ok:
+                        # Fallback 2: intentar como xlsx con openpyxl (algunos .xls son en realidad zip/xlsx)
+                        try:
+                            _wb2 = openpyxl.load_workbook(despachos_path, data_only=True, read_only=True)
+                            _rows2 = list(_wb2.active.iter_rows(values_only=True))
+                            _wb2.close()
+                            _col_map = _vd_detectar_columnas(_rows2[0])
+                            data = _rows2[1:]
+                            self.after(0, self._log,
+                                f"  {len(data):,} registros leídos (.xls/xlsx vía openpyxl).")
+                        except Exception:
+                            self.after(0, self._pb_error, self._vd_pb, self._vd_pb_lbl)
+                            self.after(0, self._vd_pb_frame.grid_remove)
+                            self.after(0, messagebox.showerror, "Formato .xls no soportado",
+                                "El archivo de despachos está en formato antiguo .xls\n"
+                                "y no pudo leerse con xlrd, texto ni openpyxl.\n\n"
+                                "Soluciones:\n"
+                                "  1. Abre el archivo en Excel y guárdalo como .xlsx\n"
+                                "  2. O instala xlrd:  pip install xlrd==1.2.0")
+                            self.after(0, self._vd_lbl_archivo.config, {"text": "Error"})
+                            return
             else:
                 wb_desp = openpyxl.load_workbook(despachos_path, data_only=True, read_only=True)
                 _all_rows = list(wb_desp.active.iter_rows(values_only=True))

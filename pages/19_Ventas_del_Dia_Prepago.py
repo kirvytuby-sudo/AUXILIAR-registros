@@ -153,8 +153,9 @@ def _buscar_en(lista, nombre):
 # ── Leer cuentas de la plantilla ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def _leer_plantilla(plantilla_bytes: bytes):
-    """Retorna (cta_credito, cta_prepago) como listas de (cuenta, nombre)."""
-    cred, prep = [], []
+    """Retorna (cta_fija, cta_credito, cta_prepago) como listas de (cuenta, nombre).
+    Detecta cuentas por prefijo de número — no depende de filas sentinela."""
+    fija, cred, prep = [], [], []
     try:
         wb = openpyxl.load_workbook(io.BytesIO(plantilla_bytes))
         hoja = None
@@ -164,30 +165,27 @@ def _leer_plantilla(plantilla_bytes: bytes):
             if "CUENTAS" in sn.upper():
                 hoja = wb[sn]
         if not hoja:
-            # intentar hoja con espacios
             for sn in wb.sheetnames:
                 if "cuentas" in sn.lower():
                     hoja = wb[sn]; break
         if hoja:
-            mode = None
             for row in hoja.iter_rows(min_row=1, values_only=True):
                 acct = row[7] if len(row) > 7 else None
                 nombre = str(row[8]).strip().replace("\n", "").strip() if len(row) > 8 and row[8] else ""
                 if not acct:
                     continue
                 acct = str(acct).strip()
-                if acct == "105-01-0003":
-                    mode = "credito"; continue
-                if acct == "105-01-0004":
-                    mode = "prepago"; continue
-                if mode == "credito" and acct.startswith("105-01-0003-") and nombre:
+                # Detectar por prefijo numérico (no requiere filas sentinela)
+                if (acct.startswith("105-01-0001-") or acct.startswith("105-01-0002-")) and nombre:
+                    fija.append((acct, nombre))
+                elif acct.startswith("105-01-0003-") and nombre:
                     cred.append((acct, nombre))
-                elif mode == "prepago" and acct.startswith("105-01-0004-") and nombre:
+                elif acct.startswith("105-01-0004-") and nombre:
                     prep.append((acct, nombre))
         wb.close()
     except Exception as e:
         st.warning(f"⚠ No se pudo leer la plantilla: {e}")
-    return cred, prep
+    return fija, cred, prep
 
 # ── Motor de generación ───────────────────────────────────────────────────────
 def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, despachos_nombre: str = "archivo.xlsx") -> tuple[bytes, list, list]:
@@ -199,21 +197,37 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
 
     # Cargar cuentas de plantilla
     if plantilla_bytes:
-        cta_credito, cta_prepago = _leer_plantilla(plantilla_bytes)
-        logs.append(f"✅ Plantilla: {len(cta_credito)} clientes Crédito, {len(cta_prepago)} clientes Prepago.")
+        cta_fija, cta_credito, cta_prepago = _leer_plantilla(plantilla_bytes)
+        logs.append(f"✅ Plantilla: {len(cta_fija)} FIJA, {len(cta_credito)} Crédito, {len(cta_prepago)} Prepago.")
     else:
-        cta_credito, cta_prepago = [], []
-        logs.append("⚠ Sin plantilla — no hay cuentas de Crédito/Prepago disponibles.")
+        cta_fija, cta_credito, cta_prepago = [], [], []
+        logs.append("⚠ Sin plantilla — no hay cuentas disponibles.")
 
-    FIJA_COLS = [(a, n) for n, a in FIJAS_DEF]
+    # FIJA_COLS: prioridad a plantilla (evita hardcoded), fallback a FIJAS_DEF
+    if cta_fija:
+        FIJA_COLS = list(cta_fija)   # (acct, nombre) de la hoja CUENTAS
+        logs.append(f"📋 {len(FIJA_COLS)} cuentas FIJA de plantilla: "
+                    + ", ".join(f"{a}" for a, n in FIJA_COLS[:4]) + ("…" if len(FIJA_COLS) > 4 else ""))
+    else:
+        FIJA_COLS = [(a, n) for n, a in FIJAS_DEF]   # fallback hardcoded
+        logs.append("ℹ️ Usando FIJA_COLS hardcoded (FIJAS_DEF).")
+
     CRED_COLS = list(cta_credito)
     PREP_COLS = list(cta_prepago)
     N_FIJA = len(FIJA_COLS)
     N_CRED = len(CRED_COLS)
     N_PREP = len(PREP_COLS)
-    fija_name_idx = {n: i for i, (a, n) in enumerate(FIJA_COLS)}
+    # Índices por número de cuenta
+    fija_acct_idx = {a: i for i, (a, n) in enumerate(FIJA_COLS)}
     cred_acct_idx = {a: i for i, (a, n) in enumerate(CRED_COLS)}
     prep_acct_idx = {a: i for i, (a, n) in enumerate(PREP_COLS)}
+    # fija canonical-name → account (para lookup via CLIENTE_TO_FIJA)
+    fija_fname_to_acct = {fn: fa for fn, fa in FIJAS_DEF}
+    # fija canonical-name → índice (compatible con código que use fija_name_idx)
+    fija_name_idx = {}
+    for fn, fa in FIJAS_DEF:
+        if fa in fija_acct_idx:
+            fija_name_idx[fn] = fija_acct_idx[fa]
 
     # Leer despachos (.xlsx o .xls) — retorna (cabecera, filas)
     hdr, src_rows = _leer_despachos_bytes(despachos_bytes, despachos_nombre)
@@ -271,62 +285,138 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         from datetime import date as _date, datetime as _dt
         if isinstance(v, _dt): return v.date()
         if isinstance(v, _date): return v
-        # String: tomar primeros 10 chars y probar formatos comunes
         s = str(v).strip()[:10]
         for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y"):
             try: return _dt.strptime(s, fmt).date()
             except Exception: pass
         return None
 
-    for row in src_rows:
-        if not row:
-            continue
-        fecha = _parse_fecha(_g(row, "fecha"))
-        if fecha is None:
-            continue
-        prod    = str(_g(row, "producto") or "").upper().strip()
-        sub     = float(_g(row, "subtotal") or 0)
-        iva     = float(_g(row, "iva")      or 0)
-        ieps    = float(_g(row, "ieps")     or 0)
-        imp     = float(_g(row, "importe")  or 0)
-        dsc_s   = float(_g(row, "dsc_s")    or 0)
-        dsc_v   = float(_g(row, "dsc_v")    or 0)   # 0 si no existe la columna
-        cliente = str(_g(row, "cliente")    or "").strip()
-        tipo    = str(_g(row, "tipo")       or "").strip()
+    # ── Helper de matching FIJA (normalizado) ─────────────────────────────────
+    import re as _re_fija
+    def _nk_fija(s):
+        """Normaliza para matching: strip 'Clientes/Cientes', quita no-alfanuméricos."""
+        s = _re_fija.sub(r'^(CLIENTES?|CIENTES?)\s*', '', str(s or '').upper().strip())
+        return _re_fija.sub(r'[^A-Z0-9]', '', s)
 
-        d = day_data[fecha]
-        if prod == "GS":    d["gs"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gs"] += ieps
-        elif prod == "GP":  d["gp"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gp"] += ieps
-        elif prod == "GD":  d["gd"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gd"] += ieps
+    def _buscar_fija_acct(cliente_raw):
+        """Retorna el número de cuenta FIJA para este cliente, o None.
+        Estrategia: 1) CLIENTE_TO_FIJA exacto+normalizado → 2) búsqueda normalizada en FIJA_COLS."""
+        # 1a. Exacto
+        fname = CLIENTE_TO_FIJA.get(cliente_raw)
+        if fname is None:
+            # 1b. Normalizado contra CLIENTE_TO_FIJA
+            cn = _nk_fija(cliente_raw)
+            for k, v in CLIENTE_TO_FIJA.items():
+                if _nk_fija(k) == cn:
+                    fname = v; break
+        if fname is not None:
+            return fija_fname_to_acct.get(fname)
+        # 2. Búsqueda normalizada directa en FIJA_COLS (nombres de plantilla)
+        cn = _nk_fija(cliente_raw)
+        if not cn:
+            return None
+        # Exacto primero
+        for fa, fn in FIJA_COLS:
+            if _nk_fija(fn) == cn:
+                return fa
+        # Substring
+        for fa, fn in FIJA_COLS:
+            kn = _nk_fija(fn)
+            if kn and (kn in cn or cn in kn):
+                return fa
+        return None
 
-        d["desc"] += dsc_s
-        cargo = imp - dsc_s - dsc_v
+    # ── Detectar modo: transaccional (con Fecha_Hora) vs resumen mensual ──────
+    is_resumen = CI.get("fecha") is None and CI.get("cliente") is not None
+    if is_resumen:
+        logs.append("📋 Modo RESUMEN mensual detectado (sin columna Fecha_Hora). "
+                    "Se genera póliza de totales del período.")
 
-        if tipo in ("Contado", "Tarjeta", "Monedero"):
-            fname = CLIENTE_TO_FIJA.get(cliente)
-            if fname is None:
-                for k, v in CLIENTE_TO_FIJA.items():
-                    if k in cliente or cliente in k:
-                        fname = v; break
-            idx = fija_name_idx.get(fname, 0)
-            d["fija"][idx] += cargo
-            if fname is None:
-                sin_mapear.add(f"{tipo}:{cliente}")
-        elif tipo == "Credito":
-            acct = _buscar_en(CRED_COLS, cliente)
-            if acct and acct in cred_acct_idx:
-                d["cred"][cred_acct_idx[acct]] += cargo
+        from datetime import date as _date
+        FECHA_RESUMEN = _date(1900, 1, 1)   # sentinel → fila única en la póliza
+
+        for row in src_rows:
+            if not row:
+                continue
+            cliente_raw = str(_g(row, "cliente") or "").strip()
+            if not cliente_raw:
+                continue
+            if cliente_raw.upper().startswith("TOTAL") or cliente_raw.upper() == "CLIENTE":
+                continue   # filas de subtotal / encabezado repetido
+            prod   = str(_g(row, "producto") or "").upper().strip()
+            sub    = float(_g(row, "subtotal") or 0)
+            iva    = float(_g(row, "iva")     or 0)
+            ieps   = float(_g(row, "ieps")    or 0)
+            imp    = float(_g(row, "importe") or 0)
+
+            d = day_data[FECHA_RESUMEN]
+            if prod == "GS":   d["gs"] += sub; d["iva"] += iva; d["ieps_gs"] += ieps
+            elif prod == "GP": d["gp"] += sub; d["iva"] += iva; d["ieps_gp"] += ieps
+            elif prod == "GD": d["gd"] += sub; d["iva"] += iva; d["ieps_gd"] += ieps
+
+            cargo = imp
+
+            # Mapear cliente a fija o crédito usando matching normalizado
+            acct_f = _buscar_fija_acct(cliente_raw)
+            if acct_f is not None:
+                idx = fija_acct_idx.get(acct_f, 0)
+                d["fija"][idx] += cargo
             else:
-                fb = _buscar_en(CRED_COLS, "Pendiente por facturar Crédito")
-                if fb and fb in cred_acct_idx:
-                    d["cred"][cred_acct_idx[fb]] += cargo
-                sin_mapear.add(f"Credito:{cliente}")
-        elif tipo == "Prepago":
-            acct = _buscar_en(PREP_COLS, cliente)
-            if acct and acct in prep_acct_idx:
-                d["prep"][prep_acct_idx[acct]] += cargo
-            else:
-                sin_mapear.add(f"Prepago:{cliente}")
+                acct = _buscar_en(CRED_COLS, cliente_raw)
+                if acct and acct in cred_acct_idx:
+                    d["cred"][cred_acct_idx[acct]] += cargo
+                else:
+                    sin_mapear.add(f"Credito:{cliente_raw}")
+    else:
+        # ── Modo transaccional: una fila por fecha ─────────────────────────────
+        import re as _re
+        _DATE_RE = _re.compile(r'^\d{4}-\d{2}-\d{2}$')
+        for row in src_rows:
+            if not row:
+                continue
+            fecha_raw = _g(row, "fecha")
+            fecha = _parse_fecha(fecha_raw)
+            if fecha is None:
+                continue
+            prod    = str(_g(row, "producto") or "").upper().strip()
+            sub     = float(_g(row, "subtotal") or 0)
+            iva     = float(_g(row, "iva")      or 0)
+            ieps    = float(_g(row, "ieps")     or 0)
+            imp     = float(_g(row, "importe")  or 0)
+            dsc_s   = float(_g(row, "dsc_s")    or 0)
+            dsc_v   = float(_g(row, "dsc_v")    or 0)
+            cliente = str(_g(row, "cliente")    or "").strip()
+            tipo    = str(_g(row, "tipo")       or "").strip()
+
+            d = day_data[fecha]
+            if prod == "GS":    d["gs"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gs"] += ieps
+            elif prod == "GP":  d["gp"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gp"] += ieps
+            elif prod == "GD":  d["gd"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gd"] += ieps
+
+            d["desc"] += dsc_s
+            cargo = imp - dsc_s - dsc_v
+
+            if tipo in ("Contado", "Tarjeta", "Monedero"):
+                acct_f = _buscar_fija_acct(cliente)
+                idx = fija_acct_idx.get(acct_f, 0) if acct_f else 0
+                d["fija"][idx] += cargo
+                if acct_f is None:
+                    sin_mapear.add(f"{tipo}:{cliente}")
+            elif tipo == "Credito":
+                acct = _buscar_en(CRED_COLS, cliente)
+                if acct and acct in cred_acct_idx:
+                    d["cred"][cred_acct_idx[acct]] += cargo
+                else:
+                    fb = _buscar_en(CRED_COLS, "Pendiente por facturar Crédito")
+                    if fb and fb in cred_acct_idx:
+                        d["cred"][cred_acct_idx[fb]] += cargo
+                    sin_mapear.add(f"Credito:{cliente}")
+            elif tipo == "Prepago":
+                acct = _buscar_en(PREP_COLS, cliente)
+                if acct and acct in prep_acct_idx:
+                    d["prep"][prep_acct_idx[acct]] += cargo
+                else:
+                    sin_mapear.add(f"Prepago:{cliente}")
 
     if sin_mapear:
         logs.append(f"⚠ {len(sin_mapear)} clientes sin mapear: {', '.join(sorted(sin_mapear)[:10])}" +
@@ -435,13 +525,35 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
     totals  = defaultdict(float)
     resumen = []
 
+    # En modo resumen la "fecha" sentinel se muestra como etiqueta del período
+    _SENTINEL_RESUMEN = __import__('datetime').date(1900, 1, 1)
+
     for ri, fecha in enumerate(sorted_dates):
         d = day_data[fecha]; r = ri + 4
-        fecha_str = fecha.strftime("%d/%m/%Y") if hasattr(fecha, "strftime") else str(fecha)
-        fixed_vals = ["CLI", fecha, f"VENTAS DEL DIA {fecha_str}", f"VENTAS DEL DIA {fecha_str}", None, None, None, None]
+        if fecha == _SENTINEL_RESUMEN:
+            # Modo resumen: extraer período del nombre del archivo
+            import re as _re2
+            _m = _re2.search(r'(\d{4}-\d{2}-\d{2})\s+al\s+(\d{4}-\d{2}-\d{2})', despachos_nombre)
+            if _m:
+                from datetime import datetime as _dt2
+                _d1 = _dt2.strptime(_m.group(1), '%Y-%m-%d').strftime('%d/%m/%Y')
+                _d2 = _dt2.strptime(_m.group(2), '%Y-%m-%d').strftime('%d/%m/%Y')
+                periodo_label = f"{_d1} al {_d2}"
+            else:
+                periodo_label = "PERÍODO"
+            fecha_str  = periodo_label
+            fecha_cell = None   # sin valor de fecha en celda (se escribe la etiqueta)
+        else:
+            fecha_str  = fecha.strftime("%d/%m/%Y") if hasattr(fecha, "strftime") else str(fecha)
+            fecha_cell = fecha
+        fixed_vals = ["CLI", fecha_cell, f"VENTAS DEL DIA {fecha_str}", f"VENTAS DEL DIA {fecha_str}", None, None, None, None]
         for ci2, val in enumerate(fixed_vals):
-            w(r, ci2+1, val, fill_=F_WHITE, font_=DARK,
-              fmt=("DD/MM/YYYY" if ci2 == 1 else None))
+            # En modo resumen col 2 (fecha_cell=None) → escribir la etiqueta como texto
+            if ci2 == 1 and val is None and is_resumen:
+                w(r, ci2+1, fecha_str, fill_=F_WHITE, font_=DARK)
+            else:
+                w(r, ci2+1, val, fill_=F_WHITE, font_=DARK,
+                  fmt=("DD/MM/YYYY" if ci2 == 1 else None))
 
         col = 9
         for orig_i, a, n in act_fija:

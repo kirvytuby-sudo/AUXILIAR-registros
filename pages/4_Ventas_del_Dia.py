@@ -1,6 +1,7 @@
 """AUXILIAR DE REGISTROS — Ventas del Día (Control de Despachos → Póliza Excel)"""
 import streamlit as st
 import io
+import re as _re
 from collections import defaultdict
 from datetime import datetime
 
@@ -372,9 +373,12 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         except (ValueError, TypeError):
             return 0.0
 
+    _DATE_RE = _re.compile(r'^\d{4}-\d{2}-\d{2}$')
     for r in data:
         try:
             fecha       = _fecha_norm(r[C_FECHA])
+            if not _DATE_RE.match(fecha):
+                continue   # fila de resumen/total sin fecha válida (ej. "VENTA DE CONTADO")
             cliente_raw = str(r[C_CLIENTE] or "").strip() if 0 <= C_CLIENTE < len(r) else ""
             cliente     = _match_cliente(cliente_raw, _clientes_tpl)
             prod        = str(r[C_PROD] or "")

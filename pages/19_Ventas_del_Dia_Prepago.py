@@ -33,7 +33,8 @@ def _leer_despachos_bytes(file_bytes: bytes, filename: str):
         wb.close()
         return rows
     else:
-        # .xls — intentar con xlrd, fallback a TSV/CSV si no es binario real
+        # .xls — intentar con xlrd primero, luego openpyxl, luego CSV
+        # 1) xlrd (formato BIFF binario real)
         try:
             import xlrd
             wb = xlrd.open_workbook(file_contents=file_bytes)
@@ -41,7 +42,6 @@ def _leer_despachos_bytes(file_bytes: bytes, filename: str):
             rows = []
             for i in range(1, ws.nrows):
                 row = ws.row_values(i)
-                # xlrd devuelve fechas como float → convertir col 0
                 try:
                     if isinstance(row[0], float) and row[0] > 0:
                         from datetime import datetime as _dt
@@ -53,13 +53,35 @@ def _leer_despachos_bytes(file_bytes: bytes, filename: str):
                 rows.append(row)
             return rows
         except Exception:
-            # Fallback: leer como texto CSV/TSV
-            import csv
-            text = file_bytes.decode("utf-8", errors="replace")
-            dialect = "excel-tab" if "\t" in text[:500] else "excel"
-            reader = csv.reader(io.StringIO(text), dialect=dialect)
-            all_rows = list(reader)
-            return all_rows[1:] if all_rows else []
+            pass
+
+        # 2) openpyxl — algunos .xls son en realidad xlsx con extensión incorrecta
+        try:
+            wb2 = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+            ws2 = wb2.active
+            rows2 = list(ws2.iter_rows(min_row=2, values_only=True))
+            wb2.close()
+            return rows2
+        except Exception:
+            pass
+
+        # 3) pandas — soporta .xls legacy vía xlrd y xlwt
+        try:
+            import pandas as pd
+            df = pd.read_excel(io.BytesIO(file_bytes), header=0, engine="xlrd")
+            return [tuple(r) for r in df.itertuples(index=False)]
+        except Exception:
+            pass
+
+        # 4) Fallback CSV/TSV (ej. archivos HTML renombrados como .xls)
+        import csv
+        text = file_bytes.decode("utf-8", errors="replace")
+        # Normalizar saltos de línea — csv necesita \n o \r\n simples sin embebidos
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        dialect = "excel-tab" if "\t" in text[:500] else "excel"
+        reader = csv.reader(io.StringIO(text), dialect=dialect)
+        all_rows = list(reader)
+        return all_rows[1:] if all_rows else []
 
 # ── Cuentas fijas de pago ────────────────────────────────────────────────────
 # V.EDENRED y V.EFECTIVALE acumulan en la misma columna que T.EDENRED / T.EFECTIVALE

@@ -255,7 +255,7 @@ def _leer_despachos(file_bytes, filename, logs):
                     raise RuntimeError("No se pudo leer el archivo .xls con ningún método.")
                 first_line = text.split("\n", 1)[0]
                 delim = "\t" if first_line.count("\t") >= first_line.count(",") else ","
-                reader = _csv.reader(text.splitlines(), delimiter=delim)
+                reader = _csv.reader(io.StringIO(text), delimiter=delim)
                 all_rows = [tuple(r) for r in reader if any(c.strip() for c in r)]
                 if len(all_rows) < 2:
                     raise RuntimeError("El archivo CSV/TSV no tiene suficientes filas.")
@@ -585,14 +585,15 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
         fc  = f_conc0 if ri % 2 == 0 else f_conc1
         fa  = f_adj0  if ri % 2 == 0 else f_adj1
 
-        # Convertir fecha a objeto date para Excel
+        # Convertir fecha a objeto datetime para Excel (write_datetime requiere datetime)
         try:
             _fd = datetime.strptime(fecha[:10], '%Y-%m-%d')
             fecha_display = _fd.strftime('%d/%m/%Y')
             _fecha_val = _fd
         except Exception:
-            fecha_display = fecha
-            _fecha_val = fecha
+            # Fallback seguro: si la fecha no es parseable usar el primer día del año
+            fecha_display = str(fecha)[:10]
+            _fecha_val = datetime(2000, 1, 1)  # nunca pasar string a write_datetime
 
         ws.write(row, 0, _tipo_poliza, f_meta)
         ws.write_datetime(row, 1, _fecha_val, f_fecha)

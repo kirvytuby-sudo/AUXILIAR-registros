@@ -24,64 +24,77 @@ except ImportError as _e:
     st.stop()
 
 def _leer_despachos_bytes(file_bytes: bytes, filename: str):
-    """Lee el Control de Despachos desde .xlsx o .xls y retorna lista de filas (sin cabecera)."""
+    """
+    Lee el Control de Despachos y retorna (cabecera: list[str], filas: list[tuple]).
+    Soporta .xlsx, .xls binario (xlrd), .xls-en-realidad-xlsx (openpyxl) y TSV/CSV.
+    """
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "xlsx"
+
+    # ── xlsx ──────────────────────────────────────────────────────────────────
     if ext == "xlsx":
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
         ws = wb.active
-        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        all_rows = list(ws.iter_rows(min_row=1, values_only=True))
         wb.close()
-        return rows
-    else:
-        # .xls — intentar con xlrd primero, luego openpyxl, luego CSV
-        # 1) xlrd (formato BIFF binario real)
-        try:
-            import xlrd
-            wb = xlrd.open_workbook(file_contents=file_bytes)
-            ws = wb.sheet_by_index(0)
-            rows = []
-            for i in range(1, ws.nrows):
-                row = ws.row_values(i)
-                try:
-                    if isinstance(row[0], float) and row[0] > 0:
-                        from datetime import datetime as _dt
-                        import xlrd as _xl
-                        tup = _xl.xldate_as_tuple(row[0], wb.datemode)
-                        row[0] = _dt(*tup)
-                except Exception:
-                    pass
-                rows.append(row)
-            return rows
-        except Exception:
-            pass
+        hdr  = [str(c).strip() if c is not None else "" for c in (all_rows[0] if all_rows else [])]
+        data = all_rows[1:] if len(all_rows) > 1 else []
+        return hdr, data
 
-        # 2) openpyxl — algunos .xls son en realidad xlsx con extensión incorrecta
-        try:
-            wb2 = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
-            ws2 = wb2.active
-            rows2 = list(ws2.iter_rows(min_row=2, values_only=True))
-            wb2.close()
-            return rows2
-        except Exception:
-            pass
+    # ── .xls — 4 intentos en cascada ─────────────────────────────────────────
+    # 1) xlrd (BIFF binario real)
+    try:
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=file_bytes)
+        ws = wb.sheet_by_index(0)
+        hdr  = [str(ws.cell_value(0, c)).strip() for c in range(ws.ncols)]
+        data = []
+        for i in range(1, ws.nrows):
+            row = list(ws.row_values(i))
+            try:
+                if isinstance(row[0], float) and row[0] > 0:
+                    from datetime import datetime as _dt
+                    import xlrd as _xl
+                    tup = _xl.xldate_as_tuple(row[0], wb.datemode)
+                    row[0] = _dt(*tup)
+            except Exception:
+                pass
+            data.append(tuple(row))
+        return hdr, data
+    except Exception:
+        pass
 
-        # 3) pandas — soporta .xls legacy vía xlrd y xlwt
-        try:
-            import pandas as pd
-            df = pd.read_excel(io.BytesIO(file_bytes), header=0, engine="xlrd")
-            return [tuple(r) for r in df.itertuples(index=False)]
-        except Exception:
-            pass
+    # 2) openpyxl (algunos .xls son xlsx con extensión incorrecta)
+    try:
+        wb2 = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        ws2 = wb2.active
+        all_rows = list(ws2.iter_rows(min_row=1, values_only=True))
+        wb2.close()
+        hdr  = [str(c).strip() if c is not None else "" for c in (all_rows[0] if all_rows else [])]
+        return hdr, all_rows[1:] if len(all_rows) > 1 else []
+    except Exception:
+        pass
 
-        # 4) Fallback CSV/TSV (ej. archivos HTML renombrados como .xls)
-        import csv
-        text = file_bytes.decode("utf-8", errors="replace")
-        # Normalizar saltos de línea — csv necesita \n o \r\n simples sin embebidos
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
-        dialect = "excel-tab" if "\t" in text[:500] else "excel"
-        reader = csv.reader(io.StringIO(text), dialect=dialect)
-        all_rows = list(reader)
-        return all_rows[1:] if all_rows else []
+    # 3) pandas
+    try:
+        import pandas as pd
+        df = pd.read_excel(io.BytesIO(file_bytes), header=0, engine="xlrd")
+        hdr  = [str(c).strip() for c in df.columns]
+        data = [tuple(r) for r in df.itertuples(index=False)]
+        return hdr, data
+    except Exception:
+        pass
+
+    # 4) TSV/CSV (archivos de texto renombrados como .xls)
+    import csv
+    text = file_bytes.decode("utf-8", errors="replace")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    dialect = "excel-tab" if "\t" in text[:500] else "excel"
+    reader   = csv.reader(io.StringIO(text), dialect=dialect)
+    all_rows = list(reader)
+    if not all_rows:
+        return [], []
+    hdr  = [str(c).strip() for c in all_rows[0]]
+    return hdr, all_rows[1:]
 
 # ── Cuentas fijas de pago ────────────────────────────────────────────────────
 # V.EDENRED y V.EFECTIVALE acumulan en la misma columna que T.EDENRED / T.EFECTIVALE
@@ -202,9 +215,44 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
     cred_acct_idx = {a: i for i, (a, n) in enumerate(CRED_COLS)}
     prep_acct_idx = {a: i for i, (a, n) in enumerate(PREP_COLS)}
 
-    # Leer despachos (.xlsx o .xls)
-    src_rows = _leer_despachos_bytes(despachos_bytes, despachos_nombre)
+    # Leer despachos (.xlsx o .xls) — retorna (cabecera, filas)
+    hdr, src_rows = _leer_despachos_bytes(despachos_bytes, despachos_nombre)
     logs.append(f"📂 {len(src_rows):,} filas leídas del archivo.")
+
+    # ── Mapeo de columnas por nombre (robusto a cambios de orden) ────────────
+    # Nombres canónicos que buscamos en la cabecera (case-insensitive, sin espacios)
+    _ALIAS = {
+        "fecha":    ["fecha_hora", "fecha", "date"],
+        "producto": ["producto", "product"],
+        "subtotal": ["subtotal", "sub"],
+        "iva":      ["iva"],
+        "ieps":     ["ieps"],
+        "importe":  ["importe", "total", "monto"],
+        "dsc_s":    ["descuento", "descuentosubtotal", "desc_subtotal", "discount"],
+        "dsc_v":    ["descuentoiva", "desc_iva", "descuento_iva"],
+        "cliente":  ["cliente", "client", "customer"],
+        "tipo":     ["tipo", "type", "tipocliente", "tipo_pago"],
+    }
+    def _ci(hdr_list, aliases):
+        """Devuelve el índice de la primera columna que coincide con algún alias."""
+        norm = [h.lower().replace(" ", "").replace("_", "") for h in hdr_list]
+        for alias in aliases:
+            a = alias.lower().replace("_", "").replace(" ", "")
+            for i, n in enumerate(norm):
+                if n == a:
+                    return i
+        return None
+
+    CI = {k: _ci(hdr, v) for k, v in _ALIAS.items()}
+    logs.append(f"📋 Columnas detectadas: fecha={CI['fecha']} prod={CI['producto']} "
+                f"imp={CI['importe']} cliente={CI['cliente']} tipo={CI['tipo']}")
+
+    def _g(row, key, default=None):
+        """Obtiene el valor de una columna por su índice detectado."""
+        idx = CI.get(key)
+        if idx is None or idx >= len(row):
+            return default
+        return row[idx]
 
     def new_day():
         return {
@@ -223,27 +271,28 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         from datetime import date as _date, datetime as _dt
         if isinstance(v, _dt): return v.date()
         if isinstance(v, _date): return v
-        s = str(v).strip()[:10]  # tomar solo 'YYYY-MM-DD' del inicio
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+        # String: tomar primeros 10 chars y probar formatos comunes
+        s = str(v).strip()[:10]
+        for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y"):
             try: return _dt.strptime(s, fmt).date()
             except Exception: pass
         return None
 
     for row in src_rows:
-        if not row or row[0] is None or row[0] == "":
+        if not row:
             continue
-        fecha = _parse_fecha(row[0])
+        fecha = _parse_fecha(_g(row, "fecha"))
         if fecha is None:
             continue
-        prod    = str(row[3]).upper().strip() if row[3] else ""
-        sub     = float(row[6] or 0)
-        iva     = float(row[7] or 0)
-        ieps    = float(row[8] or 0)
-        imp     = float(row[9] or 0)
-        dsc_s   = float(row[10] or 0)
-        dsc_v   = float(row[11] or 0)
-        cliente = str(row[17]).strip() if row[17] else ""
-        tipo    = str(row[19]).strip() if row[19] else ""
+        prod    = str(_g(row, "producto") or "").upper().strip()
+        sub     = float(_g(row, "subtotal") or 0)
+        iva     = float(_g(row, "iva")      or 0)
+        ieps    = float(_g(row, "ieps")     or 0)
+        imp     = float(_g(row, "importe")  or 0)
+        dsc_s   = float(_g(row, "dsc_s")    or 0)
+        dsc_v   = float(_g(row, "dsc_v")    or 0)   # 0 si no existe la columna
+        cliente = str(_g(row, "cliente")    or "").strip()
+        tipo    = str(_g(row, "tipo")       or "").strip()
 
         d = day_data[fecha]
         if prod == "GS":    d["gs"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gs"] += ieps

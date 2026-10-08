@@ -193,13 +193,18 @@ def _detectar_columnas(header_row, logs):
             col_map[str(h).strip()] = i
     # Columnas esperadas con fallbacks seguros
     n_cols = len(header_row)
+    _OOR   = n_cols + 999   # índice fuera de rango → float() seguro devuelve 0
     defaults = {
         'FechaHora': 0, 'Producto': 3, 'Subtotal': 6,
         'Iva': 7, 'Ieps': 8, 'Importe': 9,
-        'DescuentoSubtotal': 10, 'DescuentoIva': 11,
+        'DescuentoSubtotal': 10,
+        'DescuentoIva': _OOR,   # ← nunca usar columna por defecto; solo si existe en header
         'Cliente': 16,
     }
     result = {k: col_map.get(k, v) for k, v in defaults.items()}
+    # DescuentoIva: si no está en el header, forzar índice fuera de rango (→ 0 al acumular)
+    if 'DescuentoIva' not in col_map:
+        result['DescuentoIva'] = _OOR
     # Si la columna Cliente apunta fuera del rango, marcar como ausente (-1)
     if result['Cliente'] >= n_cols and 'Cliente' not in col_map:
         result['Cliente'] = -1
@@ -358,20 +363,29 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
     desc_sub  = defaultdict(float)   # DescuentoSubtotal por fecha
     desc_iva  = defaultdict(float)   # DescuentoIva por fecha
 
+    def _f(row, idx):
+        """Lee un float de row[idx] de forma segura; retorna 0.0 si fuera de rango o no numérico."""
+        if idx < 0 or idx >= len(row):
+            return 0.0
+        try:
+            return float(row[idx] or 0)
+        except (ValueError, TypeError):
+            return 0.0
+
     for r in data:
         try:
             fecha       = _fecha_norm(r[C_FECHA])
-            cliente_raw = str(r[C_CLIENTE] or "").strip() if C_CLIENTE >= 0 and C_CLIENTE < len(r) else ""
+            cliente_raw = str(r[C_CLIENTE] or "").strip() if 0 <= C_CLIENTE < len(r) else ""
             cliente     = _match_cliente(cliente_raw, _clientes_tpl)
             prod        = str(r[C_PROD] or "")
-            cli_day[(fecha, cliente)]  += (float(r[C_IMPORTE]  or 0)
-                                           - float(r[C_DESC_SUB] if C_DESC_SUB < len(r) else 0 or 0)
-                                           - float(r[C_DESC_IVA] if C_DESC_IVA < len(r) else 0 or 0))
-            prod_day[(fecha, prod)]    += float(r[C_SUBTOTAL] or 0)
-            iva_day[fecha]             += float(r[C_IVA]      or 0)
-            ieps_prod[(fecha, prod)]   += float(r[C_IEPS]     or 0)
-            if C_DESC_SUB < len(r): desc_sub[fecha] += float(r[C_DESC_SUB] or 0)
-            if C_DESC_IVA < len(r): desc_iva[fecha] += float(r[C_DESC_IVA] or 0)
+            dsc_s = _f(r, C_DESC_SUB)
+            dsc_v = _f(r, C_DESC_IVA)
+            cli_day[(fecha, cliente)]  += _f(r, C_IMPORTE) - dsc_s - dsc_v
+            prod_day[(fecha, prod)]    += _f(r, C_SUBTOTAL)
+            iva_day[fecha]             += _f(r, C_IVA)
+            ieps_prod[(fecha, prod)]   += _f(r, C_IEPS)
+            desc_sub[fecha]            += dsc_s
+            desc_iva[fecha]            += dsc_v
         except Exception:
             continue
 

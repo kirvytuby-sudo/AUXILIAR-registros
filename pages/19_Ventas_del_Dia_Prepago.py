@@ -190,7 +190,7 @@ def _leer_plantilla(plantilla_bytes: bytes):
     return fija, cred, prep, desc
 
 # ── Motor de generación ───────────────────────────────────────────────────────
-def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, despachos_nombre: str = "archivo.xlsx", modo_sep: bool = True) -> tuple[bytes, list, list]:
+def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, despachos_nombre: str = "archivo.xlsx") -> tuple[bytes, list, list]:
     """
     Genera la póliza con separación Crédito/Prepago.
     Retorna (excel_bytes, logs, resumen_por_dia).
@@ -400,14 +400,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
             d["desc"] += dsc_s - dsc_v   # DescuentoSubtotal menos descuentoIva
             cargo = imp                    # Importe ya es el neto (descuentos aplicados)
 
-            if not modo_sep:
-                # Sin separación: toda transacción va a FIJA (ignora tipo)
-                acct_f = _buscar_fija_acct(cliente)
-                idx = fija_acct_idx.get(acct_f, 0) if acct_f else 0
-                d["fija"][idx] += cargo
-                if acct_f is None:
-                    sin_mapear.add(f"{tipo}:{cliente}")
-            elif tipo in ("Contado", "Tarjeta", "Monedero"):
+            if tipo in ("Contado", "Tarjeta", "Monedero"):
                 acct_f = _buscar_fija_acct(cliente)
                 idx = fija_acct_idx.get(acct_f, 0) if acct_f else 0
                 d["fija"][idx] += cargo
@@ -747,25 +740,17 @@ with col2:
     )
 
 st.markdown("")
-modo_sep = st.toggle(
-    "Considerar Crédito y Prepago",
-    value=True,
-    help="Activado: separa las columnas Crédito y Prepago según el tipo de transacción (requiere plantilla). "
-         "Desactivado: agrupa toda la información en columnas FIJA sin distinción de tipo.",
-)
-
-_plantilla_requerida = modo_sep  # solo es obligatoria cuando se quiere la separación
 generar = st.button(
     "🏷️  Generar Póliza",
     type="primary",
-    disabled=despachos_file is None or (_plantilla_requerida and plantilla_file is None),
+    disabled=despachos_file is None or plantilla_file is None,
     use_container_width=True,
 )
 
 if despachos_file is None:
     st.info("👆 Selecciona el Control de Despachos para comenzar.")
-elif _plantilla_requerida and plantilla_file is None:
-    st.info("👆 Selecciona la Plantilla (o desactiva 'Considerar Crédito y Prepago' para continuar sin ella).")
+elif plantilla_file is None:
+    st.info("👆 Selecciona la Plantilla para continuar.")
 
 if generar and despachos_file is not None:
     with st.spinner("Procesando despachos y generando póliza…"):
@@ -774,7 +759,6 @@ if generar and despachos_file is not None:
                 despachos_file.read(),
                 plantilla_file.read() if plantilla_file else None,
                 despachos_file.name,
-                modo_sep=modo_sep,
             )
 
             base = despachos_file.name.rsplit(".", 1)[0]

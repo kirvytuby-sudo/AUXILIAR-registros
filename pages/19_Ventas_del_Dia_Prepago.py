@@ -251,14 +251,12 @@ def _llenar_plantilla_mena(plantilla_bytes: bytes, day_data: dict, sorted_dates:
         total_cargo  = round(d["total"], 2)
         total_abonos = round(sum(d[k] for k in _ABO_KEYS), 2)
 
-        # Col 9  = TOTAL B2 Cargos  (= formula que apunta a col 10, única cta. cargo)
-        w(r,  9, f"=ROUND(J{r},2)",     fill_=F_TB2, font_=DARK_B, fmt="#,##0.00")
+        # Col 9  = TOTAL B2 Cargos  (= Efectivo, única cta. cargo en esta plantilla)
+        w(r,  9, total_cargo,            fill_=F_TB2, font_=DARK_B, fmt="#,##0.00")
         # Col 10 = Efectivo 101-01-0001
         w(r, 10, total_cargo,            fill_=F_EFE, font_=DARK,   fmt="#,##0.00")
-        # Col 11 = TOTAL B2 Abonos  (= col 9 para cuadrar la póliza; la plantilla MENA
-        #   no tiene columnas individuales de abono —  el detalle GS/GP/GD/IVA/IEPS
-        #   se maneja en otra hoja; aquí solo se requiere que TB2 Cargos = TB2 Abonos)
-        w(r, 11, f"=ROUND(J{r},2)",     fill_=F_TB2, font_=DARK_B, fmt="#,##0.00")
+        # Col 11 = TOTAL B2 Abonos  (= total_cargo para cuadrar la póliza)
+        w(r, 11, total_cargo,            fill_=F_TB2, font_=DARK_B, fmt="#,##0.00")
 
         resumen.append({
             "Fecha":        fecha_str,
@@ -275,10 +273,9 @@ def _llenar_plantilla_mena(plantilla_bytes: bytes, day_data: dict, sorted_dates:
     w(r_t, 1, "TOTAL GENERAL", fill_=F_TOT, font_=DARK_B)
     for c_b in range(2, 9):
         w(r_t, c_b, None, fill_=F_TOT, font_=DARK_B)
+    gran_total_val = round(sum(day_data[f]["total"] for f in sorted_dates), 2)
     for abs_col in [9, 10, 11]:
-        cl = L(abs_col)
-        f  = f"=ROUND(SUM({cl}{r_ini}:{cl}{r_fin}),2)"
-        w(r_t, abs_col, f, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00")
+        w(r_t, abs_col, gran_total_val, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00")
 
     # Anchos
     ws.column_dimensions["A"].width = 14
@@ -287,8 +284,7 @@ def _llenar_plantilla_mena(plantilla_bytes: bytes, day_data: dict, sorted_dates:
     ws.column_dimensions["D"].width = 24
     ws.freeze_panes = "C4"
 
-    gran_total = sum(d["total"] for d in (day_data[f] for f in sorted_dates))
-    logs.append(f"✅ Plantilla MENA rellenada: {len(sorted_dates)} día(s) | Total Efectivo: ${gran_total:,.2f}")
+    logs.append(f"✅ Plantilla MENA rellenada: {len(sorted_dates)} día(s) | Total Efectivo: ${gran_total_val:,.2f}")
 
     buf = io.BytesIO()
     wb.save(buf)

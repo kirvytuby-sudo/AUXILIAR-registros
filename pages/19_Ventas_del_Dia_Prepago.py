@@ -244,7 +244,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         "iva":      ["iva"],
         "ieps":     ["ieps"],
         "importe":  ["importe", "total", "monto"],
-        "dsc_s":    ["descuento", "descuentosubtotal", "desc_subtotal", "discount"],
+        "dsc_s":    ["descuentosubtotal", "desc_subtotal", "descuento", "discount"],
         "dsc_v":    ["descuentoiva", "desc_iva", "descuento_iva"],
         "dsc_i":    ["descuentoieps", "desc_ieps", "descuento_ieps"],
         "cliente":  ["cliente", "client", "customer"],
@@ -439,7 +439,18 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
     act_fija = [(i, a, n) for i, (a, n) in enumerate(FIJA_COLS) if abs(fija_tot[i]) > 0.001]
     act_cred = [(i, a, n) for i, (a, n) in enumerate(CRED_COLS) if abs(cred_tot[i]) > 0.001]
     act_prep = [(i, a, n) for i, (a, n) in enumerate(PREP_COLS) if abs(prep_tot[i]) > 0.001]
-    logs.append(f"📊 Columnas activas — Fijas:{len(act_fija)} | Crédito:{len(act_cred)}/{N_CRED} | Prepago:{len(act_prep)}/{N_PREP}")
+
+    # Filtrar ABONO_COLS: ocultar Diesel/IEPS vacíos; Efectivo siempre al final
+    _ABO_KEYS = ["gs", "gp", "gd", "iva", "ieps_gs", "ieps_gp", "ieps_gd"]
+    _abo_tots = [sum(day_data[f][k] for f in sorted_dates) for k in _ABO_KEYS]
+    act_abo = [(j, a, n, _ABO_KEYS[j])
+               for j, (a, n) in enumerate(ABONO_COLS[:-1])
+               if abs(_abo_tots[j]) > 0.001]
+    act_abo.append((EFE_IDX, ABONO_COLS[EFE_IDX][0], ABONO_COLS[EFE_IDX][1], "efectivo"))
+    NEW_EFE_IDX = len(act_abo) - 1
+
+    logs.append(f"📊 Columnas activas — Fijas:{len(act_fija)} | Crédito:{len(act_cred)}/{N_CRED} | "
+                f"Prepago:{len(act_prep)}/{N_PREP} | Abonos:{len(act_abo)}")
 
     # ── Construir Excel con openpyxl ────────────────────────────────────────
     def fill(h): return PatternFill("solid", fgColor=h)
@@ -480,6 +491,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
     FIJA_META  = [(a, n) for _, a, n in act_fija]
     CRED_META  = [(a, n) for _, a, n in act_cred]
     PREP_META  = [(a, n) for _, a, n in act_prep]
+    ABONO_META = [(a, n) for _, a, n, __ in act_abo]
 
     # DescuentoSubtotal — cuenta de plantilla (402-XX) o fallback hardcoded
     _desc_tot  = sum(day_data[f]["desc"] for f in sorted_dates)
@@ -492,7 +504,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
 
     ALL_COLS = (FIXED_META + FIJA_META + CRED_META + PREP_META +
                 DESC_META + [(None,"TOTAL B2")] +
-                ABONO_COLS + [(None,"TOTAL B2"), (None,"CONCILIACION")])
+                ABONO_META + [(None,"TOTAL B2"), (None,"CONCILIACION")])
 
     N8  = 8
     NF_ = N8  + len(FIJA_META)
@@ -501,7 +513,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
     ND_ = NP_ if show_desc else -1          # -1 = columna no presente
     NT1_= NP_ + (1 if show_desc else 0)     # TOTAL B2 Cargos
     NA_ = NT1_+ 1
-    NT2_= NA_ + len(ABONO_COLS)
+    NT2_= NA_ + len(act_abo)
     # CONC es NT2_+1 (0-indexed = NT2_)
 
     def hdr_fill(ci):
@@ -511,7 +523,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         if ci < NP_:  return F_HDR_PREP
         if ci == ND_: return F_HDR_DESC
         if ci == NT1_:return F_HDR_TB2
-        if ci == NA_ + EFE_IDX: return F_HDR_EFE
+        if ci == NA_ + NEW_EFE_IDX: return F_HDR_EFE
         if ci < NT2_: return F_HDR_ABO
         if ci == NT2_:return F_HDR_TB2
         return F_HDR_CONC
@@ -522,7 +534,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         if ci < NP_:  return F_PREP
         if ci == ND_: return F_DESC
         if ci == NT1_:return F_TB2
-        if ci == NA_ + EFE_IDX: return F_EFE
+        if ci == NA_ + NEW_EFE_IDX: return F_EFE
         if ci < NT2_: return F_ABO
         if ci == NT2_:return F_TB2
         return F_CONC
@@ -593,7 +605,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         L      = openpyxl.utils.get_column_letter
         c_tb2c = NT1_ + 1          # columna TOTAL B2 Cargos  (1-indexed)
         c_abo0 = NA_  + 1          # primera columna de abonos (1-indexed)
-        c_efe  = NA_  + EFE_IDX + 1  # columna Efectivo (última abono, 1-indexed)
+        c_efe  = NA_  + NEW_EFE_IDX + 1  # columna Efectivo (última abono activo, 1-indexed)
         c_tb2a = NT2_ + 1          # columna TOTAL B2 Abonos  (1-indexed)
         c_conc = NT2_ + 2          # columna CONCILIACION      (1-indexed)
 
@@ -608,24 +620,26 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         w(r, col, formula_tb2c, fill_=F_TB2, font_=DARK_B, fmt="#,##0.00"); col += 1
         totals["tb2c"] += tb2c_py
 
-        # Abonos individuales (Python values, excepto Efectivo que es fórmula)
-        gs_ = round(d["gs"],      2); gp_  = round(d["gp"],      2); gd_  = round(d["gd"],      2)
-        iva_= round(d["iva"],     2); igs_ = round(d["ieps_gs"], 2)
-        igp_= round(d["ieps_gp"],2); igd_ = round(d["ieps_gd"], 2)
-        otros    = round(gs_+gp_+gd_+iva_+igs_+igp_+igd_, 2)
-        efectivo = round(tb2c_py - otros, 2)
-        abo_vals = [gs_, gp_, gd_, iva_, igs_, igp_, igd_, efectivo]
+        # Abonos individuales — solo columnas activas (act_abo)
+        _abo_map = {
+            "gs": round(d["gs"], 2), "gp": round(d["gp"], 2), "gd": round(d["gd"], 2),
+            "iva": round(d["iva"], 2), "ieps_gs": round(d["ieps_gs"], 2),
+            "ieps_gp": round(d["ieps_gp"], 2), "ieps_gd": round(d["ieps_gd"], 2),
+        }
+        _otros_activos = round(sum(_abo_map[fk] for _, _, _, fk in act_abo[:-1]), 2)
+        efectivo = round(tb2c_py - _otros_activos, 2)
 
-        for j, (ac, nm) in enumerate(ABONO_COLS):
-            df = F_EFE if j == EFE_IDX else F_ABO
-            if j == EFE_IDX:
-                # Efectivo = TB2 Cargos − suma de los demás abonos → garantiza CONC = 0
+        for j_out, (j_orig, ac, nm, fk) in enumerate(act_abo):
+            df = F_EFE if j_out == NEW_EFE_IDX else F_ABO
+            if j_out == NEW_EFE_IDX:
+                # Efectivo = TB2 Cargos − suma de los demás abonos activos
                 formula_efe = f"=ROUND({L(c_tb2c)}{r}-SUM({L(c_abo0)}{r}:{L(c_efe-1)}{r}),2)"
                 w(r, col, formula_efe, fill_=df, font_=DARK, fmt="#,##0.00")
             else:
-                val = round(abo_vals[j], 2) or None
+                val = _abo_map.get(fk, 0)
+                val = round(val, 2) or None
                 w(r, col, val, fill_=df, font_=DARK, fmt="#,##0.00")
-                if val: totals[f"a{j}"] += abo_vals[j]
+                if val: totals[f"a{j_orig}"] += _abo_map.get(fk, 0)
             col += 1
         totals[f"a{EFE_IDX}"] += efectivo
 
@@ -657,11 +671,11 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
     # Columnas numéricas: fórmula =SUM(X4:Xn)
     col_num_start = 9   # primera columna numérica (fijas)
     n_num_cols = (len(act_fija) + len(act_cred) + len(act_prep) +
-                  1 +                # DescuentoSubtotal
-                  1 +                # TOTAL B2 cargos
-                  len(ABONO_COLS) +  # abonos
-                  1 +                # TOTAL B2 abonos
-                  1)                 # CONCILIACION
+                  (1 if show_desc else 0) +  # DescuentoSubtotal (solo si hay datos)
+                  1 +                         # TOTAL B2 cargos
+                  len(act_abo) +              # abonos activos (sin vacíos)
+                  1 +                         # TOTAL B2 abonos
+                  1)                          # CONCILIACION
 
     for rel in range(n_num_cols):
         abs_col = col_num_start + rel   # columna Excel (1-indexed)
@@ -669,8 +683,8 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         formula = f"=ROUND(SUM({col_letter}{r_ini}:{col_letter}{r_fin}),2)"
 
         # CONCILIACION total: fórmula diferencia TB2 cargos − TB2 abonos
-        col_tb2c = col_num_start + len(act_fija) + len(act_cred) + len(act_prep) + 1  # +1 para desc
-        col_tb2a = col_tb2c + 1 + len(ABONO_COLS)  # TB2 abonos
+        col_tb2c = col_num_start + len(act_fija) + len(act_cred) + len(act_prep) + (1 if show_desc else 0)
+        col_tb2a = col_tb2c + 1 + len(act_abo)  # TB2 abonos
         col_conc = col_tb2a + 1
         if abs_col == col_conc:
             l_tb2c = openpyxl.utils.get_column_letter(col_tb2c)

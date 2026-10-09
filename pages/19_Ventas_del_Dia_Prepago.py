@@ -189,109 +189,6 @@ def _leer_plantilla(plantilla_bytes: bytes):
         st.warning(f"⚠ No se pudo leer la plantilla: {e}")
     return fija, cred, prep, desc
 
-# ── Relleno de plantilla MENA (modo sin separación Crédito/Prepago) ──────────
-def _llenar_plantilla_mena(plantilla_bytes: bytes, day_data: dict, sorted_dates: list,
-                            despachos_nombre: str, logs: list) -> tuple[bytes, list, list]:
-    """
-    Carga la plantilla 'VENTAS DEL DIA MENA' y rellena la hoja 'poliza IA'
-    con una fila por día: meta + TOTAL B2 cargos + Efectivo (101-01-0001) + TOTAL B2 abonos.
-    """
-    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter as L
-
-    wb = openpyxl.load_workbook(io.BytesIO(plantilla_bytes))
-    if "poliza IA" not in wb.sheetnames:
-        raise RuntimeError("La plantilla no tiene hoja 'poliza IA'.")
-    ws = wb["poliza IA"]
-
-    # Estilos rápidos
-    def fill(h):   return PatternFill("solid", fgColor=h)
-    def mfont(**kw): return Font(name="Calibri", size=9, **kw)
-    GS_ = Side(border_style="thin", color="BFBFBF")
-    BRD = Border(left=GS_, right=GS_, top=GS_, bottom=GS_)
-    CTR = Alignment(horizontal="center", vertical="center")
-    F_WHITE = fill("FFFFFF"); F_TB2 = fill("FFF8DC"); F_EFE = fill("FCE4D6")
-    F_TOT   = fill("FFD966"); F_TOT_CONC = fill("92D050")
-    DARK    = mfont(color="1F3864"); DARK_B = mfont(color="1F3864", bold=True)
-
-    def w(r, c, val, fill_=None, font_=None, fmt=None):
-        cell = ws.cell(r, c, val)
-        cell.fill      = fill_ or F_WHITE
-        cell.font      = font_ or DARK
-        cell.alignment = CTR
-        cell.border    = BRD
-        if fmt:
-            cell.number_format = fmt
-
-    # Limpiar filas de datos previos (fila 4 en adelante, hasta el final)
-    _MAX_ROWS = ws.max_row
-    for r_clr in range(4, _MAX_ROWS + 1):
-        for c_clr in range(1, 12):
-            cell = ws.cell(r_clr, c_clr)
-            cell.value = None
-
-    _ABO_KEYS = ["gs", "gp", "gd", "iva", "ieps_gs", "ieps_gp", "ieps_gd"]
-    resumen = []
-
-    for ri, fecha in enumerate(sorted_dates):
-        d   = day_data[fecha]
-        r   = ri + 4
-        fecha_str  = fecha.strftime("%d/%m/%Y") if hasattr(fecha, "strftime") else str(fecha)
-        fecha_cell = fecha
-
-        # Columnas meta (1-8)
-        w(r, 1, "CLI",                              fill_=F_WHITE, font_=DARK)
-        w(r, 2, fecha_cell,                         fill_=F_WHITE, font_=DARK, fmt="DD/MM/YYYY")
-        w(r, 3, f"VENTAS DEL DIA {fecha_str}",      fill_=F_WHITE, font_=DARK)
-        w(r, 4, f"VENTAS DEL DIA {fecha_str}",      fill_=F_WHITE, font_=DARK)
-        for c_blank in range(5, 9):
-            w(r, c_blank, None, fill_=F_WHITE, font_=DARK)
-
-        # Totales
-        total_cargo  = round(d["total"], 2)
-        total_abonos = round(sum(d[k] for k in _ABO_KEYS), 2)
-
-        # Col 9  = TOTAL B2 Cargos  (= Efectivo, única cta. cargo en esta plantilla)
-        w(r,  9, total_cargo,            fill_=F_TB2, font_=DARK_B, fmt="#,##0.00")
-        # Col 10 = Efectivo 101-01-0001
-        w(r, 10, total_cargo,            fill_=F_EFE, font_=DARK,   fmt="#,##0.00")
-        # Col 11 = TOTAL B2 Abonos  (= total_cargo para cuadrar la póliza)
-        w(r, 11, total_cargo,            fill_=F_TB2, font_=DARK_B, fmt="#,##0.00")
-
-        resumen.append({
-            "Fecha":        fecha_str,
-            "TB2 Cargos":   total_cargo,
-            "Efectivo":     total_cargo,
-            "TB2 Abonos":   total_cargo,
-            "Conciliación": 0.0,
-        })
-
-    # Fila TOTAL GENERAL
-    r_t   = len(sorted_dates) + 4
-    r_ini = 4
-    r_fin = r_t - 1
-    w(r_t, 1, "TOTAL GENERAL", fill_=F_TOT, font_=DARK_B)
-    for c_b in range(2, 9):
-        w(r_t, c_b, None, fill_=F_TOT, font_=DARK_B)
-    gran_total_val = round(sum(day_data[f]["total"] for f in sorted_dates), 2)
-    for abs_col in [9, 10, 11]:
-        w(r_t, abs_col, gran_total_val, fill_=F_TOT, font_=DARK_B, fmt="#,##0.00")
-
-    # Anchos
-    ws.column_dimensions["A"].width = 14
-    ws.column_dimensions["B"].width = 12
-    ws.column_dimensions["C"].width = 24
-    ws.column_dimensions["D"].width = 24
-    ws.freeze_panes = "C4"
-
-    logs.append(f"✅ Plantilla MENA rellenada: {len(sorted_dates)} día(s) | Total Efectivo: ${gran_total_val:,.2f}")
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return buf.read(), logs, resumen
-
-
 # ── Motor de generación ───────────────────────────────────────────────────────
 def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, despachos_nombre: str = "archivo.xlsx", modo_sep: bool = True) -> tuple[bytes, list, list]:
     """
@@ -379,7 +276,6 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
             "fija": [0.0] * N_FIJA, "cred": [0.0] * N_CRED, "prep": [0.0] * N_PREP,
             "desc": 0.0, "gs": 0.0, "gp": 0.0, "gd": 0.0,
             "iva": 0.0, "ieps_gs": 0.0, "ieps_gp": 0.0, "ieps_gd": 0.0,
-            "total": 0.0,  # acumulado total de cargos (todos los modos)
         }
 
     day_data = defaultdict(new_day)
@@ -462,7 +358,6 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
             elif prod == "GD": d["gd"] += sub; d["iva"] += iva; d["ieps_gd"] += ieps
 
             cargo = imp
-            d["total"] += cargo
 
             # Mapear cliente a fija o crédito usando matching normalizado
             acct_f = _buscar_fija_acct(cliente_raw)
@@ -504,7 +399,6 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
 
             d["desc"] += dsc_s - dsc_v   # DescuentoSubtotal menos descuentoIva
             cargo = imp                    # Importe ya es el neto (descuentos aplicados)
-            d["total"] += cargo
 
             if not modo_sep:
                 # Sin separación: toda transacción va a FIJA (ignora tipo)
@@ -564,12 +458,6 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
 
     logs.append(f"📊 Columnas activas — Fijas:{len(act_fija)} | Crédito:{len(act_cred)}/{N_CRED} | "
                 f"Prepago:{len(act_prep)}/{N_PREP} | Abonos:{len(act_abo)}")
-
-    # ── Modo MENA: rellenar plantilla cuando toggle=DESACTIVADO ─────────────
-    if not modo_sep and plantilla_bytes is not None:
-        return _llenar_plantilla_mena(
-            plantilla_bytes, day_data, sorted_dates, despachos_nombre, logs
-        )
 
     # ── Construir Excel con openpyxl ────────────────────────────────────────
     def fill(h): return PatternFill("solid", fgColor=h)

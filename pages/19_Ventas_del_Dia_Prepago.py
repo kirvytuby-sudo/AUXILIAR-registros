@@ -153,9 +153,9 @@ def _buscar_en(lista, nombre):
 # ── Leer cuentas de la plantilla ─────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def _leer_plantilla(plantilla_bytes: bytes):
-    """Retorna (cta_fija, cta_credito, cta_prepago) como listas de (cuenta, nombre).
+    """Retorna (cta_fija, cta_credito, cta_prepago, cta_desc) como listas de (cuenta, nombre).
     Detecta cuentas por prefijo de número — no depende de filas sentinela."""
-    fija, cred, prep = [], [], []
+    fija, cred, prep, desc = [], [], [], []
     try:
         wb = openpyxl.load_workbook(io.BytesIO(plantilla_bytes))
         hoja = None
@@ -182,10 +182,12 @@ def _leer_plantilla(plantilla_bytes: bytes):
                     cred.append((acct, nombre))
                 elif acct.startswith("105-01-0004-") and nombre:
                     prep.append((acct, nombre))
+                elif acct.startswith("402-") and nombre:
+                    desc.append((acct, nombre))
         wb.close()
     except Exception as e:
         st.warning(f"⚠ No se pudo leer la plantilla: {e}")
-    return fija, cred, prep
+    return fija, cred, prep, desc
 
 # ── Motor de generación ───────────────────────────────────────────────────────
 def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, despachos_nombre: str = "archivo.xlsx") -> tuple[bytes, list, list]:
@@ -197,10 +199,10 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
 
     # Cargar cuentas de plantilla
     if plantilla_bytes:
-        cta_fija, cta_credito, cta_prepago = _leer_plantilla(plantilla_bytes)
-        logs.append(f"✅ Plantilla: {len(cta_fija)} FIJA, {len(cta_credito)} Crédito, {len(cta_prepago)} Prepago.")
+        cta_fija, cta_credito, cta_prepago, cta_desc = _leer_plantilla(plantilla_bytes)
+        logs.append(f"✅ Plantilla: {len(cta_fija)} FIJA, {len(cta_credito)} Crédito, {len(cta_prepago)} Prepago, {len(cta_desc)} Descuento.")
     else:
-        cta_fija, cta_credito, cta_prepago = [], [], []
+        cta_fija, cta_credito, cta_prepago, cta_desc = [], [], [], []
         logs.append("⚠ Sin plantilla — no hay cuentas disponibles.")
 
     # FIJA_COLS: prioridad a plantilla (evita hardcoded), fallback a FIJAS_DEF
@@ -479,16 +481,25 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
     CRED_META  = [(a, n) for _, a, n in act_cred]
     PREP_META  = [(a, n) for _, a, n in act_prep]
 
+    # DescuentoSubtotal — cuenta de plantilla (402-XX) o fallback hardcoded
+    _desc_tot  = sum(day_data[f]["desc"] for f in sorted_dates)
+    show_desc  = abs(_desc_tot) > 0.001
+    if cta_desc:
+        _desc_acct, _desc_name = cta_desc[0]
+    else:
+        _desc_acct, _desc_name = "402-01", "DescuentoSubtotal"
+    DESC_META  = [(_desc_acct, _desc_name)] if show_desc else []
+
     ALL_COLS = (FIXED_META + FIJA_META + CRED_META + PREP_META +
-                [("402-01","DescuentoSubtotal"), (None,"TOTAL B2")] +
+                DESC_META + [(None,"TOTAL B2")] +
                 ABONO_COLS + [(None,"TOTAL B2"), (None,"CONCILIACION")])
 
     N8  = 8
     NF_ = N8  + len(FIJA_META)
     NC_ = NF_ + len(CRED_META)
     NP_ = NC_ + len(PREP_META)
-    ND_ = NP_
-    NT1_= ND_ + 1
+    ND_ = NP_ if show_desc else -1          # -1 = columna no presente
+    NT1_= NP_ + (1 if show_desc else 0)     # TOTAL B2 Cargos
     NA_ = NT1_+ 1
     NT2_= NA_ + len(ABONO_COLS)
     # CONC es NT2_+1 (0-indexed = NT2_)
@@ -573,9 +584,10 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
             w(r, col, val, fill_=F_PREP, font_=DARK, fmt="#,##0.00"); col += 1
             if val: totals[f"P{orig_i}"] += val
 
-        desc = round(d["desc"], 2) or None
-        w(r, col, desc, fill_=F_DESC, font_=DARK, fmt="#,##0.00"); col += 1
-        if desc: totals["desc"] += desc
+        if show_desc:
+            desc = round(d["desc"], 2) or None
+            w(r, col, desc, fill_=F_DESC, font_=DARK, fmt="#,##0.00"); col += 1
+            if desc: totals["desc"] += desc
 
         # Posiciones 1-indexed (para fórmulas Excel) — derivadas de los índices 0-indexed
         L      = openpyxl.utils.get_column_letter
@@ -590,7 +602,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
             sum(d["fija"][i] for i, _, __ in act_fija) +
             sum(d["cred"][i] for i, _, __ in act_cred) +
             sum(d["prep"][i] for i, _, __ in act_prep) +
-            (d["desc"] or 0), 2
+            (d["desc"] if show_desc else 0), 2
         )
         formula_tb2c = f"=ROUND(SUM({L(9)}{r}:{L(c_tb2c-1)}{r}),2)"
         w(r, col, formula_tb2c, fill_=F_TB2, font_=DARK_B, fmt="#,##0.00"); col += 1

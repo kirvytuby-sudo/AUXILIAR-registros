@@ -286,7 +286,7 @@ def _leer_despachos(file_bytes, filename, logs):
     return data, col_map
 
 
-def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None, restar_desc_ieps=False):
+def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None, restar_desc_ieps=False, restar_desc_ieps_cargo=False):
     """
     Procesa el control de despachos y genera la póliza Excel.
     Retorna (excel_bytes: bytes, logs: list[str]).
@@ -397,11 +397,11 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None, res
             dsc_s = _f(r, C_DESC_SUB)
             dsc_v = _f(r, C_DESC_IVA)
             dsc_i = _f(r, C_DESC_IEPS)
-            cli_day[(fecha, cliente)]  += _f(r, C_IMPORTE) - dsc_s - dsc_v - dsc_i
+            cli_day[(fecha, cliente)]  += _f(r, C_IMPORTE) - dsc_s - dsc_v - (dsc_i if restar_desc_ieps_cargo else 0.0)
             prod_day[(fecha, prod)]    += _f(r, C_SUBTOTAL)
             iva_day[fecha]             += _f(r, C_IVA)
             ieps_prod[(fecha, prod)]   += _f(r, C_IEPS) - (_f(r, C_DESC_IEPS) if restar_desc_ieps else 0.0)
-            desc_sub[fecha]            += dsc_s + dsc_i
+            desc_sub[fecha]            += dsc_s
             desc_iva[fecha]            += dsc_v
         except Exception:
             continue
@@ -796,11 +796,19 @@ with col2:
         help="Plantilla MENA con hoja 'CUENTAS'. La cuenta de DescuentoSubtotal se lee de la plantilla.",
     )
 
-restar_desc_ieps = st.checkbox(
-    "Restar descuentoIeps de columnas IEPS",
-    value=False,
-    help="Activa si el mes requiere: IEPS = Ieps − descuentoIeps. Desactiva para usar Ieps directo.",
-)
+col_op1, col_op2 = st.columns(2)
+with col_op1:
+    restar_desc_ieps_cargo = st.checkbox(
+        "Restar descuentoIeps de columnas de cargos",
+        value=False,
+        help="Activa si el mes requiere: Cargo = Importe − descuentoSubtotal − descuentoIva − descuentoIeps.",
+    )
+with col_op2:
+    restar_desc_ieps = st.checkbox(
+        "Restar descuentoIeps de columnas IEPS",
+        value=False,
+        help="Activa si el mes requiere: IEPS = Ieps − descuentoIeps. Desactiva para usar Ieps directo.",
+    )
 st.markdown("")
 generar = st.button(
     "⛽  Generar Póliza MENA 2024",
@@ -822,6 +830,7 @@ if generar and despachos_file is not None and plantilla_file is not None:
                 despachos_file.name,
                 plantilla_file.read(),
                 restar_desc_ieps=restar_desc_ieps,
+                restar_desc_ieps_cargo=restar_desc_ieps_cargo,
             )
 
             base = despachos_file.name.rsplit('.', 1)[0]

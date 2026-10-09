@@ -128,7 +128,7 @@ ABONO_COLS = [
     ("401-01-0001-0006-0001", "IEPS DE Gasolina Magna"),
     ("401-01-0001-0006-0002", "IEPS de Premium"),
     ("401-01-0001-0006-0003", "IEPS de Diesel"),
-    ("101-01-0002",      "Efectivo cta. diferencias"),   # balance → CONC = 0
+    ("101-01-0001",      "Efectivo cta. diferencias"),   # balance → CONC = 0
 ]
 EFE_IDX = len(ABONO_COLS) - 1  # índice de Efectivo dentro de ABONO_COLS
 
@@ -244,6 +244,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
         "importe":  ["importe", "total", "monto"],
         "dsc_s":    ["descuento", "descuentosubtotal", "desc_subtotal", "discount"],
         "dsc_v":    ["descuentoiva", "desc_iva", "descuento_iva"],
+        "dsc_i":    ["descuentoieps", "desc_ieps", "descuento_ieps"],
         "cliente":  ["cliente", "client", "customer"],
         "tipo":     ["tipo", "type", "tipocliente", "tipo_pago"],
     }
@@ -385,12 +386,13 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
             imp     = float(_g(row, "importe")  or 0)
             dsc_s   = float(_g(row, "dsc_s")    or 0)
             dsc_v   = float(_g(row, "dsc_v")    or 0)
+            dsc_i   = float(_g(row, "dsc_i")    or 0)
             cliente = str(_g(row, "cliente")    or "").strip()
             tipo    = str(_g(row, "tipo")       or "").strip()
 
             d = day_data[fecha]
-            if prod == "GS":    d["gs"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gs"] += ieps
-            elif prod == "GP":  d["gp"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gp"] += ieps
+            if prod == "GS":    d["gs"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gs"] += (ieps - dsc_i)
+            elif prod == "GP":  d["gp"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gp"] += (ieps - dsc_i)
             elif prod == "GD":  d["gd"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gd"] += ieps
 
             d["desc"] += dsc_s

@@ -395,7 +395,7 @@ def procesar_prepago(despachos_bytes: bytes, plantilla_bytes: bytes | None, desp
             elif prod == "GP":  d["gp"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gp"] += (ieps - dsc_i)
             elif prod == "GD":  d["gd"] += sub;  d["iva"] += (iva - dsc_v); d["ieps_gd"] += ieps
 
-            d["desc"] += dsc_s
+            d["desc"] += dsc_s - dsc_v
             cargo = imp - dsc_s - dsc_v
 
             if tipo in ("Contado", "Tarjeta", "Monedero"):

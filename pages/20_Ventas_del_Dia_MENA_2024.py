@@ -401,7 +401,7 @@ def procesar_ventas(despachos_bytes, despachos_nombre, plantilla_bytes=None):
             prod_day[(fecha, prod)]    += _f(r, C_SUBTOTAL)
             iva_day[fecha]             += _f(r, C_IVA)
             ieps_prod[(fecha, prod)]   += _f(r, C_IEPS) - _f(r, C_DESC_IEPS)
-            desc_sub[fecha]            += dsc_s
+            desc_sub[fecha]            += dsc_s + dsc_i
             desc_iva[fecha]            += dsc_v
         except Exception:
             continue

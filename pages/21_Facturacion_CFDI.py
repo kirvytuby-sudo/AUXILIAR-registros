@@ -93,6 +93,19 @@ api = fx.Facturapi(EMPRESAS[_alias]["secret_key"])
 if api.modo_pruebas:
     st.info("🧪 **Modo pruebas** — las facturas se timbran en el ambiente de pruebas "
             "y **no tienen validez fiscal**. Cambia a una llave `sk_live_` para facturar en real.")
+    with st.expander("🚀 Pasar a facturación real (Live)"):
+        st.markdown(
+            "1. En Facturapi completa: **CSD**, **datos fiscales**, **Carta Manifiesto** y **suscripción**.\n"
+            "2. En **API Keys → Live Secret Key** da clic en **Copiar**.\n"
+            "3. En Streamlit → **Settings → Secrets**, reemplaza la llave dentro de las comillas de "
+            "`secret_key` por la `sk_live_…` y guarda.")
+        _l1, _l2, _l3 = st.columns(3)
+        _l1.link_button("📋 Pendientes en Facturapi", "https://dashboard.facturapi.io/",
+                        use_container_width=True)
+        _l2.link_button("🔑 Copiar llave Live", "https://dashboard.facturapi.io/integration/apikeys",
+                        use_container_width=True)
+        _l3.link_button("⚙️ Abrir Secrets de Streamlit", "https://share.streamlit.io/",
+                        use_container_width=True)
 else:
     st.success(f"🟢 **Producción** — emisor: **{EMPRESAS[_alias]['nombre']}**. "
                "Las facturas se timbran ante el SAT con validez fiscal.")

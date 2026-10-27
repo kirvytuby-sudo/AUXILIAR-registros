@@ -187,8 +187,40 @@ UNIDADES_COMUNES = {
 IVA_OPCIONES = {"IVA 16%": 0.16, "IVA 8% (frontera)": 0.08, "IVA 0%": 0.0, "Exento": None}
 
 
-def impuestos_concepto(iva_label: str, ret_iva: bool = False, ret_isr: bool = False) -> list[dict]:
-    """Arma la lista `taxes` de Facturapi para un concepto."""
+# ── Retenciones (ISR / IVA) ───────────────────────────────────────────────────
+# Solo aplican cuando el RECEPTOR es persona moral (RFC de 12 caracteres).
+#   ISR 10%    · Honorarios PF → PM ............ art. 106 LISR
+#   ISR 10%    · Arrendamiento PF → PM ......... art. 116 LISR
+#   ISR 1.25%  · RESICO PF (626) → PM .......... art. 113-J LISR
+#   IVA 2/3    · Honorarios / arrendamiento / RESICO (servicios o uso de bienes)
+#                PF → PM = 10.6667% ............ art. 1-A fr. II a) LIVA, art. 3 RLIVA
+#   IVA 4%     · Autotransporte terrestre de bienes (fletes) a PM .. art. 1-A fr. II c) LIVA, art. 3 RLIVA
+#   IVA 6%     · Servicios en que se pone personal a disposición .. art. 1-A fr. IV LIVA
+IVA_2_3 = 0.106667
+RETENCIONES = {
+    "Sin retenciones": {"isr": 0.0, "iva": 0.0},
+    "Honorarios PF (612) → PM · ISR 10% + IVA 2/3": {"isr": 0.10, "iva": IVA_2_3},
+    "Arrendamiento PF (606) → PM · ISR 10% + IVA 2/3": {"isr": 0.10, "iva": IVA_2_3},
+    "RESICO PF (626) servicios/arrendamiento → PM · ISR 1.25% + IVA 2/3": {"isr": 0.0125, "iva": IVA_2_3},
+    "RESICO PF (626) venta de bienes → PM · ISR 1.25%": {"isr": 0.0125, "iva": 0.0},
+    "Fletes / autotransporte de bienes → PM · IVA 4%": {"isr": 0.0, "iva": 0.04},
+    "Personal a disposición (servicios especializados) → PM · IVA 6%": {"isr": 0.0, "iva": 0.06},
+    "Personalizado…": None,
+}
+# Sugerencia según el régimen del EMISOR (si el receptor es persona moral)
+RETENCION_SUGERIDA = {
+    "612": "Honorarios PF (612) → PM · ISR 10% + IVA 2/3",
+    "606": "Arrendamiento PF (606) → PM · ISR 10% + IVA 2/3",
+    "626": "RESICO PF (626) servicios/arrendamiento → PM · ISR 1.25% + IVA 2/3",
+}
+
+
+def es_persona_moral(rfc: str | None) -> bool:
+    return bool(rfc) and len(rfc.strip()) == 12
+
+
+def impuestos_concepto(iva_label: str, ret_isr: float = 0.0, ret_iva: float = 0.0) -> list[dict]:
+    """Arma la lista `taxes` de Facturapi para un concepto. Tasas en decimal."""
     taxes: list[dict] = []
     tasa = IVA_OPCIONES.get(iva_label, 0.16)
     if tasa is None:
@@ -196,8 +228,7 @@ def impuestos_concepto(iva_label: str, ret_iva: bool = False, ret_isr: bool = Fa
     else:
         taxes.append({"type": "IVA", "rate": tasa})
     if ret_iva:
-        # 2/3 partes del IVA (servicios profesionales / arrendamiento PF→PM)
-        taxes.append({"type": "IVA", "rate": 0.106667, "withholding": True})
+        taxes.append({"type": "IVA", "rate": round(ret_iva, 6), "withholding": True})
     if ret_isr:
-        taxes.append({"type": "ISR", "rate": 0.10, "withholding": True})
+        taxes.append({"type": "ISR", "rate": round(ret_isr, 6), "withholding": True})
     return taxes

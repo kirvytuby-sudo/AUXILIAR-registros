@@ -119,6 +119,7 @@ with tab_nueva:
 
     cliente_payload = None
     cliente_email = ""
+    receptor_rfc = ""
 
     if modo_cli == "Buscar cliente guardado":
         q = st.text_input("Buscar por nombre o RFC", key="fx_q_cli")
@@ -135,6 +136,7 @@ with tab_nueva:
             c = clientes[sel]
             cliente_payload = c["id"]
             cliente_email = c.get("email") or ""
+            receptor_rfc = c.get("tax_id") or ""
             st.caption(f"Régimen {c.get('tax_system', '—')} · C.P. "
                        f"{(c.get('address') or {}).get('zip', '—')} · {cliente_email or 'sin correo'}")
         else:
@@ -150,6 +152,7 @@ with tab_nueva:
                                format_func=lambda k: f"{k} · {fx.REGIMENES[k]}", key="fx_cli_reg")
         cp = c4.text_input("C.P. fiscal", max_chars=5, key="fx_cli_cp").strip()
         cliente_email = c5.text_input("Correo (opcional)", key="fx_cli_mail").strip()
+        receptor_rfc = rfc
         guardar_cli = st.checkbox("Guardar cliente para la próxima vez", value=True, key="fx_cli_save")
 
         errores_cli = []
@@ -168,6 +171,7 @@ with tab_nueva:
     else:  # Público en general
         st.caption("RFC XAXX010101000 · Régimen 616 · Uso S01. "
                    "El C.P. debe ser el del lugar de expedición (tu C.P. fiscal).")
+        receptor_rfc = RFC_PUBLICO
         cp_pg = st.text_input("C.P. de expedición", max_chars=5, key="fx_pg_cp").strip()
         if re.fullmatch(r"\d{5}", cp_pg or ""):
             cliente_payload = {"legal_name": "PUBLICO EN GENERAL", "tax_id": RFC_PUBLICO,
@@ -233,11 +237,39 @@ with tab_nueva:
         },
     )
 
-    o1, o2, o3 = st.columns(3)
-    iva_incluido = o1.checkbox("El precio YA incluye IVA", value=False, key="fx_incl")
-    ret_iva = o2.checkbox("Retener IVA (2/3)", key="fx_retiva",
-                          help="Servicios profesionales / arrendamiento de PF a PM")
-    ret_isr = o3.checkbox("Retener ISR 10%", key="fx_retisr")
+    iva_incluido = st.checkbox("El precio YA incluye IVA", value=False, key="fx_incl")
+
+    # ── Retenciones ───────────────────────────────────────────────────────
+    st.markdown("##### Retenciones")
+    receptor_pm = fx.es_persona_moral(receptor_rfc)
+    reg_emisor = st.session_state.get("fx_reg_emisor", "")
+    opciones_ret = list(fx.RETENCIONES)
+    sugerida = fx.RETENCION_SUGERIDA.get(reg_emisor) if receptor_pm else None
+    r1, r2 = st.columns([1, 2])
+    r1.selectbox("Tu régimen (emisor)", [""] + list(fx.REGIMENES),
+                 format_func=lambda k: "— Selecciona —" if not k else f"{k} · {fx.REGIMENES[k]}",
+                 key="fx_reg_emisor")
+    idx_ret = opciones_ret.index(sugerida) if sugerida else 0
+    tipo_ret = r2.selectbox("Tipo de retención", opciones_ret, index=idx_ret,
+                            key=f"fx_tipo_ret_{reg_emisor}_{receptor_pm}")
+    if tipo_ret == "Personalizado…":
+        p1, p2 = st.columns(2)
+        ret_isr = p1.number_input("Retención ISR (%)", 0.0, 35.0, 0.0, 0.25, key="fx_ret_isr_pct") / 100
+        ret_iva = p2.number_input("Retención IVA (%)", 0.0, 16.0, 0.0, 0.0001, format="%.4f",
+                                  key="fx_ret_iva_pct",
+                                  help="2/3 del IVA = 10.6667 · fletes = 4 · personal = 6") / 100
+    else:
+        ret_isr = fx.RETENCIONES[tipo_ret]["isr"]
+        ret_iva = fx.RETENCIONES[tipo_ret]["iva"]
+
+    if (ret_isr or ret_iva) and receptor_rfc and not receptor_pm:
+        st.warning("⚠️ El receptor es **persona física** (RFC de 13 caracteres). Por regla general "
+                   "solo las **personas morales** retienen ISR e IVA; revisa si procede.")
+    if sugerida and tipo_ret != sugerida:
+        st.caption(f"💡 Sugerida por tu régimen: {sugerida}")
+    st.caption("Fundamento: ISR 10% honorarios (art. 106 LISR) y arrendamiento (art. 116 LISR) · "
+               "ISR 1.25% RESICO (art. 113-J LISR) · IVA 2/3, 4% fletes y 6% personal "
+               "(art. 1-A LIVA y art. 3 RLIVA).")
 
     # Validar conceptos y calcular totales estimados
     filas = conceptos.dropna(how="all")
@@ -262,7 +294,7 @@ with tab_nueva:
         base = cant * precio / (1 + tasa) if iva_incluido else cant * precio
         subtotal += base
         iva_tot += base * tasa
-        ret_tot += base * ((0.106667 if ret_iva else 0) + (0.10 if ret_isr else 0))
+        ret_tot += base * (ret_iva + ret_isr)
         items.append({
             "quantity": cant,
             "product": {
@@ -272,7 +304,7 @@ with tab_nueva:
                 "unit_name": fx.UNIDADES_COMUNES.get(r.get("Unidad"), ""),
                 "price": round(precio, 6),
                 "tax_included": bool(iva_incluido),
-                "taxes": fx.impuestos_concepto(imp, ret_iva, ret_isr),
+                "taxes": fx.impuestos_concepto(imp, ret_isr, ret_iva),
             },
         })
 

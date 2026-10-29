@@ -127,6 +127,12 @@ st.info(
     f"{n_bbva} PDF BBVA · {n_ban} Banorte · {n_inb} Inbursa · {n_ext} Otro"
 )
 
+verificar_vigencia = st.toggle(
+    "🔍 Verificar vigencia de CFDIs en el SAT (excluye cancelados del cálculo)",
+    value=True,
+    help="Consulta el servicio del SAT para cada CFDI emitido. Los cancelados se marcan en rojo y NO se suman al ISR/IVA."
+)
+
 if n_emit == 0 and n_rec == 0:
     st.warning("⚠️ Sube al menos XMLs emitidos **o** recibidos para continuar.")
     st.stop()
@@ -163,6 +169,7 @@ if generar:
                 excels_banorte=ban_paths or None,
                 excels_inbursa=inb_paths or None,
                 excels_extra={ext_nombre: ext_paths} if ext_paths else None,
+                verificar_vigencia=verificar_vigencia,
                 log=_log,
             )
 

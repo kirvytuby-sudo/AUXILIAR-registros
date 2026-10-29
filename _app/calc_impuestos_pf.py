@@ -4,7 +4,7 @@
 #  Versión 1.0  —  Oct 2026
 # ─────────────────────────────────────────────────────────────────────────────
 
-import glob, os, re, datetime
+import glob, os, re, datetime, time
 from xml.etree import ElementTree as ET
 from openpyxl import Workbook
 from openpyxl.styles import (PatternFill, Font, Alignment, Border, Side)
@@ -15,6 +15,89 @@ try:
     _PDFPLUMBER_OK = True
 except ImportError:
     _PDFPLUMBER_OK = False
+
+# ─── Verificación de vigencia CFDI en el SAT ─────────────────────────────────
+_SAT_CACHE: dict = {}   # uuid → 'Vigente'|'Cancelado'|'No encontrado'
+
+def verificar_cfdi_sat(uuid: str, rfc_e: str, rfc_r: str, total: float,
+                       log=print) -> str:
+    """
+    Consulta el servicio del SAT para verificar si un CFDI está vigente o cancelado.
+    Retorna: 'Vigente', 'Cancelado', 'No encontrado' o 'Error'.
+    Usa caché para no repetir consultas.
+    """
+    if not uuid:
+        return 'Sin UUID'
+    key = uuid.upper()
+    if key in _SAT_CACHE:
+        return _SAT_CACHE[key]
+
+    try:
+        import requests
+        # Servicio público del SAT — ConsultaCFDI
+        url = 'https://consultaqr.facturaelectronica.sat.gob.mx/ConsultaCFDIService.svc'
+        headers = {
+            'Content-Type': 'text/xml; charset=utf-8',
+            'SOAPAction': 'http://tempuri.org/IConsultaCFDIService/Consulta',
+        }
+        expr = (f'?re={rfc_e.strip()}&rr={rfc_r.strip()}'
+                f'&tt={total:.6f}&id={uuid.strip()}')
+        body = f"""<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+               xmlns:tem="http://tempuri.org/">
+  <soap:Body>
+    <tem:Consulta>
+      <tem:expresionImpresa><![CDATA[{expr}]]></tem:expresionImpresa>
+    </tem:Consulta>
+  </soap:Body>
+</soap:Envelope>"""
+        resp = requests.post(url, data=body.encode('utf-8'), headers=headers,
+                             timeout=10)
+        resp.raise_for_status()
+        # Parsear respuesta
+        root_r = ET.fromstring(resp.content)
+        # Buscar CodigoEstatus y Estado
+        ns_r = {'s': 'http://schemas.xmlsoap.org/soap/envelope/',
+                 't': 'http://tempuri.org/'}
+        estado_node = root_r.find('.//{http://tempuri.org/}Estado')
+        if estado_node is not None:
+            estado = estado_node.text or ''
+            if 'Vigente' in estado:
+                result = 'Vigente'
+            elif 'Cancelado' in estado or 'Cancel' in estado:
+                result = 'Cancelado'
+            else:
+                result = estado or 'No encontrado'
+        else:
+            result = 'No encontrado'
+    except Exception as exc:
+        result = 'Error'
+        log(f"  ⚠ SAT consulta UUID {uuid[:8]}...: {exc}")
+
+    _SAT_CACHE[key] = result
+    time.sleep(0.15)   # respetar rate-limit del SAT
+    return result
+
+
+def verificar_lote(cfdi_list: list, log=print) -> dict:
+    """
+    Verifica un lote de CFDIs.
+    cfdi_list: lista de dicts con uuid, rfc_e, rfc_r, total.
+    Retorna dict {uuid → estado_sat}.
+    """
+    resultados = {}
+    total_n = len(cfdi_list)
+    for i, cfdi in enumerate(cfdi_list, 1):
+        uuid = cfdi.get('uuid', '')
+        if not uuid:
+            continue
+        if i % 10 == 0 or i == 1:
+            log(f"  Verificando vigencia SAT: {i}/{total_n}...")
+        est = verificar_cfdi_sat(
+            uuid, cfdi.get('rfc_e', ''), cfdi.get('rfc_r', ''),
+            cfdi.get('total', 0.0), log)
+        resultados[uuid.upper()] = est
+    return resultados
 
 # ─── Constantes ───────────────────────────────────────────────────────────────
 MESES = {1:'ENERO',2:'FEBRERO',3:'MARZO',4:'ABRIL',5:'MAYO',6:'JUNIO',
@@ -287,6 +370,7 @@ def calcular_impuestos(rfc: str, year: int,
                        excels_banorte:    list = None,
                        excels_inbursa:    list = None,
                        excels_extra:      dict = None,
+                       verificar_vigencia: bool = True,
                        log=print):
     """
     Calcula ISR/IVA mensuales para persona física régimen 612.
@@ -339,8 +423,34 @@ def calcular_impuestos(rfc: str, year: int,
         movs_banco += _leer_excels_banco(files, bnk, log)
     log(f"  Movimientos bancarios: {len(movs_banco)}")
 
-    # 5. Amarre facturas vs banco
-    _amarre(emitidas, movs_banco)
+    # 5. Verificar vigencia SAT (opcional)
+    if verificar_vigencia and emitidas:
+        log(f"  Verificando vigencia de {len(emitidas)} CFDIs emitidos en el SAT...")
+        estados_sat = verificar_lote(emitidas, log)
+        cancelados = 0
+        for e in emitidas:
+            sat_est = estados_sat.get((e.get('uuid') or '').upper(), 'Sin verificar')
+            e['sat_estado'] = sat_est
+            if sat_est == 'Cancelado':
+                e['cancelado'] = True
+                cancelados += 1
+            else:
+                e['cancelado'] = False
+        log(f"  ✔ Vigentes: {len(emitidas)-cancelados} | Cancelados: {cancelados}")
+    else:
+        for e in emitidas:
+            e['sat_estado'] = 'Sin verificar'
+            e['cancelado'] = False
+
+    # Excluir cancelados de los cálculos (pero mantenerlos en el log para el Excel)
+    emitidas_vigentes = [e for e in emitidas if not e.get('cancelado', False)]
+
+    # 5b. Amarre facturas vs banco (solo vigentes)
+    _amarre(emitidas_vigentes, movs_banco)
+    # Marcar los cancelados también en el log completo
+    for e in emitidas:
+        if e.get('cancelado'):
+            e['estado'] = 'CANCELADO'
 
     # 6. Clasificar gastos recibidos
     ded_log = []; no_ded_log = []
@@ -364,7 +474,7 @@ def calcular_impuestos(rfc: str, year: int,
     ret_isr_m = [0.0]*13
     iva_caus = [0.0]*13; iva_acred = [0.0]*13; iva_ret_c = [0.0]*13
 
-    for e in emitidas:
+    for e in emitidas_vigentes:
         if e['tipo'] not in ('I','E'): continue
         m = e['mes']
         ing[m]      += e['sub']
@@ -774,15 +884,24 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
     ws_am.row_dimensions[2].height = 28
     FILL_LOC = PatternFill('solid',fgColor='D1FAE5')
     FILL_PEN = PatternFill('solid',fgColor='FEF2F2')
+    FILL_CAN = PatternFill('solid',fgColor='FEE2E2')  # rojo claro — cancelado
     for ri, e in enumerate([x for x in emitidas_log if x['tipo'] != 'P'], 3):
-        bg = FILL_LOC if e['estado']=='LOCALIZADA' else FILL_PEN
+        cancelado = e.get('cancelado', False)
+        if cancelado:
+            bg = FILL_CAN
+        elif e['estado']=='LOCALIZADA':
+            bg = FILL_LOC
+        else:
+            bg = FILL_PEN
+        estado_txt = e['estado']  # 'LOCALIZADA', 'PENDIENTE' o 'CANCELADO'
         rv = [(MESES[e['mes']][:3],None),(e['fecha'],None),(e['serie'],None),(e['folio'],None),(e['nom_r'],None),
               (e['sub'],MXN),(e['iva'],MXN),(e['ret_isr'],MXN),(e['ret_iva'],MXN),(e['total'],MXN),(e['neto'],MXN),
-              (e['estado'],None),(e.get('banco_fecha',''),None),(e.get('banco_monto') or '',MXN if e.get('banco_monto') else None),(e.get('banco_desc',''),None)]
+              (estado_txt,None),(e.get('banco_fecha',''),None),(e.get('banco_monto') or '',MXN if e.get('banco_monto') else None),(e.get('banco_desc',''),None)]
         for ci, (v, fmt) in enumerate(rv, 1):
             bold = ci == 12
-            col  = '14532D' if e['estado']=='LOCALIZADA' and ci==12 else \
-                   '991B1B' if e['estado']=='PENDIENTE'  and ci==12 else '000000'
+            col  = '991B1B' if cancelado and ci==12 else \
+                   '14532D' if estado_txt=='LOCALIZADA' and ci==12 else \
+                   '6B7280' if estado_txt=='PENDIENTE'  and ci==12 else '000000'
             put(ws_am, ri, ci, v or '', bold, col, bg, LL if ci in(1,2,3,4,5,12,13,15) else RR, fmt)
         ws_am.row_dimensions[ri].height = 13
     for ci, w in enumerate([8,11,7,10,32,13,12,11,11,13,13,11,11,14,40], 1):

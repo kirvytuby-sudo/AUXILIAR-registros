@@ -160,6 +160,13 @@ class ImpuestosPFMixin:
                  lambda: self._ipf_add_folder(self._ipf_inbursa_list, ext='*.xls*'),
                  lambda: self._ipf_add_files(self._ipf_inbursa_list, [('Excel','*.xlsx;*.xls')]))
 
+        # ── Verificar vigencia
+        vv_frame = tk.Frame(inner, bg=COLOR_F); vv_frame.pack(fill='x', padx=8, pady=2)
+        self._ipf_verificar = tk.BooleanVar(value=True)
+        tk.Checkbutton(vv_frame, text='🔍 Verificar vigencia de CFDIs en el SAT (excluye cancelados del cálculo)',
+                       variable=self._ipf_verificar, bg=COLOR_F,
+                       font=('Arial',9), fg='#1E3A8A').pack(side='left')
+
         # ── Progress bar
         pb_frame = tk.Frame(inner, bg=COLOR_F); pb_frame.pack(fill='x', padx=8, pady=4)
         self._ipf_pb  = ttk.Progressbar(pb_frame, mode='indeterminate', length=300)
@@ -222,6 +229,8 @@ class ImpuestosPFMixin:
         self._pb_iniciar(self._ipf_pb, self._ipf_pbl)
         self._ipf_pbl.config(text='Calculando...')
 
+        verificar = self._ipf_verificar.get()
+
         def hilo():
             try:
                 res, emit_log, ded_log, no_ded_log = calcular_impuestos(
@@ -231,6 +240,7 @@ class ImpuestosPFMixin:
                     pdfs_bbva=bbva if bbva else None,
                     excels_banorte=ban if ban else None,
                     excels_inbursa=inb if inb else None,
+                    verificar_vigencia=verificar,
                     log=lambda t: self.after(0, self._log, t))
                 generar_excel(res, emit_log, ded_log, no_ded_log,
                               rfc, nombre, year, out_path,

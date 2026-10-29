@@ -37,6 +37,7 @@ pg = st.navigation(
             st.Page("pages/15_Opinion_IMSS.py",               title="Opinión IMSS",                icon="🏥"),
             st.Page("pages/21_Facturacion_CFDI.py",       title="Facturación CFDI",            icon="🧾"),
             st.Page("pages/16_Buzon_SAT.py",                 title="Buzón SAT",                   icon="🗂"),
+            st.Page("pages/13_Impuestos_PF.py",               title="Impuestos PF",                icon="📊"),
         ],
     },
     position="sidebar",

@@ -106,18 +106,19 @@ MESES_C = {1:'ENE',2:'FEB',3:'MAR',4:'ABR',5:'MAY',6:'JUN',
             7:'JUL',8:'AGO',9:'SEP',10:'OCT',11:'NOV',12:'DIC'}
 
 # Tarifa ISR 2024 Art.96 LISR (límite inf, límite sup, cuota fija, % excedente)
+# Fuente: SAT — Art.152 LISR tabla anual 2024
 TARIFA = [
-    (0.01,        5_952.84,      0.00,      1.92),
-    (5_952.85,   50_524.92,    114.24,      6.40),
-    (50_524.93,  88_793.04,  2_966.91,     10.88),
-    (88_793.05, 103_218.00,  7_130.48,     16.00),
-    (103_218.01,123_580.20, 9_438.47,      17.92),
-    (123_580.21,249_243.48,13_087.37,      21.36),
-    (249_243.49,391_841.97,39_929.05,      23.52),
-    (391_841.98,750_000.00,73_524.64,      30.00),
-    (750_000.01,1_000_000.00,181_121.21,   32.00),
-    (1_000_000.01,3_000_000.00,261_121.21, 34.00),
-    (3_000_000.01,999_999_999,941_121.22,  35.00),
+    (0.01,          8_952.49,          0.00,       1.92),
+    (8_952.50,     75_984.55,        171.88,       6.40),
+    (75_984.56,   133_536.07,      4_461.94,      10.88),
+    (133_536.08,  155_229.80,     10_723.55,      16.00),
+    (155_229.81,  185_852.57,     14_194.54,      17.92),
+    (185_852.58,  374_837.88,     19_682.13,      21.36),
+    (374_837.89,  590_795.99,     60_049.40,      23.52),
+    (590_796.00, 1_127_926.84,   110_842.74,      30.00),
+    (1_127_926.85,1_503_902.46,  271_981.99,      32.00),
+    (1_503_902.47,4_511_707.37,  392_294.17,      34.00),
+    (4_511_707.38,999_999_999, 1_414_947.85,      35.00),
 ]
 
 # INPC mensual 2024-2026 (índice general)
@@ -138,24 +139,40 @@ INPC_REF = 145.75  # Septiembre 2026 (referencia actualización)
 RECARGO_RATES = {2024: 0.0147, 2025: 0.0147, 2026: 0.0207}
 
 # ─── Clasificación de gastos ──────────────────────────────────────────────────
-NO_DED_PROV   = ['GASOLINA','GAS','UBER','DIDI','TAXI','COMBUSTIBLE','FERRETERIA','FERRETERÍA']
+NO_DED_PROV   = ['UBER','DIDI',
+                  'WAL MART','WALMART','CHEDRAUI',
+                  'MASCOTAS','PET ',
+                  'RESTAURANTE','RESTAURANT','TACO ','MARISCOS','ASADOR','GASTRONOMIC',
+                  'CEVICHI','MANTALA','BEER FACTORY','LIKOREAK','LA CALLE DEL VINO',
+                  'SILENT BEATS',
+                  'STAR MEDICA','ULTRASONIDO','MASTOGRAFIA',
+                  'CLUB RECREATIVO','CLUB DEPORTIVO',
+                  'OPERADORA HOTELERA','SERVICIOS AEROPORTUARIOS',
+                  'OXXO','AEROCOMIDA']
 NO_DED_CONC   = ['MULTA','RECARGO','SANCION','SANCIÓN','DONATIVO','DONACION','DONACIÓN',
-                  'CLAUSULA PENAL','CLÁUSULA PENAL']
-NO_DED_MED_PROV = ['FARMACIA','DROGUE','MEDICAMENTO','SALUD']
+                  'CLAUSULA PENAL','CLÁUSULA PENAL',
+                  'HOSPEDAJE']
+# Gastos con deducción parcial 8.5% — Art. 28 fr. XX LISR
+PARCIAL_DED_CONC   = ['CONSUMO','RESTAURANTE','RESTAURANT','ALIMENTO','COMIDA','VIATICO']
+PARCIAL_DED_FACTOR = 0.085
+NO_DED_MED_PROV = ['FARMACIA','DROGUE','MEDICAMENTO','SALUD','PHARMA']
 NO_DED_MED_CONC = ['MEDICAMENTO','MEDICINA','CONSULTA MEDICA','ANÁLISIS CLINICO','LABORATORIO']
 
 def clasificar_gasto(conc: str, nom_e: str = '') -> tuple:
-    """Regresa ('DEDUCIBLE','') o ('NO_DED', motivo)."""
+    """Regresa ('DEDUCIBLE','',1.0) | ('PARCIAL_DED', motivo, 0.085) | ('NO_DED', motivo, 0.0)."""
     c = (conc or '').upper(); n = (nom_e or '').upper()
+    for kw in PARCIAL_DED_CONC:
+        if kw in c or kw in n:
+            return 'PARCIAL_DED', f'Consumo/restaurante 8.5% Art.28 fr.XX LISR', PARCIAL_DED_FACTOR
     for kw in NO_DED_CONC:
-        if kw in c: return 'NO_DED', f'Concepto no deducible: {kw}'
+        if kw in c: return 'NO_DED', f'Concepto no deducible: {kw}', 0.0
     for kw in NO_DED_PROV:
-        if kw in n or kw in c: return 'NO_DED', f'Proveedor/concepto no autorizado: {kw}'
+        if kw in n or kw in c: return 'NO_DED', f'Proveedor/concepto no autorizado: {kw}', 0.0
     for kw in NO_DED_MED_PROV:
-        if kw in n: return 'NO_DED', f'Farmacia/salud (uso personal): {kw}'
+        if kw in n: return 'NO_DED', f'Farmacia/salud (uso personal): {kw}', 0.0
     for kw in NO_DED_MED_CONC:
-        if kw in c: return 'NO_DED', f'Gastos médicos personales: {kw}'
-    return 'DEDUCIBLE', ''
+        if kw in c: return 'NO_DED', f'Gastos médicos personales: {kw}', 0.0
+    return 'DEDUCIBLE', '', 1.0
 
 # ─── Cálculo ISR ─────────────────────────────────────────────────────────────
 def calc_isr(base: float) -> float:
@@ -181,9 +198,18 @@ def calc_rec_act(monto: float, mes_imp: int, year_imp: int = 2024):
     return rec, act, total_cr
 
 # ─── Lector de PDFs BBVA ─────────────────────────────────────────────────────
+# Soporta formato "DD-MMM-YY" (ej. 02-ENE-24) del estado de cuenta BBVA actual.
+_MESES_ES = {'ENE':1,'FEB':2,'MAR':3,'ABR':4,'MAY':5,'JUN':6,
+             'JUL':7,'AGO':8,'SEP':9,'OCT':10,'NOV':11,'DIC':12}
+_DATE_BBVA = re.compile(
+    r'^(\d{2})-(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)-(\d{2,4})',
+    re.IGNORECASE)
+_AMT_PAT   = re.compile(r'([\d,]+\.\d{2})')
+
 def _leer_pdfs_bbva(pdfs: list, log=print) -> list:
     """
     Extrae movimientos de estados de cuenta BBVA (PDF).
+    Soporta formato DD-MMM-YY (ej. 02-ENE-24) y DD/MM/YYYY.
     Retorna lista de dicts: fecha, desc, dep, ret, banco.
     """
     if not _PDFPLUMBER_OK:
@@ -191,27 +217,90 @@ def _leer_pdfs_bbva(pdfs: list, log=print) -> list:
     movs = []
     for path in pdfs:
         try:
+            year_pdf   = None
+            in_det     = False
+            prev_saldo = None
             with pdfplumber.open(path) as pdf:
-                in_det = False
                 for page in pdf.pages:
                     txt = page.extract_text() or ''
+                    # Detectar año del periodo (ej. "Periodo Del 01/Enero/2024")
+                    m_yr = re.search(r'[Pp]eriodo\s+[Dd]el\s+\d+/\w+/(\d{4})', txt)
+                    if m_yr:
+                        year_pdf = int(m_yr.group(1))
                     for line in txt.splitlines():
-                        if 'DETALLE DE MOVIMIENTOS' in line.upper(): in_det = True; continue
-                        if not in_det: continue
-                        m = re.match(
+                        if 'DETALLE DE MOVIMIENTOS' in line.upper():
+                            in_det = True
+                            continue
+                        if not in_det:
+                            continue
+                        # Línea de saldo anterior
+                        if 'SALDO ANTERIOR' in line.upper():
+                            amts = _AMT_PAT.findall(line)
+                            if amts:
+                                prev_saldo = float(amts[-1].replace(',', ''))
+                            continue
+                        # --- Intento 1: formato DD-MMM-YY (BBVA actual) ---
+                        dm = _DATE_BBVA.match(line)
+                        if dm:
+                            day_s, mon_s, yr_s = dm.groups()
+                            mon = _MESES_ES.get(mon_s.upper(), 0)
+                            if not mon:
+                                continue
+                            yr = year_pdf if year_pdf else (
+                                int(yr_s) if len(yr_s) == 4 else 2000 + int(yr_s))
+                            try:
+                                fecha = datetime.date(yr, mon, int(day_s))
+                            except ValueError:
+                                continue
+                            # Extraer todos los montos de la línea
+                            amts = _AMT_PAT.findall(line)
+                            if len(amts) < 2:
+                                continue
+                            saldo = float(amts[-1].replace(',', ''))
+                            monto = float(amts[-2].replace(',', ''))
+                            # Determinar dep vs ret por cambio en saldo
+                            dep = ret = 0.0
+                            if prev_saldo is not None:
+                                diff = round(saldo - prev_saldo, 2)
+                                if abs(diff - monto) < 2.0:
+                                    dep = monto
+                                elif abs(diff + monto) < 2.0:
+                                    ret = monto
+                                else:
+                                    # fallback: signo del cambio
+                                    if diff > 0:
+                                        dep = monto
+                                    else:
+                                        ret = monto
+                            else:
+                                prev_saldo = saldo
+                                continue
+                            prev_saldo = saldo
+                            # Descripción: texto entre la fecha y los montos
+                            after_date = line[dm.end():]
+                            desc_part = re.sub(r'\s*[\d,]+\.\d{2}.*$', '', after_date).strip()
+                            if not desc_part:
+                                continue
+                            movs.append({'fecha': fecha, 'desc': desc_part,
+                                         'dep': dep, 'ret': ret, 'banco': 'BBVA'})
+                            continue
+                        # --- Intento 2: formato DD/MM/YYYY (legacy) ---
+                        m2 = re.match(
                             r'(\d{2}/\d{2}/\d{4})\s+(.+?)\s+([\d,]+\.\d{2})?\s*([\d,]+\.\d{2})?$',
                             line.strip())
-                        if not m: continue
-                        fecha_s, desc, dep_s, ret_s = m.groups()
-                        try:
-                            fecha = datetime.datetime.strptime(fecha_s, '%d/%m/%Y').date()
-                        except Exception:
-                            continue
-                        dep = float((dep_s or '0').replace(',',''))
-                        ret = float((ret_s or '0').replace(',',''))
-                        movs.append({'fecha':fecha,'desc':desc.strip(),'dep':dep,'ret':ret,'banco':'BBVA'})
+                        if m2:
+                            fecha_s, desc, dep_s, ret_s = m2.groups()
+                            try:
+                                fecha = datetime.datetime.strptime(fecha_s, '%d/%m/%Y').date()
+                            except Exception:
+                                continue
+                            dep2 = float((dep_s or '0').replace(',', ''))
+                            ret2 = float((ret_s or '0').replace(',', ''))
+                            movs.append({'fecha': fecha, 'desc': desc.strip(),
+                                         'dep': dep2, 'ret': ret2, 'banco': 'BBVA'})
         except Exception as e:
             log(f"  ✗ PDF BBVA {os.path.basename(path)}: {e}")
+    log(f"  BBVA: {len(movs)} movimientos extraídos de {len(pdfs)} PDFs")
     return movs
 
 # ─── Lector de Excel de bancos (Banorte / Inbursa / extra) ───────────────────
@@ -308,13 +397,17 @@ def _parse_xml(path: str, rfc_contribuyente: str, year: int):
         tfd = root.find(f'.//{{{_NS["tfd"]}}}TimbreFiscalDigital')
         uuid = tfd.get('UUID','') if tfd is not None else ''
 
-        # IVA y retenciones
+        # IVA y retenciones — solo desde el nodo raíz cfdi:Impuestos
+        # (evita doble conteo: CFDI 4.0 repite los nodos en Concepto Y en raíz)
         iva = ret_isr = ret_iva = 0.0
-        for imp in root.iter(tag('Traslado')):
-            if imp.get('Impuesto','')=='002': iva += float(imp.get('Importe','0'))
-        for ret in root.iter(tag('Retencion')):
-            if ret.get('Impuesto','')=='001':  ret_isr += float(ret.get('Importe','0'))
-            if ret.get('Impuesto','')=='002':  ret_iva += float(ret.get('Importe','0'))
+        imp_root = root.find(tag('Impuestos'))
+        if imp_root is not None:
+            for tr in imp_root.findall(f'.//{tag("Traslado")}'):
+                if tr.get('Impuesto','') == '002':
+                    iva += float(tr.get('Importe','0'))
+            for rt in imp_root.findall(f'.//{tag("Retencion")}'):
+                if rt.get('Impuesto','') == '001': ret_isr += float(rt.get('Importe','0'))
+                if rt.get('Impuesto','') == '002': ret_iva += float(rt.get('Importe','0'))
 
         neto = round(total - ret_isr - ret_iva, 2)
         mes  = fecha.month
@@ -343,7 +436,7 @@ def _amarre(emitidas: list, movs_banco: list):
         if fact['tipo'] not in ('I','E'): continue
         try: fdt = datetime.datetime.strptime(fact['fecha'], '%Y-%m-%d').date()
         except Exception: continue
-        meta = fact['neto']
+        meta = fact['total']
         best = None; best_score = -1
         for idx, mov in enumerate(movs_banco):
             if idx in usados: continue
@@ -458,14 +551,20 @@ def calcular_impuestos(rfc: str, year: int,
         if g['tipo'] not in ('I','E'): continue
         # Solo facturas donde el RFC emisor ≠ contribuyente (son gastos)
         if g['rfc_e'].upper() == rfc.upper(): continue
-        cls, motivo = clasificar_gasto(g['conc'], g['nom_e'])
+        cls, motivo, factor = clasificar_gasto(g['conc'], g['nom_e'])
         row = dict(mes=g['mes'], fecha=g['fecha'], folio=g['folio_full'],
                    nom_e=g['nom_e'], sub=g['sub'], iva=g['iva'],
                    total=g['total'], conc=g['conc'])
-        if cls == 'DEDUCIBLE':
-            row['iva_acred'] = g['iva']; row['nota'] = ''
+        if cls in ('DEDUCIBLE', 'PARCIAL_DED'):
+            sub_ded = round(g['sub'] * factor, 2)
+            iva_ded = round(g['iva'] * factor, 2)
+            row['iva_acred']    = iva_ded
+            row['sub_original'] = g['sub']
+            row['factor']       = factor
+            row['sub_ded']      = sub_ded
+            row['nota']         = motivo  # '' si DEDUCIBLE, descripción si PARCIAL_DED
             ded_log.append(row)
-        else:
+        else:  # NO_DED
             row['motivo'] = motivo
             no_ded_log.append(row)
 
@@ -484,7 +583,7 @@ def calcular_impuestos(rfc: str, year: int,
 
     for g in ded_log:
         m = g['mes']
-        ded[m]      += g['sub']
+        ded[m]      += g.get('sub_ded', g['sub'])  # sub_ded usa factor 8.5% si PARCIAL_DED
         iva_acred[m]+= g['iva_acred']
 
     # 8. Cálculos acumulados
@@ -506,7 +605,7 @@ def calcular_impuestos(rfc: str, year: int,
         tasa = round(isr_tar / base_acum * 100, 4) if base_acum > 0 else 0.0
 
         # IVA (mensual)
-        iva_neto  = round(iva_caus[mes] - iva_acred[mes] - iva_ret_c[mes] - iva_fav_prev, 2)
+        iva_neto  = round(iva_caus[mes] + iva_fav_prev - iva_acred[mes] - iva_ret_c[mes], 2)
         iva_pay   = max(0.0, iva_neto)
         iva_fav   = abs(iva_neto) if iva_neto < 0 else 0.0
         iva_fav_prev = iva_fav
@@ -772,30 +871,97 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
         ws3.column_dimensions[get_column_letter(ci)].width = w
     ws3.freeze_panes = 'B4'
 
+    # ══ CÉDULA DE CÁLCULO ══════════════════════════════════════════════════════
+    ws_ced = wb.create_sheet('CÉDULA DE CÁLCULO')
+    title(ws_ced, 16, 1, f'CÉDULA DE CÁLCULO DE IMPUESTOS {year} — {rfc} — {nombre}', Az)
+    title(ws_ced, 16, 2, 'Régimen 612 | ISR provisional acumulado Art.106 LISR | IVA mensual Art.5-D LIVA | Recargos Art.21 CFF', Az2, 8)
+    ws_ced.row_dimensions[2].height = 14
+
+    # Grupos de columnas
+    GRP_ISR = Gs; GRP_IVA = Vd; GRP_REC = PatternFill('solid',fgColor='7C3AED'); GRP_TOT = Am
+    for s, e2, lbl, fl in [('A3','C3','INGRESOS / DEDUCCIONES',Az),
+                            ('D3','H3','ISR PROVISIONAL — ACUMULADO',GRP_ISR),
+                            ('I3','L3','IVA MENSUAL',GRP_IVA),
+                            ('M3','N3','RECARGOS Y ACTUALIZ.',GRP_REC),
+                            ('O3','P3','TOTAL A PAGAR SAT',GRP_TOT)]:
+        ws_ced.merge_cells(f'{s}:{e2}')
+        c=ws_ced[s]; c.value=lbl; c.fill=fl; c.font=f(True,'FFFFFF',9); c.alignment=CC; c.border=BD
+    ws_ced.row_dimensions[3].height = 28
+
+    hdrs_ced = [('MES',Az),('INGRESOS\nMES',Az),('DED.\nMES',Az),
+                ('BASE\nACUM.',GRP_ISR),('ISR\nTARIFA',GRP_ISR),('RET.ISR\nACUM.',GRP_ISR),
+                ('ISR PP\nANT.',GRP_ISR),('ISR A\nPAGAR',GRP_ISR),
+                ('IVA\nCAUS.',GRP_IVA),('IVA\nACRED.',GRP_IVA),('IVA\nRET.',GRP_IVA),('IVA A\nPAGAR',GRP_IVA),
+                ('REC.\nISR',GRP_REC),('REC.\nIVA',GRP_REC),
+                ('TOTAL\nISR+IVA',GRP_TOT),('TOTAL\nC/REC.',GRP_TOT)]
+    for ci, (h, fl) in enumerate(hdrs_ced, 1):
+        c=ws_ced.cell(4,ci,h); c.fill=fl; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
+    ws_ced.row_dimensions[4].height = 32
+
+    tot_isr_ced = tot_iva_ced = 0.0
+    for ri_c, r in enumerate(results, 5):
+        bg = La if ri_c%2==0 else Lg
+        isr_rec = r.get('rec_isr',0.0); iva_rec = r.get('rec_iva',0.0)
+        total_base  = round(r['isr_pay'] + r['iva_pay'], 2)
+        total_crec  = round(total_base + isr_rec + iva_rec, 2)
+        tot_isr_ced += r['isr_pay']; tot_iva_ced += r['iva_pay']
+        vals_c = [(r['nom'],None),(r['ing_m'],MXN),(r['ded_m'],MXN),
+                  (r['base_acum'],MXN),(r['isr_tar'],MXN),(r['ret_isr_acum'],MXN),
+                  (r['isr_pag_ant'],MXN),(r['isr_pay'],MXN),
+                  (r['iva_caus'],MXN),(r['iva_acred'],MXN),(r['iva_ret'],MXN),(r['iva_pay'],MXN),
+                  (isr_rec,MXN),(iva_rec,MXN),
+                  (total_base,MXN),(total_crec,MXN)]
+        for ci, (v, fmt) in enumerate(vals_c, 1):
+            bold = ci in (8,12,15,16)
+            col  = '1F4E79' if ci==8 and isinstance(v,float) and v>0 else \
+                   '14532D' if ci==12 and isinstance(v,float) and v>0 else \
+                   '78350F' if ci in(15,16) and isinstance(v,float) and v>0 else '000000'
+            put(ws_ced, ri_c, ci, v, bold, col, bg, LL if ci==1 else RR, fmt)
+        ws_ced.row_dimensions[ri_c].height = 15
+
+    tr_c = len(results)+5
+    ws_ced.merge_cells(f'A{tr_c}:C{tr_c}')
+    put(ws_ced, tr_c, 1, f'TOTAL ANUAL {year}', True, 'FFFFFF', Blk, LL)
+    for ci in range(2, 17):
+        ws_ced.cell(tr_c,ci).fill=Blk; ws_ced.cell(tr_c,ci).border=BD
+    put(ws_ced, tr_c, 8,  tot_isr_ced, True,'FFFFFF',Blk,RR,MXN)
+    put(ws_ced, tr_c, 12, tot_iva_ced, True,'FFFFFF',Blk,RR,MXN)
+    put(ws_ced, tr_c, 15, round(tot_isr_ced+tot_iva_ced,2), True,'FFFFFF',Blk,RR,MXN)
+    ws_ced.row_dimensions[tr_c].height = 20
+    for ci, w in enumerate([10,13,13,14,13,13,13,13,12,12,11,12,12,12,14,14],1):
+        ws_ced.column_dimensions[get_column_letter(ci)].width = w
+    ws_ced.freeze_panes = 'B5'
+
     # ══ GASTOS DEDUCIBLES ══════════════════════════════════════════════════════
     ws4 = wb.create_sheet('GASTOS DEDUCIBLES')
-    title(ws4, 7, 1, f'GASTOS DEDUCIBLES {year} — {len(ded_log)} facturas', Vd)
-    hdrs4 = ['MES','FECHA','FOLIO','PROVEEDOR / EMISOR','SUBTOTAL DED.','IVA ACRED.','CONCEPTO']
+    title(ws4, 8, 1, f'GASTOS DEDUCIBLES {year} — {len(ded_log)} facturas', Vd)
+    title(ws4, 8, 2, 'Art. 103 LISR | Deducciones autorizadas Régimen 612 | Consumo/restaurante al 8.5% Art.28 fr.XX', Vd, 8)
+    ws4.row_dimensions[2].height = 14
+    hdrs4 = ['MES','FECHA','FOLIO','PROVEEDOR / EMISOR','SUBTOTAL ORIG.','DED. EFECTIVA','IVA ACRED.','CONCEPTO / NOTA']
     for ci, h in enumerate(hdrs4, 1):
         c=ws4.cell(3,ci,h); c.fill=Vd; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
     ws4.row_dimensions[3].height = 20
     rows4 = sorted(ded_log, key=lambda x:(x['mes'],x['fecha']))
     for ri, g in enumerate(rows4, 4):
-        bg = Lv if ri%2==0 else Lg
+        parcial = g.get('factor', 1.0) < 1.0
+        bg = PatternFill('solid', fgColor='FEF9C3') if parcial else (Lv if ri%2==0 else Lg)
+        nota = g.get('nota', '')
         rv = [(MESES[g['mes']][:3],None),(g['fecha'],None),(g['folio'],None),(g['nom_e'],None),
-              (g['sub'],MXN),(g['iva_acred'],MXN),(g['conc'],None)]
+              (g.get('sub_original', g['sub']),MXN),(g.get('sub_ded', g['sub']),MXN),
+              (g['iva_acred'],MXN),(g['conc'] + (f' [{nota}]' if nota else ''),None)]
         for ci, (v, fmt) in enumerate(rv, 1):
-            put(ws4, ri, ci, v, fill=bg, align=LL if ci in(1,2,3,4,7) else RR, fmt=fmt)
+            put(ws4, ri, ci, v, fill=bg, align=LL if ci in(1,2,3,4,8) else RR, fmt=fmt)
         ws4.row_dimensions[ri].height = 13
     if ded_log:
         tr4 = len(ded_log)+4
         put(ws4, tr4, 4, 'TOTAL GENERAL', True, 'FFFFFF', Blk, LL)
-        put(ws4, tr4, 5, sum(g['sub'] for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
-        put(ws4, tr4, 6, sum(g['iva_acred'] for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
-        for ci in [1,2,3,7]:
+        put(ws4, tr4, 5, sum(g.get('sub_original',g['sub']) for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
+        put(ws4, tr4, 6, sum(g.get('sub_ded',g['sub']) for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
+        put(ws4, tr4, 7, sum(g['iva_acred'] for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
+        for ci in [1,2,3,8]:
             ws4.cell(tr4,ci).fill=Blk; ws4.cell(tr4,ci).border=BD
         ws4.row_dimensions[tr4].height = 18
-    for ci, w in enumerate([9,11,12,40,14,13,50], 1):
+    for ci, w in enumerate([9,11,12,38,14,13,13,50], 1):
         ws4.column_dimensions[get_column_letter(ci)].width = w
 
     # ══ HOJAS MENSUALES ═══════════════════════════════════════════════════════
@@ -842,14 +1008,26 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
             c=ws_m.cell(row_s,ci,h); c.fill=FILL_GAS; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
         ws_m.row_dimensions[row_s].height = 18; row_s += 1
         for ri_d, g in enumerate(mes_ded):
-            bg = Lv if ri_d%2==0 else Lg
-            for ci, (v, fmt) in enumerate([(g['fecha'],None),(g['folio'],None),(g['nom_e'],None),(g['conc'],None),
-                                            (None,None),(None,None),(g['sub'],MXN),(g['iva_acred'],MXN),(None,None),(None,None)], 1):
+            parcial = g.get('factor', 1.0) < 1.0
+            bg = PatternFill('solid', fgColor='FEF9C3') if parcial else (Lv if ri_d%2==0 else Lg)
+            nota = g.get('nota', '')
+            sub_d = g.get('sub_ded', g['sub'])
+            for ci, (v, fmt) in enumerate([(g['fecha'],None),(g['folio'],None),(g['nom_e'],None),
+                                            (g['conc']+(f' [{nota}]' if nota else ''),None),
+                                            (None,None),(None,None),(sub_d,MXN),(g['iva_acred'],MXN),(None,None),(None,None)], 1):
                 if v is not None:
                     put(ws_m, row_s, ci, v, fill=bg, align=LL if ci<=4 else RR, fmt=fmt)
                 else:
                     ws_m.cell(row_s,ci).fill=bg; ws_m.cell(row_s,ci).border=BD
             ws_m.row_dimensions[row_s].height = 13; row_s += 1
+        # Totals row for gastos
+        if mes_ded:
+            put(ws_m, row_s, 6, 'TOTAL DED.', True, 'FFFFFF', Vd, LL)
+            put(ws_m, row_s, 7, sum(g.get('sub_ded',g['sub']) for g in mes_ded), True, 'FFFFFF', Vd, RR, MXN)
+            put(ws_m, row_s, 8, sum(g['iva_acred'] for g in mes_ded), True, 'FFFFFF', Vd, RR, MXN)
+            for ci in [1,2,3,4,5,9,10]:
+                ws_m.cell(row_s,ci).fill=Vd; ws_m.cell(row_s,ci).border=BD
+            ws_m.row_dimensions[row_s].height = 15; row_s += 1
         for ci, w in enumerate([11,8,10,32,12,12,14,14,8,8], 1):
             ws_m.column_dimensions[get_column_letter(ci)].width = w
 
@@ -879,34 +1057,62 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
     hdrs_am = ['MES','FECHA','SERIE','FOLIO','CLIENTE','SUBTOTAL','IVA TRASL.',
                'ISR RET.','IVA RET.','TOTAL CFDI','NETO COBRADO',
                'ESTADO','FECHA BANCO','MONTO BANCO','DESC BANCO']
-    for ci, h in enumerate(hdrs_am, 1):
-        c=ws_am.cell(2,ci,h); c.fill=Az; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
-    ws_am.row_dimensions[2].height = 28
     FILL_LOC = PatternFill('solid',fgColor='D1FAE5')
     FILL_PEN = PatternFill('solid',fgColor='FEF2F2')
-    FILL_CAN = PatternFill('solid',fgColor='FEE2E2')  # rojo claro — cancelado
-    for ri, e in enumerate([x for x in emitidas_log if x['tipo'] != 'P'], 3):
-        cancelado = e.get('cancelado', False)
-        if cancelado:
-            bg = FILL_CAN
-        elif e['estado']=='LOCALIZADA':
-            bg = FILL_LOC
-        else:
-            bg = FILL_PEN
-        estado_txt = e['estado']  # 'LOCALIZADA', 'PENDIENTE' o 'CANCELADO'
-        rv = [(MESES[e['mes']][:3],None),(e['fecha'],None),(e['serie'],None),(e['folio'],None),(e['nom_r'],None),
-              (e['sub'],MXN),(e['iva'],MXN),(e['ret_isr'],MXN),(e['ret_iva'],MXN),(e['total'],MXN),(e['neto'],MXN),
-              (estado_txt,None),(e.get('banco_fecha',''),None),(e.get('banco_monto') or '',MXN if e.get('banco_monto') else None),(e.get('banco_desc',''),None)]
-        for ci, (v, fmt) in enumerate(rv, 1):
-            bold = ci == 12
-            col  = '991B1B' if cancelado and ci==12 else \
-                   '14532D' if estado_txt=='LOCALIZADA' and ci==12 else \
-                   '6B7280' if estado_txt=='PENDIENTE'  and ci==12 else '000000'
-            put(ws_am, ri, ci, v or '', bold, col, bg, LL if ci in(1,2,3,4,5,12,13,15) else RR, fmt)
-        ws_am.row_dimensions[ri].height = 13
+    FILL_CAN = PatternFill('solid',fgColor='FEE2E2')
+    FILL_SEC = PatternFill('solid',fgColor='1E3A8A')   # separador de sección
+
+    def _am_hdr_row(ws, row):
+        for ci, h in enumerate(hdrs_am, 1):
+            c=ws.cell(row,ci,h); c.fill=Az; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
+        ws.row_dimensions[row].height = 24
+
+    def _am_sec(ws, row, label, n):
+        ws.merge_cells(start_row=row,start_column=1,end_row=row,end_column=15)
+        c=ws.cell(row,1,label); c.fill=FILL_SEC; c.font=f(True,'FFFFFF',9)
+        c.alignment=CC; c.border=BD; ws.row_dimensions[row].height = 18
+
+    def _am_write_rows(ws, rows, start_row):
+        ri = start_row
+        for e in rows:
+            cancelado = e.get('cancelado', False)
+            estado_txt = e['estado']
+            if cancelado:    bg = FILL_CAN
+            elif estado_txt=='LOCALIZADA': bg = FILL_LOC
+            else:            bg = FILL_PEN
+            rv = [(MESES[e['mes']][:3],None),(e['fecha'],None),(e['serie'],None),(e['folio'],None),(e['nom_r'],None),
+                  (e['sub'],MXN),(e['iva'],MXN),(e['ret_isr'],MXN),(e['ret_iva'],MXN),(e['total'],MXN),(e['neto'],MXN),
+                  (estado_txt,None),(e.get('banco_fecha',''),None),(e.get('banco_monto') or '',MXN if e.get('banco_monto') else None),(e.get('banco_desc',''),None)]
+            for ci, (v, fmt) in enumerate(rv, 1):
+                bold = ci == 12
+                col  = '991B1B' if cancelado and ci==12 else \
+                       '14532D' if estado_txt=='LOCALIZADA' and ci==12 else \
+                       '6B7280' if estado_txt=='PENDIENTE'  and ci==12 else '000000'
+                put(ws_am, ri, ci, v or '', bold, col, bg, LL if ci in(1,2,3,4,5,12,13,15) else RR, fmt)
+            ws_am.row_dimensions[ri].height = 13; ri += 1
+        return ri
+
+    facturas = [x for x in emitidas_log if x['tipo'] != 'P']
+    localizadas = sorted([e for e in facturas if e['estado']=='LOCALIZADA'], key=lambda x:(x['mes'],x['fecha']))
+    pendientes  = sorted([e for e in facturas if e['estado']=='PENDIENTE'],  key=lambda x:(x['mes'],x['fecha']))
+    canceladas  = sorted([e for e in facturas if e.get('cancelado',False)],  key=lambda x:(x['mes'],x['fecha']))
+
+    cur_row = 2
+    _am_sec(ws_am, cur_row, f'✅ LOCALIZADAS — {len(localizadas)} factura(s) con depósito identificado', len(localizadas)); cur_row += 1
+    _am_hdr_row(ws_am, cur_row); cur_row += 1
+    cur_row = _am_write_rows(ws_am, localizadas, cur_row)
+    cur_row += 1
+    _am_sec(ws_am, cur_row, f'⏳ PENDIENTES — {len(pendientes)} factura(s) sin depósito localizado', len(pendientes)); cur_row += 1
+    _am_hdr_row(ws_am, cur_row); cur_row += 1
+    cur_row = _am_write_rows(ws_am, pendientes, cur_row)
+    if canceladas:
+        cur_row += 1
+        _am_sec(ws_am, cur_row, f'❌ CANCELADAS — {len(canceladas)} CFDI(s) cancelado(s) ante el SAT', len(canceladas)); cur_row += 1
+        _am_hdr_row(ws_am, cur_row); cur_row += 1
+        _am_write_rows(ws_am, canceladas, cur_row)
     for ci, w in enumerate([8,11,7,10,32,13,12,11,11,13,13,11,11,14,40], 1):
         ws_am.column_dimensions[get_column_letter(ci)].width = w
-    ws_am.freeze_panes = 'A3'
+    ws_am.freeze_panes = 'A2'
 
     # ══ TARIFA ISR ════════════════════════════════════════════════════════════
     ws5 = wb.create_sheet(f'TARIFA ISR {year}')

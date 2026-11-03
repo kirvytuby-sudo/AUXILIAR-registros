@@ -5,7 +5,7 @@ Genera libro Excel completo: PAGOS AL SAT, CÁLCULO LEY, ISR, IVA,
 GASTOS DEDUCIBLES, hojas mensuales, GASTOS EXCLUIDOS, AMARRE FACTURAS,
 TARIFA ISR.
 """
-import os, sys, tempfile, shutil
+import os, sys, tempfile, shutil, datetime
 import streamlit as st
 
 st.set_page_config(
@@ -55,7 +55,6 @@ with c2:
     nombre = st.text_input("Nombre / Razón social",
                            value="", placeholder="Carlos González Flores").strip()
 with c3:
-    import datetime
     year = st.number_input("Año fiscal", min_value=2020, max_value=2030,
                            value=datetime.date.today().year - 1, step=1)
 
@@ -116,13 +115,142 @@ def _save_uploads(files, subdir):
         paths.append(dest)
     return paths
 
-# ── Resumen de archivos cargados ──────────────────────────────────────────────
+# ── Diagnóstico de XMLs ───────────────────────────────────────────────────────
+import xml.etree.ElementTree as _ET
+
+@st.cache_data(show_spinner=False)
+def _diagnosticar_xml(fbytes: bytes, fname: str, rfc_contrib: str, yr: int) -> tuple[str, str]:
+    """
+    Intenta parsear un CFDI.
+    Retorna (estado, motivo):
+      estado = 'ok' | 'error'
+      motivo = '' si ok, descripción del problema si error
+    """
+    try:
+        root = _ET.fromstring(fbytes)
+    except _ET.ParseError as e:
+        return 'error', f'XML malformado: {e}'
+
+    tag_r = root.tag
+    ns_url = ''
+    if tag_r.startswith('{http://www.sat.gob.mx/cfd/4}'):
+        ns_url = 'http://www.sat.gob.mx/cfd/4'
+    elif tag_r.startswith('{http://www.sat.gob.mx/cfd/3}'):
+        ns_url = 'http://www.sat.gob.mx/cfd/3'
+    else:
+        return 'error', f'No es un CFDI SAT (namespace desconocido: {tag_r[:50]})'
+
+    def tag(t): return f'{{{ns_url}}}{t}'
+
+    tipo = root.get('TipoDeComprobante', '')
+    if not tipo:
+        return 'error', 'No tiene atributo TipoDeComprobante'
+
+    fecha_s = root.get('Fecha', '')[:10]
+    try:
+        fecha = datetime.datetime.strptime(fecha_s, '%Y-%m-%d').date()
+    except Exception:
+        return 'error', f'Fecha inválida o ausente: "{root.get("Fecha","")}"'
+
+    if fecha.year != yr:
+        return 'error', f'Año {fecha.year} — se esperaba {yr} (fecha: {fecha_s})'
+
+    em_node = root.find(f'{tag("Emisor")}')
+    rec_node = root.find(f'{tag("Receptor")}')
+    rfc_e = em_node.get('Rfc', '') if em_node is not None else ''
+    rfc_r = rec_node.get('Rfc', '') if rec_node is not None else ''
+
+    # Verificar que el contribuyente aparezca en algún rol
+    rfc_c = rfc_contrib.upper()
+    if rfc_c not in (rfc_e.upper(), rfc_r.upper()):
+        return 'error', (
+            f'RFC {rfc_contrib} no aparece en el CFDI '
+            f'(Emisor: {rfc_e}, Receptor: {rfc_r})'
+        )
+
+    # Revisar timbre
+    tfd_ns = 'http://www.sat.gob.mx/TimbreFiscalDigital'
+    tfd = root.find(f'.//{{{tfd_ns}}}TimbreFiscalDigital')
+    if tfd is None:
+        return 'error', 'Sin Timbre Fiscal Digital (CFDI no timbrado)'
+
+    return 'ok', ''
+
+
+def _diagnosticar_lote(files, label: str, rfc_contrib: str, yr: int):
+    """
+    Corre diagnóstico sobre una lista de UploadedFile.
+    Retorna (n_ok, n_err, lista_errores[{archivo, motivo}]).
+    """
+    if not files:
+        return 0, 0, []
+    ok_count = 0
+    err_list = []
+    for f in files:
+        f.seek(0)
+        estado, motivo = _diagnosticar_xml(f.read(), f.name, rfc_contrib, yr)
+        f.seek(0)
+        if estado == 'ok':
+            ok_count += 1
+        else:
+            err_list.append({'Archivo': f.name, 'Motivo': motivo})
+    return ok_count, len(err_list), err_list
+
+
+# Solo ejecutar diagnóstico si hay archivos cargados
+_diag_emit_ok = _diag_emit_err = 0; _diag_emit_detalle = []
+_diag_rec_ok  = _diag_rec_err  = 0; _diag_rec_detalle  = []
+
+if emit_files or rec_files:
+    _diag_emit_ok, _diag_emit_err, _diag_emit_detalle = _diagnosticar_lote(
+        emit_files, 'Emitidos', rfc, year)
+    _diag_rec_ok,  _diag_rec_err,  _diag_rec_detalle  = _diagnosticar_lote(
+        rec_files,  'Recibidos', rfc, year)
+
+    _total_ok  = _diag_emit_ok  + _diag_rec_ok
+    _total_err = _diag_emit_err + _diag_rec_err
+
+    # ── Métricas de conteo ────────────────────────────────────────────────
+    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+    col_m1.metric("📄 Emitidos OK",   _diag_emit_ok,
+                  delta=f"-{_diag_emit_err} err" if _diag_emit_err else None,
+                  delta_color="inverse")
+    col_m2.metric("📄 Recibidos OK",  _diag_rec_ok,
+                  delta=f"-{_diag_rec_err} err" if _diag_rec_err else None,
+                  delta_color="inverse")
+    col_m3.metric("✅ Total válidos", _total_ok)
+    col_m4.metric("❌ Con error",     _total_err,
+                  delta_color="inverse")
+
+    # ── Detalle de errores ────────────────────────────────────────────────
+    _todos_errores = (
+        [{'Grupo': 'Emitido', **e} for e in _diag_emit_detalle] +
+        [{'Grupo': 'Recibido', **e} for e in _diag_rec_detalle]
+    )
+    if _todos_errores:
+        import pandas as _pd
+        with st.expander(f"⚠️ {_total_err} archivo(s) con problema — ver detalle", expanded=True):
+            df_err = _pd.DataFrame(_todos_errores)[['Grupo', 'Archivo', 'Motivo']]
+            st.dataframe(df_err, use_container_width=True, hide_index=True,
+                         column_config={
+                             'Grupo':   st.column_config.TextColumn(width='small'),
+                             'Archivo': st.column_config.TextColumn(width='medium'),
+                             'Motivo':  st.column_config.TextColumn(width='large'),
+                         })
+            st.caption(
+                "Estos archivos **no se incluirán** en el cálculo. "
+                "Corrige el problema (RFC, año o formato) y vuelve a subirlos."
+            )
+    else:
+        st.success(f"✅ Todos los XMLs son válidos ({_total_ok} archivos)")
+
+# ── Resumen total de archivos ────────────────────────────────────────────────
 n_emit = len(emit_files or []); n_rec = len(rec_files or [])
 n_bbva = len(bbva_files or []); n_ban = len(ban_files or [])
 n_inb  = len(inb_files or []);  n_ext = len(ext_files or [])
 
 st.info(
-    f"📥 **Cargados:** "
+    f"📥 **Archivos cargados:** "
     f"{n_emit} XML emit. · {n_rec} XML recib. · "
     f"{n_bbva} PDF BBVA · {n_ban} Banorte · {n_inb} Inbursa · {n_ext} Otro"
 )

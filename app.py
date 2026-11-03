@@ -30,13 +30,11 @@ pg = st.navigation(
             st.Page("pages/9_Estado_de_Cuenta.py",            title="Estado de Cuenta",            icon="📈"),
             st.Page("pages/8_Conciliacion_Banco_Auxiliar.py", title="Conciliación Banco/Auxiliar", icon="🔀"),
         ],
-        "SAT / IMSS / Contabilidad": [
+        "SAT / Contabilidad": [
             st.Page("pages/5_Conciliacion_SAT.py",            title="Conciliación SAT",            icon="🔗"),
             st.Page("pages/6_Reconciliacion.py",              title="Reconciliación",              icon="📑"),
             st.Page("pages/12_Constancia_y_Opinion_SAT.py",   title="Constancia y Opinión SAT",    icon="🏛️"),
-            st.Page("pages/15_Opinion_IMSS.py",               title="Opinión IMSS",                icon="🏥"),
-            st.Page("pages/21_Facturacion_CFDI.py",       title="Facturación CFDI",            icon="🧾"),
-            st.Page("pages/16_Buzon_SAT.py",                 title="Buzón SAT",                   icon="🗂"),
+            st.Page("pages/21_Facturacion_CFDI.py",           title="Facturación CFDI",            icon="🧾"),
             st.Page("pages/13_Impuestos_PF.py",               title="Impuestos PF",                icon="📊"),
         ],
     },

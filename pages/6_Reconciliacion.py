@@ -462,46 +462,23 @@ with col1:
 with col2:
     _col_lbl, _col_btn = st.columns([5, 1])
     with _col_lbl:
-        st.markdown("**📂 CSV(s) de ventas**", unsafe_allow_html=True)
+        st.markdown("**📂 CSV(s) de ventas**  — acepta CSV individuales o un ZIP con todos", unsafe_allow_html=True)
     with _col_btn:
         if st.button("🗑 Limpiar", key="btn_limpiar_csv", help="Quitar todos los CSV cargados"):
             st.session_state.csv_key += 1
             st.rerun()
-    _tab_arch, _tab_carp = st.tabs(["📄 Archivos / ZIP", "📁 Carpeta"])
-    with _tab_arch:
-        csv_files_arch = st.file_uploader(
-            "CSV individuales o ZIP",
-            type=["csv", "zip"],
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-            key=f"csv_uploader_arch_{st.session_state.csv_key}",
-        )
-    with _tab_carp:
-        st.caption("Selecciona la carpeta — se leerán todos los CSV dentro, incluyendo subcarpetas.")
-        csv_files_carp = st.file_uploader(
-            "Carpeta de CSV",
-            type=None,
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-            key=f"csv_uploader_carp_{st.session_state.csv_key}",
-        )
+    csv_files_arch = st.file_uploader(
+        "CSV individuales o ZIP",
+        type=["csv", "zip"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+        key=f"csv_uploader_arch_{st.session_state.csv_key}",
+    )
+    if csv_files_arch and sum(1 for f in csv_files_arch if f.name.lower().endswith(".csv")) > 50:
+        n_csv_ind = sum(1 for f in csv_files_arch if f.name.lower().endswith(".csv"))
+        st.warning(f"⚠️ {n_csv_ind} CSVs individuales — recomendado: comprime en un ZIP para evitar errores.", icon="⚠️")
 
-# Inyectar webkitdirectory al uploader de carpeta (segundo input[multiple] del DOM)
-st.markdown("""
-<script>
-(function(){
-  function patch(){
-    var ms = document.querySelectorAll('input[type="file"][multiple]');
-    if(ms.length>=2 && !ms[1].hasAttribute('webkitdirectory')){
-      ms[1].setAttribute('webkitdirectory','');
-    }
-  }
-  patch();
-  new MutationObserver(patch).observe(document.body,{subtree:true,childList:true});
-})();
-</script>""", unsafe_allow_html=True)
-
-# Extraer CSVs de ZIPs y carpetas
+# Extraer CSVs de ZIPs
 def _extraer_csvs(archivos):
     resultado = {}
     for f in (archivos or []):
@@ -517,13 +494,9 @@ def _extraer_csvs(archivos):
                 st.warning(f"No se pudo leer ZIP {f.name}: {_ze}")
         elif f.name.lower().endswith(".csv"):
             resultado[f.name] = raw
-        # archivos de carpeta sin extensión .csv se ignoran
     return resultado
 
-_all_uploads = list(csv_files_arch or []) + [
-    f for f in (csv_files_carp or []) if f.name.lower().endswith(".csv")
-]
-csv_files = _all_uploads
+csv_files = list(csv_files_arch or [])
 
 st.markdown("---")
 

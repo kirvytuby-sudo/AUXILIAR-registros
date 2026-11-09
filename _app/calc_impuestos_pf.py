@@ -854,15 +854,33 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
     for ci, h in enumerate(h2, 1):
         c=ws2.cell(3,ci,h); c.fill=Az; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
     ws2.row_dimensions[3].height = 40
+    _TAR_SH   = f'TARIFA ISR {year}'
+    _TAR_RNG  = f"'{_TAR_SH}'!$A$3:$D$13"   # 11 tramos
     for ri, r in enumerate(results, 4):
-        bg = La if ri%2==1 else Lg
-        rv = [(r['nom'],None),(r['ing_m'],MXN),(r['ded_m'],MXN),(r['ing_acum'],MXN),(r['ded_acum'],MXN),
-              (r['base_acum'],MXN),(r['isr_tar'],MXN),(r['ret_isr_m'],MXN),(r['ret_isr_acum'],MXN),
-              (r['isr_pag_ant'],MXN),(r['isr_cargo'],MXN),(r['isr_pay'],MXN),(r['tasa']/100,PCT)]
+        bg  = La if ri%2==1 else Lg
+        _m3 = f'LEFT(A{ri},3)'   # criterio SUMIF: 3 letras del mes (ENE/FEB/…)
+        # ── Fórmulas dinámicas — toda edición en INGRESOS DETALLE o GASTOS DEDUCIBLES
+        #    se propaga automáticamente hasta ISR A PAGAR y TASA EFECTIVA.
+        f_b = f"=SUMIF('INGRESOS DETALLE'!$A:$A,{_m3},'INGRESOS DETALLE'!$G:$G)"
+        f_c = f"=SUMIF('GASTOS DEDUCIBLES'!$A:$A,{_m3},'GASTOS DEDUCIBLES'!$E:$E)"
+        f_d = f"=SUM($B$4:B{ri})"
+        f_e = f"=SUM($C$4:C{ri})"
+        f_f = f"=MAX(0,D{ri}-E{ri})"
+        f_g = (f"=IFERROR(VLOOKUP(F{ri},{_TAR_RNG},3,TRUE)"
+               f"+(F{ri}-VLOOKUP(F{ri},{_TAR_RNG},1,TRUE))"
+               f"*VLOOKUP(F{ri},{_TAR_RNG},4,TRUE),0)")
+        f_h = f"=SUMIF('INGRESOS DETALLE'!$A:$A,{_m3},'INGRESOS DETALLE'!$I:$I)"
+        f_i = f"=SUM($H$4:H{ri})"
+        f_j = f"=SUM($L$4:L{ri-1})"   # pp anteriores (vacío en ENE → 0)
+        f_k = f"=G{ri}-I{ri}-J{ri}"
+        f_l = f"=MAX(0,K{ri})"
+        f_m = f"=IFERROR(G{ri}/F{ri},0)"
+        rv  = [(r['nom'],None),(f_b,MXN),(f_c,MXN),(f_d,MXN),(f_e,MXN),
+               (f_f,MXN),(f_g,MXN),(f_h,MXN),(f_i,MXN),
+               (f_j,MXN),(f_k,MXN),(f_l,MXN),(f_m,PCT)]
         for ci, (v, fmt) in enumerate(rv, 1):
             bold = ci in (11,12)
-            col  = '991B1B' if ci==11 and isinstance(v,float) and v<0 else \
-                   '14532D' if ci==12 and isinstance(v,float) and v>0 else '000000'
+            col  = '991B1B' if ci==11 else '14532D' if ci==12 else '000000'
             put(ws2, ri, ci, v, bold, col, bg, LL if ci==1 else RR, fmt)
         ws2.row_dimensions[ri].height = 15
     for ci, w in enumerate([13,13,13,14,14,15,14,12,12,13,13,13,10], 1):
@@ -879,17 +897,28 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
     for ci, h in enumerate(h3, 1):
         c=ws3.cell(3,ci,h); c.fill=Vd; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
     ws3.row_dimensions[3].height = 44
-    iva_fav_prev2 = 0.0
     for ri, r in enumerate(results, 4):
-        bg = Lv if ri%2==1 else Lg
-        rv = [(r['nom'],None),(r['iva_caus'],MXN),(iva_fav_prev2,MXN),(r['iva_acred'],MXN),(r['iva_ret'],MXN),
-              (r['iva_neto'],MXN),(r['iva_pay'],MXN),(r['iva_fav'],MXN),(f"{r['n_emit']}/{r['n_ded']}",None)]
-        iva_fav_prev2 = r['iva_fav']
+        bg  = Lv if ri%2==1 else Lg
+        _m3 = f'LEFT(A{ri},3)'
+        # col B: IVA causado (ingresos emitidos col H = IVA)
+        f_b = f"=SUMIF('INGRESOS DETALLE'!$A:$A,{_m3},'INGRESOS DETALLE'!$H:$H)"
+        # col C: saldo a favor del mes anterior
+        f_c = "0" if ri == 4 else f"=H{ri-1}"
+        # col D: IVA acreditable (gastos deducibles col F = IVA ACRED.)
+        f_d = f"=SUMIF('GASTOS DEDUCIBLES'!$A:$A,{_m3},'GASTOS DEDUCIBLES'!$F:$F)"
+        # col E: IVA retenido por clientes (ingresos col J = Ret.IVA)
+        f_e = f"=SUMIF('INGRESOS DETALLE'!$A:$A,{_m3},'INGRESOS DETALLE'!$J:$J)"
+        # col F: IVA neto del mes
+        f_f = f"=B{ri}-D{ri}-E{ri}-C{ri}"
+        # col G: IVA a pagar
+        f_g = f"=MAX(0,F{ri})"
+        # col H: saldo a favor → siguiente mes
+        f_h = f"=IF(F{ri}<0,ABS(F{ri}),0)"
+        rv  = [(r['nom'],None),(f_b,MXN),(f_c,MXN),(f_d,MXN),(f_e,MXN),
+               (f_f,MXN),(f_g,MXN),(f_h,MXN),(f"{r['n_emit']}/{r['n_ded']}",None)]
         for ci, (v, fmt) in enumerate(rv, 1):
             bold = ci in (6,7,8)
-            col  = '991B1B' if ci==6 and isinstance(v,float) and v<0 else \
-                   '14532D' if ci==7 and isinstance(v,float) and v>0 else \
-                   '78350F' if ci==8 and isinstance(v,float) and v>0 else '000000'
+            col  = '000000' if ci==6 else '14532D' if ci==7 else '78350F' if ci==8 else '000000'
             put(ws3, ri, ci, v, bold, col, bg, LL if ci in(1,9) else RR, fmt)
         ws3.row_dimensions[ri].height = 15
     for ci, w in enumerate([13,15,13,15,13,13,13,13,9], 1):
@@ -1182,17 +1211,16 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
     ws4.row_dimensions[3].height = 20
 
     def _gd_subtotal(ws, row_n, mes_num, mes_buf):
-        _sub_t = sum(g.get('sub_ded', g['sub']) for g in mes_buf)
-        _iva_t = sum(g['iva_acred'] for g in mes_buf)
-        _lbl_m = MESES[mes_num][:3]
-        _sub_lbl = f'Subtotal {_lbl_m} ({len(mes_buf)} facturas)'
+        _lbl_m3  = MESES_C[mes_num]           # "ENE", "FEB", ...
+        _sub_lbl = f'Subtotal {_lbl_m3} ({len(mes_buf)} facturas)'
         _c = ws.cell(row_n, 1, _sub_lbl)
         _c.fill=Vd; _c.font=f(True,'FFFFFF',8); _c.alignment=LL; _c.border=BD
         for _ci_st in [2,3,4]:
             ws.cell(row_n,_ci_st).fill=Vd; ws.cell(row_n,_ci_st).border=BD
-        _c5=ws.cell(row_n,5,_sub_t)
+        # Fórmulas SUMIF: si el usuario edita/quita filas, el subtotal se recalcula
+        _c5 = ws.cell(row_n, 5, f'=SUMIF($A:$A,"{_lbl_m3}",$E:$E)')
         _c5.fill=Vd; _c5.font=f(True,'FFFFFF',9); _c5.number_format=MXN; _c5.alignment=RR; _c5.border=BD
-        _c6=ws.cell(row_n,6,_iva_t)
+        _c6 = ws.cell(row_n, 6, f'=SUMIF($A:$A,"{_lbl_m3}",$F:$F)')
         _c6.fill=Vd; _c6.font=f(True,'FFFFFF',9); _c6.number_format=MXN; _c6.alignment=RR; _c6.border=BD
         ws.cell(row_n,7).fill=Vd; ws.cell(row_n,7).border=BD
         ws.cell(row_n,8).fill=Vd; ws.cell(row_n,8).border=BD
@@ -1250,8 +1278,11 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
     if ded_log:
         _tr4 = _row4
         put(ws4, _tr4, 1, 'TOTAL GENERAL', True, 'FFFFFF', Blk, LL)
-        put(ws4, _tr4, 5, sum(g.get('sub_ded',g['sub']) for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
-        put(ws4, _tr4, 6, sum(g['iva_acred'] for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
+        # SUMPRODUCT cuenta solo filas con mes de 3 letras (excluye subtotales y encabezados)
+        _c5t = ws4.cell(_tr4, 5, '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($E$4:$E$9999))')
+        _c5t.font=f(True,'FFFFFF',9); _c5t.fill=Blk; _c5t.number_format=MXN; _c5t.alignment=RR; _c5t.border=BD
+        _c6t = ws4.cell(_tr4, 6, '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($F$4:$F$9999))')
+        _c6t.font=f(True,'FFFFFF',9); _c6t.fill=Blk; _c6t.number_format=MXN; _c6t.alignment=RR; _c6t.border=BD
         for _ci4t in [2,3,4,7,8]:
             ws4.cell(_tr4,_ci4t).fill=Blk; ws4.cell(_tr4,_ci4t).border=BD
         ws4.row_dimensions[_tr4].height = 18
@@ -1260,8 +1291,91 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
         ws4.column_dimensions[get_column_letter(_ci4w)].width = _w4
 
 
-    # ══ HOJAS MENSUALES ═══════════════════════════════════════════════════════
+    # ══ INGRESOS DETALLE (fuente editable para CÁLCULO ISR e IVA) ═══════════════
     FILL_ING = PatternFill('solid',fgColor='1E3A8A')
+    ws_id = wb.create_sheet('INGRESOS DETALLE')
+    _ID_COLS = 11
+    title(ws_id, _ID_COLS, 1, f'INGRESOS DETALLE {year} — facturas emitidas', FILL_ING)
+    title(ws_id, _ID_COLS, 2,
+          'Edita SUBTOTAL (col G) o IVA (col H) → CÁLCULO ISR/IVA y CÉDULA se recalculan',
+          Az2, 8)
+    ws_id.row_dimensions[2].height = 14
+    _hdrs_id = ['MES','FECHA','SERIE','FOLIO','CLIENTE','RFC','SUBTOTAL','IVA','RET.ISR','RET.IVA','TOTAL']
+    for _ci_id, _h_id in enumerate(_hdrs_id, 1):
+        _c = ws_id.cell(3, _ci_id, _h_id)
+        _c.fill=FILL_ING; _c.font=f(True,'FFFFFF',8); _c.alignment=CC; _c.border=BD
+    ws_id.row_dimensions[3].height = 20
+
+    _rows_id   = sorted([e for e in emitidas_log if e['tipo'] in ('I','E')],
+                        key=lambda x:(x['mes'], x['fecha']))
+    _row_id    = 4
+    _mes_a_id  = None
+    _mes_b_id  = []
+
+    def _id_subtotal(ws, row_n, mes_num, buf):
+        _lm3 = MESES_C[mes_num]
+        _c = ws.cell(row_n, 1, f'Subtotal {_lm3} ({len(buf)} facturas)')
+        _c.fill=FILL_ING; _c.font=f(True,'FFFFFF',8); _c.alignment=LL; _c.border=BD
+        for _ci in [2,3,4,5,6]:
+            ws.cell(row_n,_ci).fill=FILL_ING; ws.cell(row_n,_ci).border=BD
+        for _ci, _fml in [(7, f'=SUMIF($A:$A,"{_lm3}",$G:$G)'),
+                          (8, f'=SUMIF($A:$A,"{_lm3}",$H:$H)'),
+                          (9, f'=SUMIF($A:$A,"{_lm3}",$I:$I)'),
+                          (10,f'=SUMIF($A:$A,"{_lm3}",$J:$J)'),
+                          (11,f'=SUMIF($A:$A,"{_lm3}",$K:$K)')]:
+            _c2 = ws.cell(row_n, _ci, _fml)
+            _c2.fill=FILL_ING; _c2.font=f(True,'FFFFFF',9)
+            _c2.number_format=MXN; _c2.alignment=RR; _c2.border=BD
+        ws.row_dimensions[row_n].height = 16
+
+    for _ei in _rows_id:
+        if _mes_a_id != _ei['mes']:
+            if _mes_a_id is not None and _mes_b_id:
+                _id_subtotal(ws_id, _row_id, _mes_a_id, _mes_b_id)
+                _row_id += 1
+            _mes_a_id = _ei['mes']; _mes_b_id = []
+        _bg = La if _row_id%2==0 else Lg
+        _rv = [(MESES_C[_ei['mes']], None),
+               (_ei['fecha'],          None),
+               (_ei.get('serie',''),   None),
+               (_ei['folio'],          None),
+               (_ei['nom_r'],          None),
+               (_ei['rfc_r'],          None),
+               (_ei['sub'],            MXN),
+               (_ei['iva'],            MXN),
+               (_ei.get('ret_isr',0),  MXN),
+               (_ei.get('ret_iva',0),  MXN),
+               (_ei['total'],          MXN)]
+        for _ci, (_v, _fmt) in enumerate(_rv, 1):
+            put(ws_id, _row_id, _ci, _v, fill=_bg, align=LL if _ci<=6 else RR, fmt=_fmt)
+        ws_id.row_dimensions[_row_id].height = 13
+        _mes_b_id.append(_ei); _row_id += 1
+
+    if _mes_a_id is not None and _mes_b_id:
+        _id_subtotal(ws_id, _row_id, _mes_a_id, _mes_b_id); _row_id += 1
+
+    if _rows_id:
+        _tr_id = _row_id
+        put(ws_id, _tr_id, 1, 'TOTAL GENERAL', True, 'FFFFFF', Blk, LL)
+        for _ci in [2,3,4,5,6]:
+            ws_id.cell(_tr_id,_ci).fill=Blk; ws_id.cell(_tr_id,_ci).border=BD
+        for _ci, _fml in [
+            (7,  '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($G$4:$G$9999))'),
+            (8,  '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($H$4:$H$9999))'),
+            (9,  '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($I$4:$I$9999))'),
+            (10, '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($J$4:$J$9999))'),
+            (11, '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($K$4:$K$9999))')]:
+            _c2 = ws_id.cell(_tr_id, _ci, _fml)
+            _c2.font=f(True,'FFFFFF',9); _c2.fill=Blk
+            _c2.number_format=MXN; _c2.alignment=RR; _c2.border=BD
+        ws_id.row_dimensions[_tr_id].height = 18
+
+    for _ci_w, _w in enumerate([9,11,8,12,35,16,14,13,12,12,14], 1):
+        ws_id.column_dimensions[get_column_letter(_ci_w)].width = _w
+    ws_id.freeze_panes = 'B4'
+
+
+    # ══ HOJAS MENSUALES ═══════════════════════════════════════════════════════
     FILL_GAS = PatternFill('solid',fgColor='14532D')
     for mes in range(1,13):
         r_res = results[mes-1]

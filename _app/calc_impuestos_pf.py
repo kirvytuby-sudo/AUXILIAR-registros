@@ -139,22 +139,61 @@ INPC_REF = 145.75  # Septiembre 2026 (referencia actualización)
 RECARGO_RATES = {2024: 0.0147, 2025: 0.0147, 2026: 0.0207}
 
 # ─── Clasificación de gastos ──────────────────────────────────────────────────
-NO_DED_PROV   = ['UBER','DIDI',
-                  'WAL MART','WALMART','CHEDRAUI',
-                  'MASCOTAS','PET ',
-                  'RESTAURANTE','RESTAURANT','TACO ','MARISCOS','ASADOR','GASTRONOMIC',
-                  'CEVICHI','MANTALA','BEER FACTORY','LIKOREAK','LA CALLE DEL VINO',
-                  'SILENT BEATS',
-                  'STAR MEDICA','ULTRASONIDO','MASTOGRAFIA',
-                  'CLUB RECREATIVO','CLUB DEPORTIVO',
-                  'OPERADORA HOTELERA','SERVICIOS AEROPORTUARIOS',
-                  'OXXO','AEROCOMIDA']
-NO_DED_CONC   = ['MULTA','RECARGO','SANCION','SANCIÓN','DONATIVO','DONACION','DONACIÓN',
-                  'CLAUSULA PENAL','CLÁUSULA PENAL',
-                  'HOSPEDAJE']
+# ── Proveedores / emisores NO DEDUCIBLES ──────────────────────────────────────
+# Art. 103 LISR: solo gastos estrictamente indispensables para la actividad.
+# Art. 28 fr. II/III LISR: no son deducibles gastos de carácter personal,
+#   recreativos, suntuarios ni entretenimiento que no sean de representación.
+NO_DED_PROV   = [
+    # Transporte personal
+    'UBER','DIDI','CABIFY','BEAT ',
+    # Supermercados y abarrotes
+    'WAL MART','WALMART','CHEDRAUI','SORIANA','BODEGA AURRERA','AURRERA',
+    'LA COMER','COSTCO','CIUDAD MERCADO',
+    # Mascotas
+    'MASCOTAS','PET ',
+    # Restaurantes / Bares (Art. 28 fr. XX → solo 8.5%, manejado en PARCIAL_DED)
+    'RESTAURANTE','RESTAURANT','TACO ','MARISCOS','ASADOR','GASTRONOMIC',
+    'CEVICHI','MANTALA','BEER FACTORY','LIKOREAK','LA CALLE DEL VINO',
+    'SILENT BEATS',
+    # Farmacias / salud personal
+    'STAR MEDICA','ULTRASONIDO','MASTOGRAFIA',
+    # Clubes y recreación
+    'CLUB RECREATIVO','CLUB DEPORTIVO',
+    # Hoteles / aeropuertos
+    'OPERADORA HOTELERA','SERVICIOS AEROPORTUARIOS',
+    # Tiendas de conveniencia
+    'OXXO','AEROCOMIDA','SEVEN ELEVEN','7-ELEVEN',
+    # ── TIENDAS DEPARTAMENTALES (Art. 103 LISR — no indispensable) ────────────
+    'PALACIO DE HIERRO','LIVERPOOL','SEARS OPCO','SUBURBIA',
+    'EL PUERTO DE LIVERPOOL','ZARA','H&M ','GAP ','PULL&BEAR',
+    'BERSHKA','STRADIVARIUS',
+    # ── EVENTOS DEPORTIVOS / RECREATIVOS (Art. 28 fr. III LISR) ──────────────
+    'MARATON','MARATÓN','TRIATON','TRIATLON','TRIATLÓN',
+    'IRONMAN','SNORKEL','BUCEO','SKYDIVE','PARACAID',
+    'BALLENAS','WHALE WATCHING',
+    # ── ENTRETENIMIENTO ───────────────────────────────────────────────────────
+    'CINEPOLIS','CINEMEX','PARQUE DE DIVERSIONES','TICKETMASTER',
+    'SUPER BOLETOS',
+]
+
+NO_DED_CONC   = [
+    'MULTA','RECARGO','SANCION','SANCIÓN','DONATIVO','DONACION','DONACIÓN',
+    'CLAUSULA PENAL','CLÁUSULA PENAL',
+    'HOSPEDAJE',
+    # ── Eventos deportivos / recreativos (Art. 28 fr. III LISR) ──────────────
+    'MARATÓN','MARATON','SNORKEL','BUCEO','TRIATLÓN','TRIATLON',
+    'INSCRIPCION DEPORT','EVENTO DEPORTIVO','EVENTO RECREAT',
+    # ── Artículos personales ──────────────────────────────────────────────────
+    'ROPA ','VESTIMENTA','CALZADO PERSONAL',
+    # ── Honorarios médicos (gastos personales de salud — no indispensable) ───
+    'HONORARIOS MEDIC','HONORARIOS MÉDIC','CONSULTA MEDICA','CONSULTA MÉDICA',
+    'HONORARIOS DR','HONORARIOS DRA',
+]
+
 # Gastos con deducción parcial 8.5% — Art. 28 fr. XX LISR
 PARCIAL_DED_CONC   = ['CONSUMO','RESTAURANTE','RESTAURANT','ALIMENTO','COMIDA','VIATICO']
 PARCIAL_DED_FACTOR = 0.085
+
 NO_DED_MED_PROV = ['FARMACIA','DROGUE','MEDICAMENTO','SALUD','PHARMA']
 NO_DED_MED_CONC = ['MEDICAMENTO','MEDICINA','CONSULTA MEDICA','ANÁLISIS CLINICO','LABORATORIO']
 

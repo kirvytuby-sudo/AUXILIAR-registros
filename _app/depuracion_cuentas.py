@@ -1014,7 +1014,7 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
             prov_row = row
             if pendientes:
                 wsb.cell(row, 7, "Saldo inicial pendiente").font = bold
-                cc = wsb.cell(row, 10, float(a.saldo_inicial_pendiente))
+                cc = wsb.cell(row, 11, float(a.saldo_inicial_pendiente))
                 cc.number_format, cc.font = MON, bold
             else:
                 wsb.cell(row, 7, f"Saldo inicial {_fmt(a.saldo_inicial)}").font = bold
@@ -1041,6 +1041,8 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
                     wsb.row_dimensions[row].outline_level = 2
                     row += 1
                 last = row - 1
+                if pendientes:          # en Pendientes no va renglón de subtotal por grupo
+                    continue
                 # subtotal del grupo
                 wsb.cell(row, 7, "Subtotal del grupo").font = bold
                 for j, L in ([(8, "H"), (9, "I"), (10, "J"), (11, "K")] if pendientes else [(8, "H"), (9, "I")]):
@@ -1059,8 +1061,8 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
             # total del proveedor
             if pendientes:
                 wsb.cell(row, 7, "Saldo pendiente de conciliar (= saldo inicial pendiente + abonos − cargos pendientes)").font = bold
-                cg = wsb.cell(row, 10, "=" + "+".join(f"J{t}" for t in tot_rows))
-                ab = wsb.cell(row, 11, f"=J{prov_row}+" + "+".join(f"K{t}" for t in tot_rows) + f"-J{row}")
+                cg = wsb.cell(row, 10, f"=SUM(J{prov_row + 1}:J{row - 1})")
+                ab = wsb.cell(row, 11, f"=K{prov_row}+SUM(K{prov_row + 1}:K{row - 1})-J{row}")
                 for cc in (cg, ab):
                     cc.number_format, cc.font = MON, bold
                 wsb.cell(row, 12, "Saldo final auxiliar:").font = bold

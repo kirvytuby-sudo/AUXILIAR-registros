@@ -188,13 +188,18 @@ def _relacionar(m: pd.DataFrame, cuentas: pd.DataFrame, meta: dict) -> pd.DataFr
     ea = m[(m["Tipo póliza"] == "EA") & (m.Cargo > 0)]
     neg = m[(m["Tipo póliza"] == "EA") & (m.Cargo < 0)]
     st: dict = {}
+    # importes por renglón: [cargo conciliado vs facturas, cargo vs saldo inicial, cargo pendiente,
+    #                        abono conciliado, abono pendiente]
+    imp: dict = defaultdict(lambda: [0.0, 0.0, 0.0, 0.0, 0.0])
 
     for r in m[(m.Cargo.fillna(0) == 0) & (m.Abono.fillna(0) == 0)].row:
         st[r] = ("B", "Renglón con importe cero: no se relaciona con ningún movimiento")
     for _, r in ea[~ea.xml].iterrows():
         st[r.row] = ("B", "Egreso capturado a mano sin referencia a factura (CFDI)")
+        imp[r.row][2] = r.Cargo
     for _, r in m[(m["Tipo póliza"] == "PRO") & ~m.isnc & (m.Abono < 0)].iterrows():
         st[r.row] = ("B", "Abono negativo: revisar cancelación de factura")
+        imp[r.row][4] = r.Abono
 
     invd: dict = {}
     for _, r in inv.sort_values("Fecha").iterrows():
@@ -217,12 +222,15 @@ def _relacionar(m: pd.DataFrame, cuentas: pd.DataFrame, meta: dict) -> pd.DataFr
                 left -= t
                 x["links"].append(r.row)
                 touched.append(x["row"])
+            imp[r.row][0] = r.Cargo - left
+            imp[r.row][2] = left
             if not touched:
                 st[r.row] = ("B", f"Pago en exceso: la factura {r.lf} ya estaba liquidada (pago duplicado)")
             elif left > 0.01:
                 st[r.row] = ("B", f"Pago mayor al saldo pendiente de la factura {r.lf}; exceso {_fmt(left)} sin abono relacionado")
             else:
-                st[r.row] = ("Y", f"Pago relacionado con factura {r.lf} (renglón {', '.join(map(str, touched))})")
+                extra = f" (diferencia de redondeo {_fmt(left)})" if left > 0.004 else ""
+                st[r.row] = ("Y", f"Pago relacionado con factura {r.lf} (renglón {', '.join(map(str, touched))}){extra}")
         else:
             c = r["Cta."]
             cand = [(fo, x) for (cc, fo), lst in invd.items() if cc == c and str(fo).endswith("-0")
@@ -232,12 +240,15 @@ def _relacionar(m: pd.DataFrame, cuentas: pd.DataFrame, meta: dict) -> pd.DataFr
                 x["paid"] += r.Cargo
                 x["links"].append(r.row)
                 st[r.row] = ("Y", f"Pago relacionado por UUID e importe con factura sin folio (renglón {x['row']})")
+                imp[r.row][0] = r.Cargo
                 continue
             ini = max(cuentas.loc[c, "ini"], 0) if c in cuentas.index else 0
             if ini_used[c] + r.Cargo <= ini + 0.01:
                 ini_used[c] += r.Cargo
+                imp[r.row][1] = r.Cargo
                 st[r.row] = ("Y", f"Pago de factura {r.lf} del saldo inicial (ejercicio anterior)")
             else:
+                imp[r.row][2] = r.Cargo
                 st[r.row] = ("B", f"Pago de factura {r.lf} que no está en el auxiliar y excede el saldo inicial: sin abono relacionado")
 
     # NC aplicadas dentro del pago (cargo negativo por el mismo importe)
@@ -251,8 +262,10 @@ def _relacionar(m: pd.DataFrame, cuentas: pd.DataFrame, meta: dict) -> pd.DataFr
             paired.add(r.row)
             st[r.row] = ("Y", f"Nota de crédito aplicada en el pago (renglón {c.row}, cargo negativo por el mismo importe)")
             st[c.row] = ("Y", f"Aplicación de la nota de crédito del renglón {r.row} dentro del pago")
+            imp[r.row][0], imp[c.row][0] = r.Cargo, c.Cargo      # se cancelan entre sí (suman cero)
     for _, r in neg[~neg.row.isin(usedneg)].iterrows():
         st[r.row] = ("B", "Cargo negativo sin nota de crédito relacionada")
+        imp[r.row][2] = r.Cargo
     for _, r in ncrows[~ncrows.row.isin(paired)].iterrows():
         best = None
         for (cc, fo), lst in invd.items():
@@ -266,16 +279,21 @@ def _relacionar(m: pd.DataFrame, cuentas: pd.DataFrame, meta: dict) -> pd.DataFr
         if best:
             best[1]["paid"] += r.Cargo
             best[1]["links"].append(r.row)
+            imp[r.row][0] = r.Cargo
             st[r.row] = ("Y", f"Nota de crédito aplicada por el saldo exacto de la factura {best[0]} (renglón {best[1]['row']}); "
                               "la NC no trae la referencia, se relacionó por importe")
         else:
+            imp[r.row][2] = r.Cargo
             st[r.row] = ("B", "Nota de crédito sin factura relacionada: no coincide con el saldo de ninguna factura del proveedor")
 
     for (c, fo), lst in invd.items():
         for x in lst:
             rem = x["amt"] - x["paid"]
+            imp[x["row"]][3] = x["paid"]
+            imp[x["row"]][4] = rem
             if rem <= 0.01:
-                st[x["row"]] = ("Y", f"Factura liquidada con {len(x['links'])} cargo(s) relacionado(s)")
+                extra = f" (diferencia de redondeo {_fmt(rem)})" if rem > 0.004 else ""
+                st[x["row"]] = ("Y", f"Factura liquidada con {len(x['links'])} cargo(s) relacionado(s){extra}")
             elif x["paid"] > 0:
                 st[x["row"]] = ("B", f"Factura con pago parcial: pagado {_fmt(x['paid'])}, pendiente {_fmt(rem)} al {corte_txt}")
             else:
@@ -283,7 +301,9 @@ def _relacionar(m: pd.DataFrame, cuentas: pd.DataFrame, meta: dict) -> pd.DataFr
     for r in m.row:
         st.setdefault(r, ("B", "Movimiento sin relación identificable"))
 
-    rel = pd.DataFrame([(r, c, t) for r, (c, t) in st.items()], columns=["row", "color", "motivo"])
+    rel = pd.DataFrame([(r, c, t, *imp[r]) for r, (c, t) in st.items()],
+                       columns=["row", "color", "motivo", "cargo_conciliado", "cargo_saldo_inicial",
+                                "cargo_pendiente", "abono_conciliado", "abono_pendiente"])
     rel = rel.merge(m[["row", "Cta.", "Cta. Desc.", "Tipo póliza", "Num. Póliza", "Fecha", "Cargo", "Abono", "lf"]], on="row")
     rel["categoria"] = rel.motivo.map(_categoria)
     return rel.sort_values("row").reset_index(drop=True)
@@ -752,3 +772,251 @@ def papel_de_trabajo(res: Resultado) -> bytes:
 
 def _d(v) -> str:
     return v.strftime("%d-%m-%Y") if hasattr(v, "strftime") else str(v or "")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REPORTE POR PROVEEDOR: lo que se cancela vs lo pendiente de conciliar
+# ═══════════════════════════════════════════════════════════════════════════════
+def _estado_renglon(r) -> str:
+    pend = abs(r.cargo_pendiente) + abs(r.abono_pendiente)
+    conc = abs(r.cargo_conciliado) + abs(r.cargo_saldo_inicial) + abs(r.abono_conciliado)
+    if pend <= 0.005 and conc <= 0.005:
+        return "Sin importe"
+    if pend <= 0.005 or (r.color == "Y" and pend <= 0.011):   # centavo de redondeo
+        return "Conciliado"
+    return "Parcial" if conc > 0.005 else "Pendiente"
+
+
+def detalle_conciliacion(res: Resultado) -> pd.DataFrame:
+    rel = res.relacion.merge(res.mov[["row", "folio", "Desc. Detalle"]], on="row", how="left")
+    rel["estado"] = rel.apply(_estado_renglon, axis=1)
+    for c in ("cargo_conciliado", "cargo_saldo_inicial", "abono_conciliado"):
+        rel[c] = rel[c].round(2)
+    # lo pendiente se obtiene por diferencia para que cada renglón cuadre al centavo con el auxiliar
+    rel["cargo_pendiente"] = (rel.Cargo.fillna(0) - rel.cargo_conciliado - rel.cargo_saldo_inicial).round(2)
+    rel["abono_pendiente"] = (rel.Abono.fillna(0) - rel.abono_conciliado).round(2)
+    return rel.sort_values(["Cta.", "Fecha", "row"]).reset_index(drop=True)
+
+
+def resumen_por_proveedor(res: Resultado) -> pd.DataFrame:
+    det = detalle_conciliacion(res)
+    f = res.cuentas
+    g = det.groupby("Cta.").agg(
+        cargos_saldo_inicial=("cargo_saldo_inicial", "sum"), abonos_conciliados=("abono_conciliado", "sum"),
+        cargos_conciliados=("cargo_conciliado", "sum"), abonos_pendientes=("abono_pendiente", "sum"),
+        cargos_pendientes=("cargo_pendiente", "sum"),
+        movs_conciliados=("estado", lambda s: int((s == "Conciliado").sum())),
+        movs_pendientes=("estado", lambda s: int(s.isin(["Pendiente", "Parcial"]).sum())),
+        movs_cero=("estado", lambda s: int((s == "Sin importe").sum())),
+    ).reindex(f.index).fillna(0)
+    out = pd.DataFrame({"nombre": f.nombre, "saldo_inicial": f.ini}).join(g)
+    out["saldo_inicial_pendiente"] = (out.saldo_inicial - out.cargos_saldo_inicial).round(2)
+    out["saldo_pendiente"] = (out.saldo_inicial_pendiente + out.abonos_pendientes - out.cargos_pendientes).round(2)
+    out["saldo_final"] = f.fin
+    out["diferencia"] = (out.saldo_pendiente - out.saldo_final).round(2)
+    out["estatus"] = np.where((out.saldo_inicial_pendiente.abs() < 0.01) & (out.movs_pendientes == 0), "Conciliada",
+                              "Pendiente de conciliar")
+    return out
+
+
+def reporte_por_proveedor(res: Resultado) -> bytes:
+    """Excel: resumen por proveedor (saldo inicial, cargos y abonos que se cancelan vs pendientes),
+    bloques por proveedor de pendientes y de conciliados, y el detalle de todos los movimientos."""
+    det = detalle_conciliacion(res)
+    f, meta = res.cuentas, res.meta
+    wb = openpyxl.Workbook()
+    Y, B = PatternFill("solid", fgColor=AMARILLO), PatternFill("solid", fgColor=AZUL)
+    GR = PatternFill("solid", fgColor="D9E1F2")
+    bold = Font(name=F, bold=True)
+    norm = Font(name=F)
+    src = (f"{meta.get('Empresa', '')} · RFC {meta.get('R. F. C.', '')} · "
+           f"{_d(meta.get('Fecha inicial'))} a {_d(meta.get('Fecha final'))}")
+
+    def titulo(ws, t, sub):
+        ws["A1"], ws["A2"] = t, sub
+        ws["A1"].font = Font(name=F, bold=True, size=14)
+        ws["A2"].font = Font(name=F, italic=True, size=9, color="595959")
+
+    def encabezado(ws, row, hdr):
+        for j, h in enumerate(hdr, 1):
+            c = ws.cell(row, j, h)
+            c.font, c.fill, c.border = _HF, _HFILL, _BOR
+            c.alignment = Alignment(wrap_text=True, vertical="center")
+
+    def val(v):
+        if isinstance(v, pd.Timestamp):
+            return v.to_pydatetime()
+        if isinstance(v, np.integer):
+            return int(v)
+        if isinstance(v, np.floating):
+            return None if np.isnan(v) else float(v)
+        if isinstance(v, float) and np.isnan(v):
+            return None
+        return v
+
+    # ── Detalle de movimientos (base de las fórmulas del resumen) ─────────────
+    wd = wb.active
+    wd.title = "Detalle movimientos"
+    titulo(wd, "Detalle de movimientos: importe conciliado y pendiente por renglón", src +
+           " · Renglón = fila del auxiliar original. Cargo = conciliado vs facturas + aplicado a saldo inicial + pendiente.")
+    hd = ["Renglón", "Cuenta", "Proveedor", "Tipo", "Póliza", "Fecha", "Folio", "Descripción", "Cargo", "Abono",
+          "Cargo conciliado con abonos", "Cargo aplicado a saldo inicial", "Cargo pendiente", "Abono conciliado",
+          "Abono pendiente", "Estado", "Relación / motivo"]
+    encabezado(wd, 4, hd)
+    fm = [None, None, None, None, "0", DT, None, None, MON, MON, MON, MON, MON, MON, MON, None, None]
+    keys = ["row", "Cta.", "Cta. Desc.", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "Desc. Detalle", "Cargo", "Abono",
+            "cargo_conciliado", "cargo_saldo_inicial", "cargo_pendiente", "abono_conciliado", "abono_pendiente",
+            "estado", "motivo"]
+    for i, rd in enumerate(det[keys].to_dict("records"), 5):
+        vals = [rd[k] for k in keys]
+        for j, v in enumerate(vals, 1):
+            c = wd.cell(i, j, val(v))
+            c.font = norm
+            if fm[j - 1]:
+                c.number_format = fm[j - 1]
+        fill = Y if rd["estado"] == "Conciliado" else B
+        for j in range(1, len(hd) + 1):
+            wd.cell(i, j).fill = fill
+    nd = 4 + len(det)
+    for j, w in enumerate([9, 18, 34, 6, 8, 11, 16, 50, 14, 14, 15, 15, 14, 14, 14, 11, 70], 1):
+        wd.column_dimensions[get_column_letter(j)].width = w
+    wd.freeze_panes = "D5"
+    wd.auto_filter.ref = f"A4:{get_column_letter(len(hd))}{nd}"
+    D = "'Detalle movimientos'!"
+    rng = lambda col: f"{D}${col}$5:${col}${nd}"
+
+    # ── Resumen por proveedor (con fórmulas sobre el detalle) ─────────────────
+    ws = wb.create_sheet("Resumen por proveedor", 0)
+    titulo(ws, "Resumen por proveedor: lo que se cancela y lo pendiente de conciliar", src)
+    hr = ["Cuenta", "Proveedor", "Saldo inicial", "Cargos aplicados a saldo inicial", "Saldo inicial pendiente",
+          "Abonos conciliados", "Cargos conciliados", "Diferencia conciliada (debe ser 0)",
+          "Abonos pendientes", "Cargos pendientes", "Saldo pendiente de conciliar", "Saldo final auxiliar",
+          "Diferencia vs auxiliar", "Movs. conciliados", "Movs. pendientes", "Estatus"]
+    ws["A3"] = ("Saldo pendiente = saldo inicial pendiente + abonos pendientes − cargos pendientes. "
+                "Lo conciliado se cancela entre sí (abonos conciliados = cargos conciliados).")
+    ws["A3"].font = Font(name=F, italic=True, size=9, color="595959")
+    encabezado(ws, 5, hr)
+    rp = resumen_por_proveedor(res)
+    fr = [None, None, MON, MON, MON, MON, MON, MON, MON, MON, MON, MON, MON, "0", "0", None]
+    for i, (c, a) in enumerate(rp.iterrows(), 6):
+        A = f"$A{i}"
+        vals = [c, a.nombre, a.saldo_inicial,
+                f"=SUMIFS({rng('L')},{rng('B')},{A})", f"=C{i}-D{i}",
+                f"=SUMIFS({rng('N')},{rng('B')},{A})", f"=SUMIFS({rng('K')},{rng('B')},{A})", f"=ROUND(F{i}-G{i},2)",
+                f"=SUMIFS({rng('O')},{rng('B')},{A})", f"=SUMIFS({rng('M')},{rng('B')},{A})",
+                f"=ROUND(E{i}+I{i}-J{i},2)", a.saldo_final, f"=ROUND(K{i}-L{i},2)",
+                f'=COUNTIFS({rng("B")},{A},{rng("P")},"Conciliado")',
+                f'=COUNTIFS({rng("B")},{A},{rng("P")},"Pendiente")+COUNTIFS({rng("B")},{A},{rng("P")},"Parcial")',
+                f'=IF(AND(ABS(E{i})<0.01,O{i}=0),"Conciliada","Pendiente de conciliar")']
+        for j, v in enumerate(vals, 1):
+            cc = ws.cell(i, j, val(v))
+            cc.font, cc.border = norm, _BOR
+            if fr[j - 1]:
+                cc.number_format = fr[j - 1]
+        ws.cell(i, 16).fill = Y if a.estatus == "Conciliada" else B
+    nr = 5 + len(rp)
+    t = nr + 1
+    ws.cell(t, 1, "Total").font = bold
+    for j in range(3, 16):
+        L = get_column_letter(j)
+        cc = ws.cell(t, j, f"=SUBTOTAL(9,{L}6:{L}{nr})")
+        cc.font, cc.number_format = bold, fr[j - 1]
+    ws.cell(t + 2, 1, "Cuentas conciliadas").font = bold
+    ws.cell(t + 2, 3, f'=COUNTIF(P6:P{nr},"Conciliada")')
+    ws.cell(t + 3, 1, "Cuentas pendientes de conciliar").font = bold
+    ws.cell(t + 3, 3, f'=COUNTIF(P6:P{nr},"Pendiente de conciliar")')
+    ws.cell(t + 4, 1, "Cuentas con diferencia vs auxiliar").font = bold
+    ws.cell(t + 4, 3, f'=SUMPRODUCT(--(ABS(M6:M{nr})>0.015))')
+    for j, w in enumerate([18, 40, 15, 16, 15, 16, 16, 14, 16, 16, 17, 16, 12, 11, 11, 20], 1):
+        ws.column_dimensions[get_column_letter(j)].width = w
+    ws.freeze_panes = "C6"
+    ws.auto_filter.ref = f"A5:P{nr}"
+
+    # ── Bloques por proveedor ─────────────────────────────────────────────────
+    def bloques(nombre, tit, sub, filtro, cols, hdr, fmts, widths, pie):
+        wsb = wb.create_sheet(nombre)
+        titulo(wsb, tit, src + " · " + sub)
+        encabezado(wsb, 4, hdr)
+        row = 5
+        sel = det[filtro(det)]
+        for c, g in sel.groupby("Cta.", sort=True):
+            a = rp.loc[c]
+            h = wsb.cell(row, 1, f"{c} · {a.nombre}")
+            h.font = bold
+            for j in range(1, len(hdr) + 1):
+                wsb.cell(row, j).fill = GR
+            pie(wsb, row, a, None, None)    # datos de cabecera (si aplica)
+            first = row + 1
+            for k, rd in enumerate(g[cols].to_dict("records"), first):
+                for j, colname in enumerate(cols, 1):
+                    cc = wsb.cell(k, j, val(rd[colname]))
+                    cc.font = norm
+                    if fmts[j - 1]:
+                        cc.number_format = fmts[j - 1]
+                wsb.row_dimensions[k].outline_level = 1
+            last = first + len(g) - 1
+            pie(wsb, last + 1, a, first, last)
+            row = last + 3
+        for j, w in enumerate(widths, 1):
+            wsb.column_dimensions[get_column_letter(j)].width = w
+        wsb.freeze_panes = "A5"
+        wsb.sheet_properties.outlinePr.summaryBelow = True
+        return wsb
+
+    cols_p = ["row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "Desc. Detalle", "cargo_pendiente", "abono_pendiente", "estado", "motivo"]
+    hdr_p = ["Renglón", "Tipo", "Póliza", "Fecha", "Folio", "Descripción", "Cargo pendiente", "Abono pendiente", "Estado", "Motivo"]
+    fm_p = [None, None, "0", DT, None, None, MON, MON, None, None]
+
+    def pie_pend(wsb, row, a, first, last):
+        if first is None:     # cabecera: saldo inicial pendiente
+            wsb.cell(row, 6, "Saldo inicial pendiente").font = bold
+            cc = wsb.cell(row, 8, float(a.saldo_inicial_pendiente))
+            cc.number_format, cc.font = MON, bold
+            return
+        wsb.cell(row, 6, "Saldo pendiente de conciliar (= saldo inicial pendiente + abonos − cargos)").font = bold
+        hdr_row = first - 1
+        cg = wsb.cell(row, 7, f"=SUM(G{first}:G{last})")
+        ab = wsb.cell(row, 8, f"=H{hdr_row}+SUM(H{first}:H{last})-G{row}")
+        for cc in (cg, ab):
+            cc.number_format, cc.font = MON, bold
+        wsb.cell(row, 9, "Saldo final auxiliar:").font = bold
+        cc = wsb.cell(row, 10, float(a.saldo_final))
+        cc.number_format, cc.font = MON, bold
+
+    filtro_p = lambda d: (d.cargo_pendiente.abs() + d.abono_pendiente.abs()) > 0.005
+    wsp = bloques("Pendientes por proveedor", "Movimientos pendientes de conciliar, por proveedor",
+                  "Solo la parte que no se cancela de cada movimiento. Se puede contraer cada proveedor (botones 1/2 a la izquierda).",
+                  filtro_p, cols_p, hdr_p, fm_p, [9, 6, 8, 11, 16, 60, 15, 15, 11, 70], pie_pend)
+    # proveedores sin movimientos pendientes pero con saldo inicial pendiente
+    solo_ini = rp[(rp.saldo_inicial_pendiente.abs() >= 0.01) & ~rp.index.isin(det[filtro_p(det)]["Cta."].unique())]
+    if len(solo_ini):
+        r0 = wsp.max_row + 2
+        wsp.cell(r0, 1, "Proveedores cuyo único pendiente es el saldo inicial").font = Font(name=F, bold=True, size=12)
+        for k, (c, a) in enumerate(solo_ini.iterrows(), r0 + 1):
+            wsp.cell(k, 1, f"{c} · {a.nombre}").font = norm
+            cc = wsp.cell(k, 8, float(a.saldo_inicial_pendiente))
+            cc.number_format = MON
+
+    cols_c = ["row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "Desc. Detalle", "cargo_conciliado", "cargo_saldo_inicial", "abono_conciliado", "motivo"]
+    hdr_c = ["Renglón", "Tipo", "Póliza", "Fecha", "Folio", "Descripción", "Cargo conciliado con abonos",
+             "Cargo aplicado a saldo inicial", "Abono conciliado", "Relación"]
+    fm_c = [None, None, "0", DT, None, None, MON, MON, MON, None]
+
+    def pie_conc(wsb, row, a, first, last):
+        if first is None:
+            return
+        wsb.cell(row, 6, "Totales (abonos conciliados − cargos conciliados = 0)").font = bold
+        for j, L in [(7, "G"), (8, "H"), (9, "I")]:
+            cc = wsb.cell(row, j, f"=SUM({L}{first}:{L}{last})")
+            cc.number_format, cc.font = MON, bold
+        cc = wsb.cell(row, 10, f'=IF(ROUND(I{row}-G{row},2)=0,"Se cancelan","Diferencia "&TEXT(I{row}-G{row},"#,##0.00"))')
+        cc.font = bold
+
+    bloques("Conciliados por proveedor", "Movimientos que se cancelan entre sí, por proveedor",
+            "Parte conciliada de cada movimiento (pagos y notas de crédito contra su factura, y pagos aplicados al saldo inicial).",
+            lambda d: d.estado.isin(["Conciliado", "Parcial"]), cols_c, hdr_c, fm_c,
+            [9, 6, 8, 11, 16, 60, 16, 16, 16, 70], pie_conc)
+
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()

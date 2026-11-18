@@ -41,6 +41,11 @@ def _excel_marcado(data: bytes, _key: str) -> bytes:
 
 
 @st.cache_data(show_spinner=False, max_entries=6)
+def _excel_proveedor(data: bytes, _key: str) -> bytes:
+    return dc.reporte_por_proveedor(_analizar(data, _key))
+
+
+@st.cache_data(show_spinner=False, max_entries=6)
 def _excel_papel(data: bytes, _key: str) -> bytes:
     return dc.papel_de_trabajo(_analizar(data, _key))
 
@@ -126,7 +131,8 @@ if res.errores_aritmeticos:
 else:
     st.success("✅ Integridad aritmética: todos los saldos corridos y finales coinciden al centavo.")
 
-tabs = st.tabs(["📋 Hallazgos", "🔗 Relación cargo-abono", "🏢 Proveedores", "⏳ Antigüedad", "🔄 Comparar", "⬇️ Descargas"])
+tabs = st.tabs(["📋 Hallazgos", "🔗 Relación cargo-abono", "🏢 Proveedores", "⚖️ Por proveedor", "⏳ Antigüedad",
+                "🔄 Comparar", "⬇️ Descargas"])
 
 # ── Hallazgos ─────────────────────────────────────────────────────────────────
 with tabs[0]:
@@ -177,7 +183,7 @@ with tabs[1]:
     st.caption(f"{len(v):,} renglones · Renglón = fila del Excel original")
     show = v[["row", "Cta.", "Cta. Desc.", "Tipo póliza", "Num. Póliza", "Fecha", "Cargo", "Abono", "motivo", "color"]]
     st.dataframe(_sty(show, ["Cargo", "Abono"], "color"), hide_index=True, use_container_width=True, height=520,
-                 column_config={"row": "Renglón", "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                 column_config={"row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"),
                                 "motivo": "Relación", "color": None})
 
 # ── Proveedores ───────────────────────────────────────────────────────────────
@@ -200,11 +206,60 @@ with tabs[2]:
         mv = m[m["Cta."] == cta][["row", "Tipo póliza", "Num. Póliza", "Fecha", "Desc. Detalle", "Cargo", "Abono", "Saldo"]] \
             .merge(rel[["row", "color", "motivo"]], on="row")
         st.dataframe(_sty(mv, ["Cargo", "Abono", "Saldo"], "color"), hide_index=True, use_container_width=True,
-                     column_config={"row": "Renglón", "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"),
+                     column_config={"row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"),
                                     "motivo": "Relación", "color": None})
 
-# ── Antigüedad ────────────────────────────────────────────────────────────────
+# ── Por proveedor: lo que se cancela vs pendiente ────────────────────────────
 with tabs[3]:
+    rp = dc.resumen_por_proveedor(res).reset_index()
+    det = dc.detalle_conciliacion(res)
+    c = st.columns(4)
+    c[0].metric("Cuentas conciliadas", f"{(rp.estatus == 'Conciliada').sum():,}")
+    c[1].metric("Pendientes de conciliar", f"{(rp.estatus != 'Conciliada').sum():,}")
+    c[2].metric("Movimientos pendientes", f"{int(rp.movs_pendientes.sum()):,}")
+    c[3].metric("Saldo pendiente", _mill(rp.saldo_pendiente.sum()))
+    st.caption("Saldo pendiente = saldo inicial pendiente + abonos pendientes − cargos pendientes. "
+               "Abonos conciliados = cargos conciliados: esos movimientos se cancelan entre sí.")
+    solo_p = st.toggle("Solo cuentas pendientes de conciliar", value=True)
+    vista = rp[rp.estatus != "Conciliada"] if solo_p else rp
+    cols_m = ["saldo_inicial", "cargos_saldo_inicial", "saldo_inicial_pendiente", "abonos_conciliados", "cargos_conciliados",
+              "abonos_pendientes", "cargos_pendientes", "saldo_pendiente", "saldo_final", "diferencia"]
+    st.dataframe(_sty(vista[["cta", "nombre"] + cols_m + ["movs_pendientes", "estatus"]], cols_m, "estatus", "Conciliada"),
+                 hide_index=True, use_container_width=True, height=380,
+                 column_config={"cta": "Cuenta", "nombre": "Proveedor", "saldo_inicial": "Saldo inicial",
+                                "cargos_saldo_inicial": "Cargos a saldo inicial", "saldo_inicial_pendiente": "Saldo inicial pendiente",
+                                "abonos_conciliados": "Abonos conciliados", "cargos_conciliados": "Cargos conciliados",
+                                "abonos_pendientes": "Abonos pendientes", "cargos_pendientes": "Cargos pendientes",
+                                "saldo_pendiente": "Saldo pendiente", "saldo_final": "Saldo final", "diferencia": "Diferencia",
+                                "movs_pendientes": "Movs. pendientes", "estatus": "Estatus"})
+    opc = [f"{a} · {b}" for a, b in zip(vista.cta, vista.nombre)]
+    selp = st.selectbox("Ver pendientes y conciliados de la cuenta", opc, index=None, placeholder="Elige una cuenta…", key="dep_prov")
+    if selp:
+        cta = selp.split(" · ")[0]
+        a = rp.set_index("cta").loc[cta]
+        dd = det[det["Cta."] == cta]
+        pend = dd[(dd.cargo_pendiente.abs() + dd.abono_pendiente.abs()) > 0.005]
+        conc = dd[dd.estado.isin(["Conciliado", "Parcial"])]
+        st.markdown(_md(f"**Saldo inicial pendiente:** {_money(a.saldo_inicial_pendiente)} · "
+                        f"**Abonos pendientes:** {_money(a.abonos_pendientes)} · **Cargos pendientes:** {_money(a.cargos_pendientes)} · "
+                        f"**Saldo pendiente:** {_money(a.saldo_pendiente)} (auxiliar {_money(a.saldo_final)})"))
+        st.markdown("###### Pendientes de conciliar")
+        st.dataframe(_sty(pend[["row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "cargo_pendiente", "abono_pendiente", "estado", "motivo"]],
+                          ["cargo_pendiente", "abono_pendiente"]), hide_index=True, use_container_width=True,
+                     column_config={"row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"), "folio": "Folio",
+                                    "cargo_pendiente": "Cargo pendiente", "abono_pendiente": "Abono pendiente",
+                                    "estado": "Estado", "motivo": "Motivo"})
+        st.markdown(_md(f"###### Conciliados (se cancelan): abonos {_money(conc.abono_conciliado.sum())} · "
+                        f"cargos {_money(conc.cargo_conciliado.sum())} · aplicados a saldo inicial {_money(conc.cargo_saldo_inicial.sum())}"))
+        st.dataframe(_sty(conc[["row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "cargo_conciliado", "cargo_saldo_inicial",
+                                "abono_conciliado", "motivo"]], ["cargo_conciliado", "cargo_saldo_inicial", "abono_conciliado"]),
+                     hide_index=True, use_container_width=True,
+                     column_config={"row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"), "folio": "Folio",
+                                    "cargo_conciliado": "Cargo conciliado", "cargo_saldo_inicial": "Cargo a saldo inicial",
+                                    "abono_conciliado": "Abono conciliado", "motivo": "Relación"})
+
+# ── Antigüedad ────────────────────────────────────────────────────────────────
+with tabs[4]:
     ag = res.tablas.get("antiguedad")
     if ag is None or not len(ag):
         st.info("No hay saldos acreedores.")
@@ -229,7 +284,7 @@ with tabs[3]:
     st.caption("% sobre lo facturado en el periodo.")
 
 # ── Comparar contra auxiliar anterior ─────────────────────────────────────────
-with tabs[4]:
+with tabs[5]:
     if not up_prev:
         st.info("Sube un auxiliar anterior (arriba, a la derecha) para comprobar que los movimientos ya registrados no cambiaron.")
     else:
@@ -275,9 +330,17 @@ with tabs[4]:
                 st.markdown("**Nuevos saldos deudores:** " + ", ".join(f.loc[list(act_deu - prev_deu), "nombre"]))
 
 # ── Descargas ─────────────────────────────────────────────────────────────────
-with tabs[5]:
+with tabs[6]:
     base = up.name.rsplit(".", 1)[0]
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
+    with c3:
+        st.markdown("##### Resumen por proveedor")
+        st.caption("Por cada proveedor: saldo inicial, cargos y abonos que se cancelan y los que quedan pendientes, "
+                   "con el detalle de cada movimiento pendiente de conciliar.")
+        with st.spinner("Generando…"):
+            b3 = _excel_proveedor(data, key)
+        st.download_button("⬇️ Descargar resumen por proveedor", b3, file_name=f"Resumen_por_proveedor_{base}.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with c1:
         st.markdown("##### Auxiliar marcado")
         st.caption("Tu archivo original con cada movimiento en amarillo (relacionado) o azul (sin relación), "

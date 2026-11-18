@@ -36,6 +36,7 @@ pg = st.navigation(
             st.Page("pages/12_Constancia_y_Opinion_SAT.py",   title="Constancia y Opinión SAT",    icon="🏛️"),
             st.Page("pages/21_Facturacion_CFDI.py",           title="Facturación CFDI",            icon="🧾"),
             st.Page("pages/13_Impuestos_PF.py",               title="Impuestos PF",                icon="📊"),
+            st.Page("pages/22_Depuracion_de_Cuentas.py",      title="DEPURACIÓN DE CUENTAS",       icon="🧹"),
         ],
     },
     position="sidebar",

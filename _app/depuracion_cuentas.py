@@ -823,7 +823,7 @@ def detalle_conciliacion(res: Resultado) -> pd.DataFrame:
     rel.loc[cero, "grupo_key"] = "Z|" + rel.loc[cero, "Cta."]
     rel["pend_abs"] = rel.cargo_pendiente.abs() + rel.abono_pendiente.abs()
     g = rel.groupby("grupo_key")
-    rel["grupo_fecha"] = g.Fecha.transform("max")
+    rel["grupo_fecha"] = g.Fecha.transform("min")
     rel["grupo_pend"] = g.pend_abs.transform("sum")
     rel["grupo_n"] = g.row.transform("size")
     rel["es_abono"] = (rel.Abono.fillna(0) != 0).astype(int)
@@ -849,11 +849,11 @@ def detalle_conciliacion(res: Resultado) -> pd.DataFrame:
             return "Aplicado a saldo inicial"
         return "Se cancela" if r.grupo_pend <= 0.005 else "Pendiente"
     rel["grupo_estado"] = rel.apply(_gestado, axis=1)
-    # orden: por cuenta, grupos del más reciente al más antiguo (descendente);
-    # dentro del grupo primero la(s) factura(s) y después sus cargos, por fecha
-    rel["orden_tipo"] = rel.grupo_key.str[0].map({"R": 0, "S": 1, "Z": 2})
-    rel = rel.sort_values(["Cta.", "orden_tipo", "grupo_fecha", "grupo_key", "es_abono", "Fecha", "row"],
-                          ascending=[True, True, False, True, False, True, True]).reset_index(drop=True)
+    # orden: por cuenta, de lo más antiguo (arriba) a lo más reciente (abajo); los movimientos que se
+    # cancelan entre sí quedan juntos: el grupo se ubica por su fecha más antigua y dentro va por fecha
+    rel["orden_tipo"] = rel.grupo_key.str[0].map({"S": 0, "R": 1, "Z": 2})
+    rel = rel.sort_values(["Cta.", "orden_tipo", "grupo_fecha", "grupo_key", "Fecha", "es_abono", "row"],
+                          ascending=[True, True, True, True, True, False, True]).reset_index(drop=True)
     rel["grupo"] = rel.groupby("Cta.").grupo_key.transform(lambda s: pd.factorize(s)[0] + 1)
     return rel.drop(columns=["pend_abs", "orden_tipo"])
 
@@ -918,7 +918,7 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
     wd = wb.active
     wd.title = "Detalle movimientos"
     titulo(wd, "Detalle de movimientos: importe conciliado y pendiente por renglón", src +
-           " · Renglón = fila del auxiliar original. Ordenado por proveedor y grupo de conciliación (más reciente primero).")
+           " · Renglón = fila del auxiliar original. Ordenado por proveedor, del más antiguo al más reciente.")
     hd = ["Renglón", "Cuenta", "Proveedor", "Tipo", "Póliza", "Fecha", "Folio", "Descripción", "Cargo", "Abono",
           "Cargo conciliado con abonos", "Cargo aplicado a saldo inicial", "Cargo pendiente", "Abono conciliado",
           "Abono pendiente", "Estado", "Relación / motivo", "Grupo", "Tipo de grupo", "Estado del grupo"]
@@ -993,7 +993,6 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
     ws.auto_filter.ref = f"A5:P{nr}"
 
     # ── Bloques por proveedor ─────────────────────────────────────────────────
-    G1 = PatternFill("solid", fgColor="EEF3FB")      # cabecera de grupo (solo Conciliados)
     fecha_ini = pd.Timestamp(meta.get("Fecha inicial")) if meta.get("Fecha inicial") else det.Fecha.min()
 
     # Saldo inicial como renglón propio: va a Conciliados si sus pagos lo cancelan, si no a Pendientes
@@ -1017,12 +1016,13 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
                         "cargo_pendiente": 0.0 if pos else -pend, "abono_pendiente": pend if pos else 0.0,
                         "estado": "Conciliado" if cancela else "Pendiente", "motivo": motivo,
                         "grupo_key": f"SI|{c}", "grupo_tipo": "Saldo inicial",
-                        "grupo_estado": "Se cancela" if cancela else "Pendiente", "grupo": 0, "orden": -1, "bloque": 1})
+                        "grupo_estado": "Se cancela" if cancela else "Pendiente", "grupo": 0, "orden": -1, "bloque": 0})
     si_df = pd.DataFrame(si_rows)
     if len(si_df):
         est_si = si_df.set_index("grupo_key").grupo_estado
         det.loc[det.grupo_key.str.startswith("SI|"), "grupo_estado"] = det.grupo_key.map(est_si)
-        det.loc[det.grupo_key.str.startswith("SI|"), "bloque"] = 1
+        det.loc[det.grupo_key.str.startswith("SI|"), "bloque"] = 0
+        det.loc[~det.grupo_key.str.startswith("SI|"), "bloque"] = 1
         det.loc[det.grupo_key.str.startswith("SI|"), "grupo_tipo"] = "Saldo inicial"
         todo = pd.concat([det, si_df.dropna(axis=1, how="all")], ignore_index=True)
     else:
@@ -1042,40 +1042,16 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
                 wsb.cell(row, j).fill = GR
             prov_row = row
             row += 1
-            tot_rows = []
-            for gk, gg in gc.groupby("grupo_key", sort=False):
-                if not pendientes:
-                    g0 = gg.iloc[0]
-                    etiqueta = ("Saldo inicial · Se cancela" if gk.startswith("SI|")
-                                else f"Grupo {int(g0.grupo)} · {g0.grupo_tipo} · {g0.grupo_estado}")
-                    wsb.cell(row, 1, etiqueta).font = Font(name=F, bold=True, color="1F3864")
-                    for j in range(1, nc + 1):
-                        wsb.cell(row, j).fill = G1
-                    wsb.row_dimensions[row].outline_level = 1
-                    row += 1
-                first = row
-                for rd in gg[cols].to_dict("records"):
-                    for j, colname in enumerate(cols, 1):
-                        cc = wsb.cell(row, j, val(rd[colname]))
-                        cc.font = Font(name=F, bold=True) if rd["Tipo póliza"] == "SI" else norm
-                        if fmts[j - 1]:
-                            cc.number_format = fmts[j - 1]
-                    fill = Y if (not pendientes or rd.get("estado") == "Conciliado") else B
-                    for j in range(1, nc + 1):
-                        wsb.cell(row, j).fill = fill
-                    wsb.row_dimensions[row].outline_level = 2 if not pendientes else 1
-                    row += 1
-                last = row - 1
-                if pendientes:          # en Pendientes no va separación ni subtotal por grupo
-                    continue
-                wsb.cell(row, 6, "Subtotal del grupo").font = bold
-                for j, L in [(7, "G"), (8, "H")]:
-                    cc = wsb.cell(row, j, f"=SUM({L}{first}:{L}{last})")
-                    cc.number_format, cc.font = MON, bold
-                cc = wsb.cell(row, 9, f'=IF(ROUND(H{row}-G{row},2)=0,"Se cancela","Diferencia "&TEXT(H{row}-G{row},"#,##0.00"))')
-                cc.font = bold
+            for rd in gc[cols].to_dict("records"):
+                for j, colname in enumerate(cols, 1):
+                    cc = wsb.cell(row, j, val(rd[colname]))
+                    cc.font = Font(name=F, bold=True) if rd["Tipo póliza"] == "SI" else norm
+                    if fmts[j - 1]:
+                        cc.number_format = fmts[j - 1]
+                fill = Y if (not pendientes or rd.get("estado") == "Conciliado") else B
+                for j in range(1, nc + 1):
+                    wsb.cell(row, j).fill = fill
                 wsb.row_dimensions[row].outline_level = 1
-                tot_rows.append(row)
                 row += 1
             if pendientes:
                 wsb.cell(row, 6, "Saldo pendiente de conciliar (abonos pendientes − cargos pendientes)").font = bold
@@ -1087,10 +1063,12 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
                 cc = wsb.cell(row, 12, float(a.saldo_final))
                 cc.number_format, cc.font = MON, bold
             else:
-                wsb.cell(row, 6, "Total conciliado del proveedor").font = bold
+                wsb.cell(row, 6, "Total conciliado del proveedor (abonos − cargos = 0)").font = bold
                 for j, L in [(7, "G"), (8, "H")]:
-                    cc = wsb.cell(row, j, "=" + "+".join(f"{L}{t}" for t in tot_rows))
+                    cc = wsb.cell(row, j, f"=SUM({L}{prov_row + 1}:{L}{row - 1})")
                     cc.number_format, cc.font = MON, bold
+                cc = wsb.cell(row, 9, f'=IF(ROUND(H{row}-G{row},2)=0,"Se cancela","Diferencia "&TEXT(H{row}-G{row},"#,##0.00"))')
+                cc.font = bold
             for j in range(1, nc + 1):
                 wsb.cell(row, j).border = Border(top=Side(style="medium", color="1F3864"))
             row += 3
@@ -1109,7 +1087,7 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
               "cargo_pendiente", "abono_pendiente", "estado", "motivo"]
     fm_p = [None, None, "0", DT, None, None, MON, MON, MON, MON, None, None]
     hoja_bloques("Pendientes por proveedor", "Movimientos pendientes de conciliar, por proveedor",
-                 "Azul = parte pendiente; amarillo = parte ya conciliada que acompaña al movimiento pendiente.",
+                 "Del más antiguo al más reciente. Azul = parte pendiente; amarillo = parte ya conciliada que acompaña al movimiento pendiente.",
                  sel_p, hdr_p, cols_p, fm_p, [9, 6, 8, 11, 16, 55, 14, 14, 15, 15, 11, 60], True)
 
     # Conciliados: grupos que se cancelan y el saldo inicial cuando sus pagos lo cancelan
@@ -1117,8 +1095,8 @@ def reporte_por_proveedor(res: Resultado) -> bytes:
     hdr_c = ["Renglón", "Tipo", "Póliza", "Fecha", "Folio", "Descripción", "Cargo", "Abono", "Relación"]
     cols_c = ["row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "Desc. Detalle", "Cargo", "Abono", "motivo"]
     fm_c = [None, None, "0", DT, None, None, MON, MON, None]
-    hoja_bloques("Conciliados por proveedor", "Movimientos que se cancelan entre sí, por proveedor y grupo",
-                 "Cada grupo: abonos − cargos = 0.", sel_c, hdr_c, cols_c, fm_c,
+    hoja_bloques("Conciliados por proveedor", "Movimientos que se cancelan entre sí, por proveedor",
+                 "Del más antiguo al más reciente; cada factura junto a los pagos que la cancelan.", sel_c, hdr_c, cols_c, fm_c,
                  [9, 6, 8, 11, 16, 55, 14, 14, 70], False)
 
     out = io.BytesIO()

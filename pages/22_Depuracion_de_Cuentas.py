@@ -249,7 +249,7 @@ with tabs[3]:
         pend = dd[dd.grupo_estado == "Pendiente"]
         conc = dd[dd.grupo_estado.isin(["Se cancela", "Aplicado a saldo inicial"])]
         st.caption("Cada grupo junta la factura con los pagos y notas de crédito que la cancelan, en renglones consecutivos; "
-                   "grupos del más reciente al más antiguo.")
+                   "del más antiguo (arriba) al más reciente (abajo).")
         st.markdown(_md(f"**Saldo inicial pendiente:** {_money(a.saldo_inicial_pendiente)} · "
                         f"**Abonos pendientes:** {_money(a.abonos_pendientes)} · **Cargos pendientes:** {_money(a.cargos_pendientes)} · "
                         f"**Saldo pendiente:** {_money(a.saldo_pendiente)} (auxiliar {_money(a.saldo_final)})"))

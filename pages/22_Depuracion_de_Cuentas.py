@@ -41,6 +41,14 @@ def _excel_marcado(data: bytes, _key: str) -> bytes:
 
 
 @st.cache_data(show_spinner=False, max_entries=6)
+def _conciliacion(data: bytes, _key: str):
+    res = _analizar(data, _key)
+    det = dc.detalle_conciliacion(res)
+    det["folio"] = det.folio.fillna("")
+    return dc.resumen_por_proveedor(res).reset_index(), det
+
+
+@st.cache_data(show_spinner=False, max_entries=6)
 def _excel_proveedor(data: bytes, _key: str) -> bytes:
     return dc.reporte_por_proveedor(_analizar(data, _key))
 
@@ -211,8 +219,8 @@ with tabs[2]:
 
 # ── Por proveedor: lo que se cancela vs pendiente ────────────────────────────
 with tabs[3]:
-    rp = dc.resumen_por_proveedor(res).reset_index()
-    det = dc.detalle_conciliacion(res)
+    with st.spinner("Agrupando movimientos que se cancelan…"):
+        rp, det = _conciliacion(data, key)
     c = st.columns(4)
     c[0].metric("Cuentas conciliadas", f"{(rp.estatus == 'Conciliada').sum():,}")
     c[1].metric("Pendientes de conciliar", f"{(rp.estatus != 'Conciliada').sum():,}")
@@ -238,23 +246,28 @@ with tabs[3]:
         cta = selp.split(" · ")[0]
         a = rp.set_index("cta").loc[cta]
         dd = det[det["Cta."] == cta]
-        pend = dd[(dd.cargo_pendiente.abs() + dd.abono_pendiente.abs()) > 0.005]
-        conc = dd[dd.estado.isin(["Conciliado", "Parcial"])]
+        pend = dd[dd.grupo_estado == "Pendiente"]
+        conc = dd[dd.grupo_estado.isin(["Se cancela", "Aplicado a saldo inicial"])]
+        st.caption("Cada grupo junta la factura con los pagos y notas de crédito que la cancelan, en renglones consecutivos; "
+                   "grupos del más reciente al más antiguo.")
         st.markdown(_md(f"**Saldo inicial pendiente:** {_money(a.saldo_inicial_pendiente)} · "
                         f"**Abonos pendientes:** {_money(a.abonos_pendientes)} · **Cargos pendientes:** {_money(a.cargos_pendientes)} · "
                         f"**Saldo pendiente:** {_money(a.saldo_pendiente)} (auxiliar {_money(a.saldo_final)})"))
         st.markdown("###### Pendientes de conciliar")
-        st.dataframe(_sty(pend[["row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "cargo_pendiente", "abono_pendiente", "estado", "motivo"]],
-                          ["cargo_pendiente", "abono_pendiente"]), hide_index=True, use_container_width=True,
-                     column_config={"row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"), "folio": "Folio",
+        st.dataframe(_sty(pend[["grupo", "grupo_tipo", "row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "Cargo", "Abono",
+                                "cargo_pendiente", "abono_pendiente", "estado", "motivo"]],
+                          ["Cargo", "Abono", "cargo_pendiente", "abono_pendiente"], "estado", "Conciliado"),
+                     hide_index=True, use_container_width=True,
+                     column_config={"grupo": "Grupo", "grupo_tipo": "Tipo de grupo", "row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"), "folio": "Folio",
                                     "cargo_pendiente": "Cargo pendiente", "abono_pendiente": "Abono pendiente",
                                     "estado": "Estado", "motivo": "Motivo"})
         st.markdown(_md(f"###### Conciliados (se cancelan): abonos {_money(conc.abono_conciliado.sum())} · "
                         f"cargos {_money(conc.cargo_conciliado.sum())} · aplicados a saldo inicial {_money(conc.cargo_saldo_inicial.sum())}"))
-        st.dataframe(_sty(conc[["row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "cargo_conciliado", "cargo_saldo_inicial",
-                                "abono_conciliado", "motivo"]], ["cargo_conciliado", "cargo_saldo_inicial", "abono_conciliado"]),
+        st.dataframe(_sty(conc[["grupo", "grupo_tipo", "row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "cargo_conciliado",
+                                "cargo_saldo_inicial", "abono_conciliado", "motivo"]],
+                          ["cargo_conciliado", "cargo_saldo_inicial", "abono_conciliado"]),
                      hide_index=True, use_container_width=True,
-                     column_config={"row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"), "folio": "Folio",
+                     column_config={"grupo": "Grupo", "grupo_tipo": "Tipo de grupo", "row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"), "folio": "Folio",
                                     "cargo_conciliado": "Cargo conciliado", "cargo_saldo_inicial": "Cargo a saldo inicial",
                                     "abono_conciliado": "Abono conciliado", "motivo": "Relación"})
 

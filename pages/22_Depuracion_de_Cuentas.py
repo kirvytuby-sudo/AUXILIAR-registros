@@ -1,10 +1,10 @@
 """
 pages/22_Depuracion_de_Cuentas.py — DEPURACIÓN DE CUENTAS (v1, 2026-11-18)
 
-Auditoría del auxiliar de proveedores exportado del ERP:
+Depuración de auxiliares exportados del ERP (proveedores, clientes, cuentas por cobrar, deudores…):
   · Integridad aritmética (saldo corrido y saldo final)
-  · Relación cargo-abono: pagos y notas de crédito ligados a su factura
-  · Hallazgos (saldos deudores, NC sin factura, pagos duplicados, egresos manuales, catálogo, antigüedad…)
+  · Relación cargo-abono: cada movimiento ligado a su contrapartida (folio / UUID / referencia / importe)
+  · Hallazgos (saldos contrarios a la naturaleza, NC sin factura, pagos duplicados, egresos manuales, catálogo, antigüedad…)
   · Descargas: auxiliar original marcado (amarillo / azul) y papel de trabajo en Excel
   · Comparación opcional contra un auxiliar anterior
 Motor: _app/depuracion_cuentas.py
@@ -25,7 +25,7 @@ import _theme
 from _app import depuracion_cuentas as dc
 
 _theme.aplicar_header("🧹 DEPURACIÓN DE CUENTAS",
-                      "Auditoría del auxiliar de proveedores: relación cargo-abono, hallazgos y papel de trabajo")
+                      "Depuración de auxiliares: relación cargo-abono, pendientes de conciliar, hallazgos y papel de trabajo")
 
 AMARILLO, AZUL = "#FFF59D", "#BBDEFB"
 
@@ -92,23 +92,27 @@ def _money_cols(df: pd.DataFrame) -> list:
 with st.container(border=True):
     c1, c2 = st.columns([3, 2])
     with c1:
-        up = st.file_uploader("Auxiliar de cuentas (Excel exportado del ERP, hoja **Datos**)", type=["xlsx"], key="dep_aux")
+        up = st.file_uploader("Auxiliar de cuentas (Excel exportado del ERP, hoja **Datos**)", type=["xlsx"], key="dep_aux",
+                              help="Proveedores, clientes, cuentas por cobrar, deudores diversos o cualquier otra cuenta.")
     with c2:
         up_prev = st.file_uploader("Opcional: auxiliar anterior para comparar", type=["xlsx"], key="dep_prev")
     st.caption("Se revisa el 100% de los movimientos. El archivo no se guarda: se procesa en memoria.")
 
 if not up:
-    st.info("Sube el auxiliar de proveedores (cuenta 201) para iniciar la depuración.")
+    st.info("Sube el auxiliar de la cuenta que quieras depurar: proveedores, clientes, cuentas por cobrar, deudores u otra.")
     with st.expander("¿Qué revisa este módulo?"):
         st.markdown("""
 - **Integridad:** recalcula el saldo corrido de cada movimiento y el saldo final de cada cuenta.
-- **Relación cargo-abono:** cada pago (EA) se liga a su factura (PRO) por folio o UUID; cada nota de crédito
-  se liga cuando viene aplicada dentro del pago o cubre exacto el saldo de una factura.
-  Los pagos de facturas del ejercicio anterior se aceptan hasta el saldo inicial del proveedor.
-- **Amarillo** = relacionado · **Azul** = sin relación (factura sin pago o parcial, NC sin factura,
-  pago en exceso, egreso manual, importe cero).
-- **Hallazgos:** saldos deudores, NC sin factura, pagos duplicados, egresos manuales, NC altas vs facturado,
-  catálogo vs CFDI, pagos antes de la factura, saldos iniciales sin liquidar, antigüedad y concentración.
+- **Naturaleza:** detecta si cada cuenta es deudora (clientes, cuentas por cobrar, deudores) o acreedora
+  (proveedores, acreedores) a partir de cómo corre su saldo.
+- **Relación cargo-abono:** cada documento (lo que aumenta el saldo) se liga con los movimientos que lo cancelan.
+  En proveedores con CFDI: pago (EA) ↔ factura (PRO) por folio o UUID, y notas de crédito. En las demás cuentas:
+  por importe pendiente y referencia común (folio, número de documento).
+  Lo que no tiene documento en el periodo se aplica al saldo inicial hasta donde alcanza.
+- **Amarillo** = relacionado · **Azul** = sin relación (documento sin cancelar o parcial, movimiento sin contrapartida,
+  NC sin factura, pago en exceso, importe cero).
+- **Hallazgos:** saldos contrarios a la naturaleza, NC sin factura, pagos duplicados, egresos manuales,
+  catálogo vs CFDI, saldos iniciales sin liquidar, antigüedad y concentración.
 """)
     st.stop()
 
@@ -131,7 +135,8 @@ k = st.columns(5)
 k[0].metric("Cuentas", f"{len(f):,}")
 k[1].metric("Movimientos", f"{len(m):,}")
 k[2].metric("Saldo final", _mill(f.fin.sum()))
-k[3].metric("Saldos deudores", _mill(f[f.fin < -0.005].fin.sum()), f"{(f.fin < -0.005).sum()} cuentas", delta_color="off")
+k[3].metric("Saldos contrarios", _mill(f[f.fin < -0.005].fin.sum()), f"{(f.fin < -0.005).sum()} cuentas", delta_color="off",
+            help="Cuentas cuyo saldo final es contrario a su naturaleza (p. ej. proveedor con saldo deudor o cliente con saldo acreedor).")
 k[4].metric("Relacionados (amarillo)", f"{amar / len(rel):.0%}", f"{len(rel) - amar:,} en azul", delta_color="off")
 
 if res.errores_aritmeticos:
@@ -139,15 +144,15 @@ if res.errores_aritmeticos:
 else:
     st.success("✅ Integridad aritmética: todos los saldos corridos y finales coinciden al centavo.")
 
-tabs = st.tabs(["📋 Hallazgos", "🔗 Relación cargo-abono", "🏢 Proveedores", "⚖️ Por proveedor", "⏳ Antigüedad",
+tabs = st.tabs(["📋 Hallazgos", "🔗 Relación cargo-abono", "🏢 Cuentas", "⚖️ Por cuenta", "⏳ Antigüedad",
                 "🔄 Comparar", "⬇️ Descargas"])
 
 # ── Hallazgos ─────────────────────────────────────────────────────────────────
 with tabs[0]:
     ini, fac, pag, nc = f.ini.sum(), f.facturado.sum(), f.pagos.sum(), f.notas_credito.sum()
     cuadre = pd.DataFrame({
-        "Concepto": ["Saldo inicial", "(+) Facturas", "(−) Pagos", "(−) Notas de crédito", "Saldo final",
-                     "Saldos acreedores", "Saldos deudores"],
+        "Concepto": ["Saldo inicial", "(+) Documentos (aumentos)", "(−) Pagos / cobros", "(−) Notas de crédito", "Saldo final",
+                     "Saldos de su naturaleza", "Saldos contrarios a su naturaleza"],
         "Importe": [ini, fac, -pag, -nc, f.fin.sum(), f[f.fin > 0.005].fin.sum(), f[f.fin < -0.005].fin.sum()],
     })
     cA, cB = st.columns([1, 2])
@@ -162,7 +167,7 @@ with tabs[0]:
                 if h["detalle"]:
                     st.markdown(_md(h["detalle"]))
                 st.markdown(_md(f"**Acción:** {h['accion']}"))
-                tkey = {"Saldos deudores": "saldos_deudores", "NC sin factura": "nc_sin_factura",
+                tkey = {"Saldos contrarios": "saldos_deudores", "NC sin factura": "nc_sin_factura",
                         "Pagos en exceso": "pagos_exceso", "Egresos manuales": "egresos_manuales",
                         "Pagos sin factura": "pagos_sin_factura", "NC por proveedor": "nc_por_proveedor",
                         "Catálogo": "catalogo", "Saldo deudor temporal": "saldo_deudor_temporal",
@@ -179,7 +184,7 @@ with tabs[1]:
     c1, c2, c3 = st.columns([1, 2, 2])
     col = c1.radio("Color", ["Azul", "Amarillo", "Todos"], horizontal=True)
     cats = c2.multiselect("Resultado", sorted(rel.categoria.unique()))
-    prov = c3.text_input("Buscar proveedor o cuenta")
+    prov = c3.text_input("Buscar por nombre o número de cuenta")
     v = rel.copy()
     if col != "Todos":
         v = v[v.color == ("B" if col == "Azul" else "Y")]
@@ -194,30 +199,31 @@ with tabs[1]:
                  column_config={"row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"),
                                 "motivo": "Relación", "color": None})
 
-# ── Proveedores ───────────────────────────────────────────────────────────────
+# ── Cuentas ───────────────────────────────────────────────────────────────────
 with tabs[2]:
     azul_cta = rel[rel.color == "B"].groupby("Cta.").size()
-    tb = f.reset_index()[["cta", "nombre", "ini", "facturado", "pagos", "notas_credito", "fin", "n"]].copy()
+    tb = f.reset_index()[["cta", "nombre", "naturaleza", "ini", "facturado", "pagos", "notas_credito", "fin", "n"]].copy()
     tb["en_azul"] = tb.cta.map(azul_cta).fillna(0).astype(int)
-    solo = st.toggle("Solo saldos deudores", value=False)
+    solo = st.toggle("Solo saldos contrarios a su naturaleza", value=False)
     if solo:
         tb = tb[tb.fin < -0.005]
     st.dataframe(_sty(tb.sort_values("fin"), ["ini", "facturado", "pagos", "notas_credito", "fin"]),
                  hide_index=True, use_container_width=True, height=380,
-                 column_config={"cta": "Cuenta", "nombre": "Proveedor", "n": "Movs.", "en_azul": "En azul",
-                                "ini": "Saldo inicial", "facturado": "Facturado", "pagos": "Pagos",
+                 column_config={"cta": "Cuenta", "nombre": "Nombre", "naturaleza": "Naturaleza", "n": "Movs.", "en_azul": "En azul",
+                                "ini": "Saldo inicial", "facturado": "Documentos (aumentos)", "pagos": "Pagos / cobros",
                                 "notas_credito": "Notas de crédito", "fin": "Saldo final"})
     opciones = [f"{c} · {n}" for c, n in zip(f.index, f.nombre)]
     sel = st.selectbox("Ver movimientos de la cuenta", opciones, index=None, placeholder="Elige una cuenta…")
     if sel:
         cta = sel.split(" · ")[0]
-        mv = m[m["Cta."] == cta][["row", "Tipo póliza", "Num. Póliza", "Fecha", "Desc. Detalle", "Cargo", "Abono", "Saldo"]] \
+        mv = m[m["Cta."] == cta][["row", "Tipo póliza", "Num. Póliza", "Fecha", "Desc. Detalle", "cargo_aux", "abono_aux", "Saldo"]] \
+            .rename(columns={"cargo_aux": "Cargo", "abono_aux": "Abono"}) \
             .merge(rel[["row", "color", "motivo"]], on="row")
         st.dataframe(_sty(mv, ["Cargo", "Abono", "Saldo"], "color"), hide_index=True, use_container_width=True,
                      column_config={"row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"),
                                     "motivo": "Relación", "color": None})
 
-# ── Por proveedor: lo que se cancela vs pendiente ────────────────────────────
+# ── Por cuenta: lo que se cancela vs pendiente ────────────────────────────
 with tabs[3]:
     with st.spinner("Agrupando movimientos que se cancelan…"):
         rp, det = _conciliacion(data, key)
@@ -232,10 +238,10 @@ with tabs[3]:
     vista = rp[rp.estatus != "Conciliada"] if solo_p else rp
     cols_m = ["saldo_inicial", "cargos_saldo_inicial", "saldo_inicial_pendiente", "abonos_conciliados", "cargos_conciliados",
               "abonos_pendientes", "cargos_pendientes", "saldo_pendiente", "saldo_final", "diferencia"]
-    st.dataframe(_sty(vista[["cta", "nombre"] + cols_m + ["movs_pendientes", "estatus"]], cols_m, "estatus", "Conciliada"),
+    st.dataframe(_sty(vista[["cta", "nombre", "naturaleza"] + cols_m + ["movs_pendientes", "estatus"]], cols_m, "estatus", "Conciliada"),
                  hide_index=True, use_container_width=True, height=380,
-                 column_config={"cta": "Cuenta", "nombre": "Proveedor", "saldo_inicial": "Saldo inicial",
-                                "cargos_saldo_inicial": "Cargos a saldo inicial", "saldo_inicial_pendiente": "Saldo inicial pendiente",
+                 column_config={"cta": "Cuenta", "nombre": "Nombre", "naturaleza": "Naturaleza", "saldo_inicial": "Saldo inicial",
+                                "cargos_saldo_inicial": "Aplicado a saldo inicial", "saldo_inicial_pendiente": "Saldo inicial pendiente",
                                 "abonos_conciliados": "Abonos conciliados", "cargos_conciliados": "Cargos conciliados",
                                 "abonos_pendientes": "Abonos pendientes", "cargos_pendientes": "Cargos pendientes",
                                 "saldo_pendiente": "Saldo pendiente", "saldo_final": "Saldo final", "diferencia": "Diferencia",
@@ -248,7 +254,7 @@ with tabs[3]:
         dd = det[det["Cta."] == cta]
         pend = dd[dd.grupo_estado == "Pendiente"]
         conc = dd[dd.grupo_estado.isin(["Se cancela", "Aplicado a saldo inicial"])]
-        st.caption("Cada grupo junta la factura con los pagos y notas de crédito que la cancelan, en renglones consecutivos; "
+        st.caption("Cada documento va junto a los movimientos que lo cancelan, en renglones consecutivos; "
                    "del más antiguo (arriba) al más reciente (abajo).")
         st.markdown(_md(f"**Saldo inicial pendiente:** {_money(a.saldo_inicial_pendiente)} · "
                         f"**Abonos pendientes:** {_money(a.abonos_pendientes)} · **Cargos pendientes:** {_money(a.cargos_pendientes)} · "
@@ -262,13 +268,14 @@ with tabs[3]:
                                     "cargo_pendiente": "Cargo pendiente", "abono_pendiente": "Abono pendiente",
                                     "estado": "Estado", "motivo": "Motivo"})
         st.markdown(_md(f"###### Conciliados (se cancelan): abonos {_money(conc.abono_conciliado.sum())} · "
-                        f"cargos {_money(conc.cargo_conciliado.sum())} · aplicados a saldo inicial {_money(conc.cargo_saldo_inicial.sum())}"))
+                        f"cargos {_money(conc.cargo_conciliado.sum())} · aplicados a saldo inicial "
+                        f"{_money(conc.cargo_saldo_inicial.sum() + conc.abono_saldo_inicial.sum())}"))
         st.dataframe(_sty(conc[["grupo", "grupo_tipo", "row", "Tipo póliza", "Num. Póliza", "Fecha", "folio", "cargo_conciliado",
-                                "cargo_saldo_inicial", "abono_conciliado", "motivo"]],
-                          ["cargo_conciliado", "cargo_saldo_inicial", "abono_conciliado"]),
+                                "cargo_saldo_inicial", "abono_conciliado", "abono_saldo_inicial", "motivo"]],
+                          ["cargo_conciliado", "cargo_saldo_inicial", "abono_conciliado", "abono_saldo_inicial"]),
                      hide_index=True, use_container_width=True,
                      column_config={"grupo": "Grupo", "grupo_tipo": "Tipo de grupo", "row": "Renglón", "Num. Póliza": st.column_config.NumberColumn("Póliza", format="%d"), "Fecha": st.column_config.DateColumn(format="DD/MM/YYYY"), "folio": "Folio",
-                                    "cargo_conciliado": "Cargo conciliado", "cargo_saldo_inicial": "Cargo a saldo inicial",
+                                    "cargo_conciliado": "Cargo conciliado", "cargo_saldo_inicial": "Cargo a saldo inicial", "abono_saldo_inicial": "Abono a saldo inicial",
                                     "abono_conciliado": "Abono conciliado", "motivo": "Relación"})
 
 # ── Antigüedad ────────────────────────────────────────────────────────────────
@@ -284,17 +291,17 @@ with tabs[4]:
         st.bar_chart(pd.DataFrame({"Rango": rangos, "Importe": tot.values}).set_index("Rango"), horizontal=True, color="#0891B2")
         st.dataframe(_sty(ag.sort_values("mas_90", ascending=False), ["saldo", "mas_90"] + rangos),
                      hide_index=True, use_container_width=True, height=400,
-                     column_config={"cta": "Cuenta", "nombre": "Proveedor", "saldo": "Saldo", "mas_90": "Más de 90 días"})
-        st.caption("Método PEPS: el saldo de cada proveedor se asigna a sus facturas más recientes.")
+                     column_config={"cta": "Cuenta", "nombre": "Nombre", "saldo": "Saldo", "mas_90": "Más de 90 días"})
+        st.caption("Método PEPS: el saldo de cada cuenta se asigna a sus documentos más recientes.")
     cc = res.tablas["concentracion"].copy()
-    cc["pct"] = cc.facturado / f.facturado.sum() * 100
+    cc["pct"] = cc.facturado / f.facturado.sum() * 100 if f.facturado.sum() else 0.0
     cc["acum"] = cc.pct.cumsum()
-    st.markdown(f"##### Concentración: los 10 proveedores principales son el {cc.pct.head(10).sum():.0f}% de lo facturado")
+    st.markdown(f"##### Concentración: las 10 cuentas principales son el {cc.pct.head(10).sum():.0f}% de los documentos del periodo")
     st.dataframe(_sty(cc, ["facturado", "fin"]), hide_index=True, use_container_width=True,
-                 column_config={"cta": "Cuenta", "nombre": "Proveedor", "facturado": "Facturado", "fin": "Saldo final",
+                 column_config={"cta": "Cuenta", "nombre": "Nombre", "facturado": "Documentos", "fin": "Saldo final",
                                 "pct": st.column_config.NumberColumn("% del total", format="%.1f%%"),
                                 "acum": st.column_config.NumberColumn("% acumulado", format="%.1f%%")})
-    st.caption("% sobre lo facturado en el periodo.")
+    st.caption("% sobre el total de documentos (facturas / aumentos) del periodo.")
 
 # ── Comparar contra auxiliar anterior ─────────────────────────────────────────
 with tabs[5]:
@@ -347,12 +354,12 @@ with tabs[6]:
     base = up.name.rsplit(".", 1)[0]
     c1, c2, c3 = st.columns(3)
     with c3:
-        st.markdown("##### Resumen por proveedor")
-        st.caption("Por cada proveedor: saldo inicial, cargos y abonos que se cancelan y los que quedan pendientes, "
+        st.markdown("##### Resumen por cuenta")
+        st.caption("Por cada cuenta: saldo inicial, cargos y abonos que se cancelan y los que quedan pendientes, "
                    "con el detalle de cada movimiento pendiente de conciliar.")
         with st.spinner("Generando…"):
             b3 = _excel_proveedor(data, key)
-        st.download_button("⬇️ Descargar resumen por proveedor", b3, file_name=f"Resumen_por_proveedor_{base}.xlsx",
+        st.download_button("⬇️ Descargar resumen por cuenta", b3, file_name=f"Resumen_por_cuenta_{base}.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
     with c1:
         st.markdown("##### Auxiliar marcado")

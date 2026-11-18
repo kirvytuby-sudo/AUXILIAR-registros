@@ -910,7 +910,7 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
                f"*VLOOKUP(F{ri},{_TAR_RNG},4,TRUE),0)")
         f_h = f"=SUMIF('INGRESOS DETALLE'!$A:$A,{_m3},'INGRESOS DETALLE'!$I:$I)"
         f_i = f"=SUM($H$4:H{ri})"
-        f_j = f"=SUM($L$4:L{ri-1})"   # pp anteriores (vacío en ENE → 0)
+        f_j = "0" if ri == 4 else f"=SUM($L$4:L{ri-1})"  # pp anteriores (0 en ENE)
         f_k = f"=G{ri}-I{ri}-J{ri}"
         f_l = f"=MAX(0,K{ri})"
         f_m = f"=IFERROR(G{ri}/F{ri},0)"
@@ -1318,9 +1318,9 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
         _tr4 = _row4
         put(ws4, _tr4, 1, 'TOTAL GENERAL', True, 'FFFFFF', Blk, LL)
         # SUMPRODUCT cuenta solo filas con mes de 3 letras (excluye subtotales y encabezados)
-        _c5t = ws4.cell(_tr4, 5, '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($E$4:$E$9999))')
+        _c5t = ws4.cell(_tr4, 5, f'=SUMPRODUCT(--(LEN($A$4:$A{_tr4-1})=3),($E$4:$E{_tr4-1}))')
         _c5t.font=f(True,'FFFFFF',9); _c5t.fill=Blk; _c5t.number_format=MXN; _c5t.alignment=RR; _c5t.border=BD
-        _c6t = ws4.cell(_tr4, 6, '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($F$4:$F$9999))')
+        _c6t = ws4.cell(_tr4, 6, f'=SUMPRODUCT(--(LEN($A$4:$A{_tr4-1})=3),($F$4:$F{_tr4-1}))')
         _c6t.font=f(True,'FFFFFF',9); _c6t.fill=Blk; _c6t.number_format=MXN; _c6t.alignment=RR; _c6t.border=BD
         for _ci4t in [2,3,4,7,8]:
             ws4.cell(_tr4,_ci4t).fill=Blk; ws4.cell(_tr4,_ci4t).border=BD
@@ -1399,11 +1399,11 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
         for _ci in [2,3,4,5,6]:
             ws_id.cell(_tr_id,_ci).fill=Blk; ws_id.cell(_tr_id,_ci).border=BD
         for _ci, _fml in [
-            (7,  '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($G$4:$G$9999))'),
-            (8,  '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($H$4:$H$9999))'),
-            (9,  '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($I$4:$I$9999))'),
-            (10, '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($J$4:$J$9999))'),
-            (11, '=SUMPRODUCT((LEN($A$4:$A$9999)=3)*($K$4:$K$9999))')]:
+            (7,  f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($G$4:$G{_tr_id-1}))'),
+            (8,  f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($H$4:$H{_tr_id-1}))'),
+            (9,  f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($I$4:$I{_tr_id-1}))'),
+            (10, f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($J$4:$J{_tr_id-1}))'),
+            (11, f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($K$4:$K{_tr_id-1}))')]:
             _c2 = ws_id.cell(_tr_id, _ci, _fml)
             _c2.font=f(True,'FFFFFF',9); _c2.fill=Blk
             _c2.number_format=MXN; _c2.alignment=RR; _c2.border=BD

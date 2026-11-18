@@ -24,6 +24,10 @@ st.set_page_config(
 import _theme
 from _app import depuracion_cuentas as dc
 
+# Huella del motor: si cambia el código del análisis, la caché se invalida sola
+# (evita usar resultados guardados con una versión anterior).
+_MOTOR = hashlib.md5(open(dc.__file__, "rb").read()).hexdigest()[:10]
+
 _theme.aplicar_header("🧹 DEPURACIÓN DE CUENTAS",
                       "Depuración de auxiliares: relación cargo-abono, pendientes de conciliar, hallazgos y papel de trabajo")
 
@@ -31,31 +35,31 @@ AMARILLO, AZUL = "#FFF59D", "#BBDEFB"
 
 
 @st.cache_data(show_spinner=False, max_entries=6)
-def _analizar(data: bytes, _key: str):
+def _analizar(data: bytes, key: str):
     return dc.analizar(data)
 
 
 @st.cache_data(show_spinner=False, max_entries=6)
-def _excel_marcado(data: bytes, _key: str) -> bytes:
-    return dc.auxiliar_marcado(data, _analizar(data, _key))
+def _excel_marcado(data: bytes, key: str) -> bytes:
+    return dc.auxiliar_marcado(data, _analizar(data, key))
 
 
 @st.cache_data(show_spinner=False, max_entries=6)
-def _conciliacion(data: bytes, _key: str):
-    res = _analizar(data, _key)
+def _conciliacion(data: bytes, key: str):
+    res = _analizar(data, key)
     det = dc.detalle_conciliacion(res)
     det["folio"] = det.folio.fillna("")
     return dc.resumen_por_proveedor(res).reset_index(), det
 
 
 @st.cache_data(show_spinner=False, max_entries=6)
-def _excel_proveedor(data: bytes, _key: str) -> bytes:
-    return dc.reporte_por_proveedor(_analizar(data, _key))
+def _excel_proveedor(data: bytes, key: str) -> bytes:
+    return dc.reporte_por_proveedor(_analizar(data, key))
 
 
 @st.cache_data(show_spinner=False, max_entries=6)
-def _excel_papel(data: bytes, _key: str) -> bytes:
-    return dc.papel_de_trabajo(_analizar(data, _key))
+def _excel_papel(data: bytes, key: str) -> bytes:
+    return dc.papel_de_trabajo(_analizar(data, key))
 
 
 def _money(v) -> str:
@@ -117,7 +121,7 @@ if not up:
     st.stop()
 
 data = up.getvalue()
-key = hashlib.md5(data).hexdigest()
+key = f"{hashlib.md5(data).hexdigest()}-{_MOTOR}"
 try:
     with st.spinner("Analizando el auxiliar…"):
         res = _analizar(data, key)
@@ -310,7 +314,7 @@ with tabs[5]:
     else:
         dp = up_prev.getvalue()
         try:
-            prev = _analizar(dp, hashlib.md5(dp).hexdigest())
+            prev = _analizar(dp, f"{hashlib.md5(dp).hexdigest()}-{_MOTOR}")
         except Exception as e:
             st.error(f"No se pudo leer el auxiliar anterior: {e}")
             prev = None

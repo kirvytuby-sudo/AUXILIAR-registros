@@ -196,6 +196,10 @@ def _relacionar(m: pd.DataFrame, cuentas: pd.DataFrame, meta: dict) -> pd.DataFr
             used = set()
             for i, r in g.iterrows():
                 ff = u2f.get((c, r.uuid5))
+                if ff is None and pd.notna(r["Ren."]) and 0 < int(r["Ren."]) <= len(fl):
+                    fr = fl[int(r["Ren."]) - 1]     # el renglón de la póliza indica la posición del folio pagado
+                    if fr not in used and (c, fr) in invamt.index:
+                        ff = fr
                 if ff is None:
                     cands = [x for x in fl if x not in used and (c, x) in invamt.index
                              and any(abs(a - r.Cargo) < 0.01 for a in invamt[(c, x)])]

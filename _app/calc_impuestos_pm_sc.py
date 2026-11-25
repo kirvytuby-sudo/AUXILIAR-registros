@@ -268,7 +268,8 @@ def extraer_mes(bal: dict, diot: dict | None) -> tuple[dict, list[str]]:
         "remanente": r2(remanente), "isr_remanente": r2(isr_rem),
         "ptu_pagada": r2(ptu), "isr_ret_bancos": r2(ret_bancos),
         "saldo_favor_iva_disponible": r2(saldo_favor_iva),
-        "isr_ret_honorarios": r2(_cta(bal, "216-04", "abonos")),   # ISR retenido por servicios profesionales (abono 216-04)
+        "isr_ret_honorarios": r2(_cta(bal, "216-04", "abonos")),
+        "iva_ret_216_10": r2(_cta(bal, "216-10", "abonos")),      # IVA retenido a terceros del mes (se resta el mes siguiente)   # ISR retenido por servicios profesionales (abono 216-04)
     }
     if diot:
         t = diot["totales"]
@@ -418,11 +419,19 @@ def calcular_mes(doc: dict, mes: int, e: dict) -> dict:
     tot_actos = gravados + e.get("actos_0", 0) + e.get("actos_exentos", 0)
     proporcion = 1.0 if not tot_actos else (gravados + e.get("actos_0", 0)) / tot_actos
     acreditable = r2(e["iva_acreditable"] * proporcion)
-    a_cargo = r2(e["iva_trasladado"] - acreditable - e.get("saldo_favor_aplicado", 0))
+    # I.V.A. retenido del mes anterior: abono de la 216-10 del mes anterior (papel de trabajo)
+    g_ant = (doc.get("meses") or {}).get(str(mes - 1))
+    if e.get("iva_ret_ant_auto", True) and g_ant and g_ant.get("entrada"):
+        ea = g_ant["entrada"]
+        ret_ant = r2(ea.get("iva_ret_216_10") if ea.get("iva_ret_216_10") is not None else ea.get("iva_retenido_diot", 0))
+    else:
+        ret_ant = r2(e.get("iva_ret_mes_anterior", 0) or 0)
+    a_cargo = r2(e["iva_trasladado"] - acreditable - e.get("saldo_favor_aplicado", 0) - ret_ant)
     total_iva = r2(max(a_cargo, 0))
     iva = {"actos_16": gravados, "trasladado": e["iva_trasladado"], "gastos_16": e.get("gastos_16", 0),
            "proporcion": round(proporcion, 4), "acreditable": acreditable,
-           "saldo_favor_aplicado": e.get("saldo_favor_aplicado", 0), "a_cargo": a_cargo,
+           "saldo_favor_aplicado": e.get("saldo_favor_aplicado", 0), "retenido_mes_anterior": ret_ant,
+           "a_cargo": a_cargo, "retenido_216_10_mes": r2(e.get("iva_ret_216_10") or 0),
            "saldo_a_favor": r2(max(-a_cargo, 0)), "total": total_iva}
 
     # ── Accesorios ────────────────────────────────────────────────────────────
@@ -536,8 +545,11 @@ def generar_excel(doc: dict) -> bytes:
         ("Proporción de acreditamiento", V("proporcion"), "0.0000", False),
         ("(−) IVA acreditable", V("acreditable"), None, False),
         ("(−) Saldo a favor aplicado", V("saldo_favor_aplicado"), None, False),
+        ("(−) I.V.A. retenido del mes anterior", lambda g: g["resultado"]["iva"].get("retenido_mes_anterior", 0), None, False),
         ("IVA a cargo / (a favor) del periodo", V("a_cargo"), None, True),
         ("Total IVA a enterar", V("total"), None, True),
+        ("IVA retenido a terceros del mes (abono 216-10) — se resta el mes siguiente",
+         lambda g: g["resultado"]["iva"].get("retenido_216_10_mes", 0), None, False),
     ])
     hon = lambda g: (g["resultado"]["resumen"][4]["a_cargo"] if len(g["resultado"]["resumen"]) > 4 else 0)
     hon_t = lambda g: (g["resultado"]["resumen"][4]["total"] if len(g["resultado"]["resumen"]) > 4 else 0)

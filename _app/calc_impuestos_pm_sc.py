@@ -466,130 +466,100 @@ _TOP = Border(top=Side(style="thin"))
 _NUM = "#,##0.00"
 
 
+PLANTILLA = __import__("pathlib").Path(__file__).with_name("plantillas") / "impuestos_pm_sc.xlsx"
+_COLS = "BCDEFGHIJKLM"
+
+
 def generar_excel(doc: dict) -> bytes:
+    """Papel de trabajo con el mismo formato y fórmulas de la hoja de impuestos (un mes por columna)."""
+    from openpyxl.comments import Comment
     cfg = doc["config"]
+    ej = int(cfg["ejercicio"])
     meses = {int(k): v for k, v in (doc.get("meses") or {}).items()}
-    wb = Workbook()
-    titulo = f"{doc.get('razon_social') or doc.get('rfc')} — Impuestos {cfg['ejercicio']}"
+    wb = load_workbook(PLANTILLA)
+    isr, iva, ret = wb["ISR PM"], wb["IVA"], wb["Retenciones"]
+    sue, asi, par, res = wb["Sueldos"], wb["Asimilados"], wb["Parametros"], wb["Resumen"]
+    nombre = doc.get("razon_social") or doc.get("rfc") or ""
+    nota = lambda txt: Comment(txt, "Módulo Impuestos PM S.C.")
 
-    def hoja(nombre, filas, primero=False):
-        ws = wb.active if primero else wb.create_sheet(nombre)
-        ws.title = nombre
-        ws["A1"] = titulo
-        ws["A1"].font = _FT
-        ws["A2"] = nombre
-        ws["A2"].font = _FB
-        ws.cell(row=4, column=1, value="Concepto").font = _FB
-        for i, m in enumerate(MESES):
-            c = ws.cell(row=4, column=2 + i, value=m)
-            c.font, c.fill = _FB, _GR
-        ws.cell(row=4, column=1).fill = _GR
-        for r, (etq, fn, fmt, negrita) in enumerate(filas, start=5):
-            a = ws.cell(row=r, column=1, value=etq)
-            a.font = _FB if negrita else _F
-            for m in range(1, 13):
-                g = meses.get(m)
-                v = fn(g) if g else None
-                c = ws.cell(row=r, column=1 + m, value=v)
-                c.number_format = fmt or _NUM
-                c.font = _FB if negrita else _F
-                if negrita:
-                    c.border = _TOP
-            if negrita:
-                a.border = _TOP
-        ws.column_dimensions["A"].width = 62
-        for col in "BCDEFGHIJKLM":
-            ws.column_dimensions[col].width = 14
-        ws.freeze_panes = "B5"
-        return ws
+    # Encabezados y parámetros del ejercicio
+    res["A1"] = f"Resumen de impuestos del mes — {nombre} {ej}".replace("—  ", "— ")
+    res["B3"] = max(meses) if meses else 1
+    par["A1"] = f"Parámetros fiscales {ej}"
+    par["B13"] = float(cfg.get("tasa_recargos") or 0.0207)
+    for r in range(32, 61):
+        par[f"A{r}"].value = par[f"B{r}"].value = None
+    for r, (k, v) in enumerate(sorted((cfg.get("inpc") or {}).items())[-29:], start=32):
+        par[f"A{r}"] = _dt.datetime.strptime(k[:7] + "-01", "%Y-%m-%d")
+        par[f"A{r}"].number_format = "mmm yyyy"
+        par[f"B{r}"] = float(v)
+        par[f"B{r}"].number_format = "0.000"
+    cambio = int(cfg.get("mes_cambio_coef", 1) or 1)
+    isr["A3"] = "Coeficiente de utilidad" + (f" enero–{MESES[cambio - 2].lower()}" if cambio > 1 else "")
+    isr["B3"] = float(cfg.get("coef_1") or 0)
+    isr["C3"] = f"Desde {MESES[cambio - 1].lower()}:"
+    isr["D3"] = float(cfg.get("coef_2") or 0)
+    isr["A4"] = ("Sociedad civil: ingresos efectivamente cobrados (sin IVA) y anticipos de remanente a socios "
+                 "(hoja Asimilados). Datos tomados de las balanzas y DIOT con el módulo Impuestos PM S.C.")
+    for i, c in enumerate(_COLS, start=1):
+        isr[f"{c}14"] = "=$D$3" if i >= cambio else "=$B$3"
+        isr[f"{c}29"] = f"=DATE({ej},{i}+1,17)"
 
-    R = lambda k: (lambda g: g["resultado"]["isr"][k])
-    V = lambda k: (lambda g: g["resultado"]["iva"][k])
-    E = lambda k: (lambda g: g["entrada"].get(k, 0))
+    for m, g in sorted(meses.items()):
+        if not 1 <= m <= 12 or not g.get("resultado"):
+            continue
+        c = _COLS[m - 1]
+        e, R = g["entrada"], g["resultado"]
+        I, V = R["isr"], R["iva"]
+        prev = R.get("previos") or {}
+        # ISR PM
+        isr[f"{c}7"] = e.get("facturado") or 0
+        isr[f"{c}10"] = e.get("cobrado") or 0
+        isr[f"{c}11"] = e.get("devoluciones") or None
+        isr[f"{c}16"] = I.get("ptu_acum") or None
+        isr[f"{c}19"] = I.get("otros_disminuyen") or None
+        isr[f"{c}20"] = I.get("perdidas") or None
+        isr[f"{c}24"] = I.get("ret_bancos_acum") or None
+        if prev.get("faltan"):            # faltan meses anteriores: acumulados del módulo
+            isr[f"{c}13"] = I["ingresos_acum"]
+            isr[f"{c}18"] = I["anticipos_acum"]
+            isr[f"{c}23"] = I["pagos_anteriores"]
+            isr[f"{c}13"].comment = nota("Acumulado del módulo (incluye acumulados iniciales capturados).")
+        elif m > 1 and any(meses.get(k, {}).get("isr_pagado") is not None for k in range(1, m)):
+            isr[f"{c}23"] = I["pagos_anteriores"]
+            isr[f"{c}23"].comment = nota("Pagos provisionales efectivamente declarados en los meses anteriores.")
+        acc = R.get("accesorios") or {}
+        isr[f"{c}27"] = "Sí" if acc.get("aplica") else "No"
+        fp = (e.get("recargos") or {}).get("fecha_pago")
+        if acc.get("aplica") and fp:
+            isr[f"{c}28"] = _dt.datetime.strptime(str(fp)[:10], "%Y-%m-%d")
+            isr[f"{c}28"].number_format = "dd/mm/yyyy"
+        venc = (e.get("recargos") or {}).get("vencimiento")
+        if venc and str(venc)[:10] != vencimiento(ej, m).isoformat():
+            isr[f"{c}29"] = _dt.datetime.strptime(str(venc)[:10], "%Y-%m-%d")
+            isr[f"{c}29"].number_format = "dd/mm/yyyy"
+        # IVA
+        iva[f"{c}5"] = V.get("actos_16") or 0
+        iva[f"{c}6"] = e.get("actos_0") or None
+        iva[f"{c}7"] = e.get("actos_exentos") or None
+        iva[f"{c}9"] = e.get("gastos_16") or 0
+        if abs(r2((e.get("gastos_16") or 0) * TASA_IVA) - r2(e.get("iva_acreditable") or 0)) > 1:
+            iva[f"{c}9"] = r2((e.get("iva_acreditable") or 0) / TASA_IVA)
+            iva[f"{c}9"].comment = nota("Base calculada con el IVA acreditable de la DIOT ÷ 16%.")
+        iva[f"{c}12"] = V.get("saldo_favor_aplicado") or None
+        if m == 1 or str(m - 1) not in doc["meses"] or not e.get("iva_ret_ant_auto", True):
+            iva[f"{c}13"] = V.get("retenido_mes_anterior") or None
+        iva[f"{c}15"] = V.get("retenido_216_10_mes") or 0
+        # Retenciones, sueldos y asimilados
+        ret[f"{c}5"] = (R.get("retenciones") or {}).get("isr_servicios_profesionales", 0) \
+            if isinstance(R.get("retenciones"), dict) else 0
+        sue[f"{c}5"] = e.get("sueldos") or 0
+        sue[f"{c}6"] = e.get("isr_sueldos") or 0
+        asi[f"{c}5"] = e.get("remanente") or 0
+        asi[f"{c}6"] = e.get("isr_remanente") or 0
 
-    def res_linea(i, k):
-        return lambda g: g["resultado"]["resumen"][i][k]
-
-    hoja("Resumen", [
-        ("ISR personas morales", res_linea(0, "a_cargo"), None, False),
-        ("IVA (incluye IVA retenido a terceros)", res_linea(1, "a_cargo"), None, False),
-        ("ISR retenciones por salarios", res_linea(2, "a_cargo"), None, False),
-        ("ISR retenciones por asimilados (remanente)", res_linea(3, "a_cargo"), None, False),
-        ("ISR retenciones por servicios profesionales", lambda g: g["resultado"]["resumen"][4]["a_cargo"] if len(g["resultado"]["resumen"]) > 4 else 0, None, False),
-        ("Actualización", lambda g: r2(sum(x["actualizacion"] for x in g["resultado"]["resumen"])), None, False),
-        ("Recargos", lambda g: r2(sum(x["recargos"] for x in g["resultado"]["resumen"])), None, False),
-        ("Total a pagar", lambda g: g["resultado"]["total"], None, True),
-        ("ISR provisional efectivamente pagado (declarado)", lambda g: g.get("isr_pagado"), None, False),
-    ], primero=True)
-    hoja("ISR PM", [
-        ("Ingresos facturados del mes (sin IVA)", R("facturado"), None, False),
-        ("(+) Aumento: cobranza de facturas de meses anteriores", R("aumento_cobranza"), None, False),
-        ("(−) Disminución: facturado en el mes pendiente de cobro", R("disminucion_no_cobrado"), None, False),
-        ("Ingresos efectivamente cobrados del mes", R("cobrado"), None, True),
-        ("(−) Devoluciones, descuentos y bonificaciones", R("devoluciones"), None, False),
-        ("Ingresos cobrados acumulados", R("ingresos_acum"), None, False),
-        ("Coeficiente de utilidad", R("coeficiente"), "0.0000", False),
-        ("Utilidad fiscal estimada", R("utilidad"), None, False),
-        ("(−) PTU pagada (acumulada)", R("ptu_acum"), None, False),
-        ("Remanente distribuible pagado a socios en el mes", R("remanente_mes"), None, False),
-        ("(−) Anticipos de remanente a socios, acumulado (art. 14 fr. II LISR)", R("anticipos_acum"), None, False),
-        ("(−) Otros conceptos que disminuyen la base (captura manual)", lambda g: g["resultado"]["isr"].get("otros_disminuyen", 0), None, False),
-        ("(−) Pérdidas fiscales por amortizar", R("perdidas"), None, False),
-        ("Base del pago provisional", R("base"), None, True),
-        ("ISR causado 30%", R("causado"), None, False),
-        ("(−) Pagos provisionales anteriores", R("pagos_anteriores"), None, False),
-        ("(−) ISR retenido por bancos (acumulado)", R("ret_bancos_acum"), None, False),
-        ("ISR a pagar del mes", R("a_pagar"), None, True),
-    ])
-    hoja("IVA", [
-        ("Actos gravados 16% cobrados", V("actos_16"), None, False),
-        ("IVA trasladado cobrado", V("trasladado"), None, False),
-        ("Gastos con IVA pagados (DIOT)", V("gastos_16"), None, False),
-        ("Proporción de acreditamiento", V("proporcion"), "0.0000", False),
-        ("(−) IVA acreditable", V("acreditable"), None, False),
-        ("(−) Saldo a favor aplicado", V("saldo_favor_aplicado"), None, False),
-        ("(−) I.V.A. retenido del mes anterior", lambda g: g["resultado"]["iva"].get("retenido_mes_anterior", 0), None, False),
-        ("IVA a cargo / (a favor) del periodo", V("a_cargo"), None, True),
-        ("(+) IVA retenido a terceros del mes (abono cuenta 216-10)",
-         lambda g: g["resultado"]["iva"].get("retenido_216_10_mes", 0), None, False),
-        ("Total IVA a enterar", V("total"), None, True),
-    ])
-    hon = lambda g: (g["resultado"]["resumen"][4]["a_cargo"] if len(g["resultado"]["resumen"]) > 4 else 0)
-    hon_t = lambda g: (g["resultado"]["resumen"][4]["total"] if len(g["resultado"]["resumen"]) > 4 else 0)
-    hoja("Retenciones ISR", [
-        ("ISR retenido por servicios profesionales (abono cuenta 216-04)", hon, None, True),
-        ("Total con actualización y recargos", hon_t, None, False),
-    ])
-    hoja("Sueldos y remanente", [
-        ("Sueldos y salarios pagados", E("sueldos"), None, False),
-        ("ISR retenido por sueldos", E("isr_sueldos"), None, True),
-        ("Remanente distribuible a socios (asimilados)", E("remanente"), None, False),
-        ("ISR retenido por remanente", E("isr_remanente"), None, True),
-    ])
-    acc = lambda k: (lambda g: g["resultado"]["accesorios"].get(k))
-    hoja("Recargos", [
-        ("¿Con recargos?", lambda g: "Sí" if g["resultado"]["accesorios"]["aplica"] else "No", "@", False),
-        ("Fecha de vencimiento", acc("vencimiento"), "@", False),
-        ("Fecha de pago", acc("fecha_pago"), "@", False),
-        ("INPC mes anterior al pago", acc("inpc_pago"), "0.000", False),
-        ("INPC mes anterior al vencimiento", acc("inpc_venc"), "0.000", False),
-        ("Factor de actualización", acc("factor"), "0.0000", False),
-        ("Meses de atraso", acc("meses"), "0", False),
-    ])
-    p = wb.create_sheet("Parámetros")
-    p["A1"], p["A1"].font = "Parámetros", _FT
-    filas = [("Ejercicio", cfg["ejercicio"]), ("Coeficiente de utilidad (enero en adelante)", cfg.get("coef_1")),
-             (f"Coeficiente desde {MESES[int(cfg.get('mes_cambio_coef', 1)) - 1]}", cfg.get("coef_2")),
-             ("Tasa ISR personas morales", TASA_ISR_PM), ("Tasa IVA", TASA_IVA),
-             ("Tasa mensual de recargos", cfg.get("tasa_recargos"))]
-    for i, (k, v) in enumerate(filas, start=3):
-        p.cell(row=i, column=1, value=k).font = _F
-        p.cell(row=i, column=2, value=v).font = _F
-    p.cell(row=11, column=1, value="INPC (base 2Q jul 2018 = 100)").font = _FB
-    for i, (k, v) in enumerate(sorted((cfg.get("inpc") or {}).items()), start=12):
-        p.cell(row=i, column=1, value=k).font = _F
-        p.cell(row=i, column=2, value=v).font = _F
-    p.column_dimensions["A"].width = 48
+    wb.calculation.fullCalcOnLoad = True
+    wb.active = 0
 
     # Hoja oculta con los datos completos: es lo que el módulo lee el mes siguiente.
     h = wb.create_sheet(HOJA_DATOS)

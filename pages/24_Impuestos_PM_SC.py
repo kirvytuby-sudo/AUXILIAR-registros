@@ -203,7 +203,10 @@ def _panel():
                 help=f"IVA retenido a terceros del mes anterior. Referencia: cargos de la 216-10 en este mes "
                      f"{_money(E.get('iva_ret_enterado_216_10'))}.")
     with t3:
-        st.caption("Valor de la contraprestación pagada **sin IVA** por concepto; el IVA retenido se calcula con la tasa de ley.")
+        E.setdefault("iva_retenido_216_04", 0.0)
+        num("IVA retenido a enterar — abono de la cuenta 216-04", "iva_retenido_216_04", cont=st.columns(3)[0],
+            help="Este es el IVA retenido que se entera y que se suma al total de IVA.")
+        st.caption("Desglose de referencia: valor de la contraprestación pagada **sin IVA** por concepto y su retención según la tasa de ley.")
         cols = st.columns(2)
         for i, c in enumerate(calc.CONCEPTOS_RET_IVA):
             num(f"{c['nombre']} — {c['texto']}", c["clave"], cont=cols[i % 2], dct=E["retenciones"])
@@ -291,8 +294,10 @@ def _panel():
             ("(+) IVA retenido a terceros", V["retenido"]),
             ("Total IVA a enterar", V["total"]),
         ]), hide_index=True, use_container_width=True)
+        st.caption(f"IVA retenido (abono 216-04): {_money(V['retenido'])} · calculado por tasa: "
+                   f"{_money(V['retenido_calculado'])} · DIOT: {_money(E.get('iva_retenido_diot'))}")
         if RES["retenciones"]:
-            st.markdown("**Retenciones de IVA**")
+            st.markdown("**Retenciones de IVA (desglose de referencia)**")
             st.dataframe(pd.DataFrame(RES["retenciones"]).rename(columns={
                 "concepto": "Concepto", "tasa": "Tasa", "valor": "Valor pagado",
                 "iva_trasladado": "IVA trasladado", "iva_retenido": "IVA retenido"}).style.format(

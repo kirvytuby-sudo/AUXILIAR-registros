@@ -268,7 +268,7 @@ def extraer_mes(bal: dict, diot: dict | None) -> tuple[dict, list[str]]:
         "remanente": r2(remanente), "isr_remanente": r2(isr_rem),
         "ptu_pagada": r2(ptu), "isr_ret_bancos": r2(ret_bancos),
         "saldo_favor_iva_disponible": r2(saldo_favor_iva),
-        "isr_honorarios_216_04": r2(_cta(bal, "216-04", "abonos")),
+        "iva_retenido_216_04": r2(_cta(bal, "216-04", "abonos")),   # IVA retenido a enterar (abono 216-04)
     }
     if diot:
         t = diot["totales"]
@@ -419,7 +419,9 @@ def calcular_mes(doc: dict, mes: int, e: dict) -> dict:
         ret_det.append({"concepto": c["nombre"], "tasa": c["texto"], "valor": r2(base_c),
                         "iva_trasladado": r2(base_c * TASA_IVA), "iva_retenido": ret})
         ret_total += ret
-    ret_total = r2(ret_total)
+    ret_calculado = r2(ret_total)
+    # El IVA retenido que se entera es el abono de la cuenta 216-04 (si viene en la captura)
+    ret_total = r2(e["iva_retenido_216_04"]) if e.get("iva_retenido_216_04") is not None else ret_calculado
 
     # ── IVA ───────────────────────────────────────────────────────────────────
     gravados = r2(e["iva_trasladado"] / TASA_IVA) if e["iva_trasladado"] else 0.0
@@ -438,7 +440,8 @@ def calcular_mes(doc: dict, mes: int, e: dict) -> dict:
            "proporcion": round(proporcion, 4), "acreditable": acreditable,
            "saldo_favor_aplicado": e.get("saldo_favor_aplicado", 0), "retenido_mes_anterior": ret_ant,
            "a_cargo": a_cargo,
-           "saldo_a_favor": r2(max(-a_cargo, 0)), "retenido": ret_total, "total": total_iva}
+           "saldo_a_favor": r2(max(-a_cargo, 0)), "retenido": ret_total,
+           "retenido_calculado": ret_calculado, "total": total_iva}
 
     # ── Accesorios ────────────────────────────────────────────────────────────
     lineas = [
@@ -559,8 +562,9 @@ def generar_excel(doc: dict) -> bytes:
         k = c["clave"]
         filas_ret.append((f"{c['nombre']} — valor de la contraprestación", lambda g, k=k: g["entrada"]["retenciones"].get(k, 0), None, False))
         filas_ret.append((f"   IVA retenido ({c['texto']})", lambda g, k=k, t=c["tasa"]: r2(g["entrada"]["retenciones"].get(k, 0) * t), None, False))
-    filas_ret.append(("Total IVA retenido", V("retenido"), None, True))
+    filas_ret.append(("IVA retenido calculado por tasa (referencia)", lambda g: g["resultado"]["iva"].get("retenido_calculado"), None, False))
     filas_ret.append(("IVA retenido según DIOT (referencia)", E("iva_retenido_diot"), None, False))
+    filas_ret.append(("Total IVA retenido (abono cuenta 216-04)", V("retenido"), None, True))
     hoja("Retenciones IVA", filas_ret)
     hoja("Sueldos y remanente", [
         ("Sueldos y salarios pagados", E("sueldos"), None, False),

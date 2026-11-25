@@ -259,6 +259,9 @@ def extraer_mes(bal: dict, diot: dict | None) -> tuple[dict, list[str]]:
         "actos_0": 0.0, "actos_exentos": 0.0,
         "gastos_16": 0.0, "iva_acreditable": r2(_cta(bal, "118-01", "cargos")),
         "saldo_favor_aplicado": 0.0,
+        "iva_ret_mes_anterior": 0.0,        # se toma del papel de trabajo; captura manual si no hay mes anterior
+        "iva_ret_enterado_216_10": r2(_cta(bal, "216-10", "cargos")),
+        "iva_ret_ant_auto": True,
         "retenciones": {c["clave"]: 0.0 for c in CONCEPTOS_RET_IVA},
         "iva_retenido_diot": 0.0,
         "sueldos": r2(sueldos), "isr_sueldos": r2(isr_sueldos),
@@ -423,11 +426,18 @@ def calcular_mes(doc: dict, mes: int, e: dict) -> dict:
     tot_actos = gravados + e.get("actos_0", 0) + e.get("actos_exentos", 0)
     proporcion = 1.0 if not tot_actos else (gravados + e.get("actos_0", 0)) / tot_actos
     acreditable = r2(e["iva_acreditable"] * proporcion)
-    a_cargo = r2(e["iva_trasladado"] - acreditable - e.get("saldo_favor_aplicado", 0))
+    # IVA retenido a terceros del mes anterior (se entera y se acredita en este mes)
+    g_ant = (doc.get("meses") or {}).get(str(mes - 1))
+    if e.get("iva_ret_ant_auto", True) and g_ant and g_ant.get("resultado"):
+        ret_ant = r2(g_ant["resultado"]["iva"]["retenido"])
+    else:
+        ret_ant = r2(e.get("iva_ret_mes_anterior", 0))
+    a_cargo = r2(e["iva_trasladado"] - acreditable - e.get("saldo_favor_aplicado", 0) - ret_ant)
     total_iva = r2(max(a_cargo, 0) + ret_total)
     iva = {"actos_16": gravados, "trasladado": e["iva_trasladado"], "gastos_16": e.get("gastos_16", 0),
            "proporcion": round(proporcion, 4), "acreditable": acreditable,
-           "saldo_favor_aplicado": e.get("saldo_favor_aplicado", 0), "a_cargo": a_cargo,
+           "saldo_favor_aplicado": e.get("saldo_favor_aplicado", 0), "retenido_mes_anterior": ret_ant,
+           "a_cargo": a_cargo,
            "saldo_a_favor": r2(max(-a_cargo, 0)), "retenido": ret_total, "total": total_iva}
 
     # ── Accesorios ────────────────────────────────────────────────────────────
@@ -539,6 +549,7 @@ def generar_excel(doc: dict) -> bytes:
         ("Proporción de acreditamiento", V("proporcion"), "0.0000", False),
         ("(−) IVA acreditable", V("acreditable"), None, False),
         ("(−) Saldo a favor aplicado", V("saldo_favor_aplicado"), None, False),
+        ("(−) I.V.A. retenido del mes anterior", lambda g: g["resultado"]["iva"].get("retenido_mes_anterior", 0), None, False),
         ("IVA a cargo / (a favor) del periodo", V("a_cargo"), None, True),
         ("(+) IVA retenido a terceros", V("retenido"), None, False),
         ("Total IVA a enterar", V("total"), None, True),

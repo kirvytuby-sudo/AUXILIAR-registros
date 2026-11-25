@@ -190,6 +190,18 @@ def _panel():
         num("Actos exentos cobrados", "actos_exentos", cont=x[1])
         num("Saldo a favor de IVA aplicado", "saldo_favor_aplicado", cont=x[2],
             help=f"Saldo a favor en balanza (113-01): {_money(E.get('saldo_favor_iva_disponible'))}")
+        x = st.columns(3)
+        hay_ant = str(mes - 1) in DOC["meses"]
+        E.setdefault("iva_ret_mes_anterior", 0.0)
+        E["iva_ret_ant_auto"] = x[0].checkbox("I.V.A. retenido del mes anterior: tomarlo del papel de trabajo",
+                                              value=hay_ant and E.get("iva_ret_ant_auto", True),
+                                              disabled=not hay_ant, key=f"{K}_retant_auto")
+        if E["iva_ret_ant_auto"] and hay_ant:
+            x[1].metric("I.V.A. retenido del mes anterior", _money(DOC["meses"][str(mes - 1)]["resultado"]["iva"]["retenido"]))
+        else:
+            num("I.V.A. retenido del mes anterior", "iva_ret_mes_anterior", cont=x[1],
+                help=f"IVA retenido a terceros del mes anterior. Referencia: cargos de la 216-10 en este mes "
+                     f"{_money(E.get('iva_ret_enterado_216_10'))}.")
     with t3:
         st.caption("Valor de la contraprestación pagada **sin IVA** por concepto; el IVA retenido se calcula con la tasa de ley.")
         cols = st.columns(2)
@@ -274,6 +286,7 @@ def _panel():
             ("IVA trasladado cobrado", V["trasladado"]),
             ("(−) IVA acreditable", V["acreditable"]),
             ("(−) Saldo a favor aplicado", V["saldo_favor_aplicado"]),
+            ("(−) I.V.A. retenido del mes anterior", V["retenido_mes_anterior"]),
             ("IVA a cargo / (a favor)", V["a_cargo"]),
             ("(+) IVA retenido a terceros", V["retenido"]),
             ("Total IVA a enterar", V["total"]),

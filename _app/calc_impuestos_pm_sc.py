@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import io
+import json
 import math
 import re
 from decimal import Decimal, ROUND_HALF_UP
@@ -26,6 +27,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
          "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
 
+HOJA_DATOS = "_datos_modulo"
 TASA_IVA = 0.16
 TASA_ISR_PM = 0.30
 
@@ -579,6 +581,40 @@ def generar_excel(doc: dict) -> bytes:
         p.cell(row=i, column=1, value=k).font = _F
         p.cell(row=i, column=2, value=v).font = _F
     p.column_dimensions["A"].width = 48
+
+    # Hoja oculta con los datos completos: es lo que el módulo lee el mes siguiente.
+    h = wb.create_sheet(HOJA_DATOS)
+    h["A1"] = "No modificar: datos del módulo Impuestos PM S.C."
+    texto = json.dumps(doc, ensure_ascii=False, default=str)
+    for i in range(0, len(texto), 30000):
+        h.cell(row=2 + i // 30000, column=1, value=texto[i:i + 30000])
+    h.sheet_state = "hidden"
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
+
+
+def leer_papel(data: bytes) -> dict:
+    """Lee un papel de trabajo generado por este módulo y devuelve el documento con todos los meses."""
+    wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    if HOJA_DATOS not in wb.sheetnames:
+        raise ValueError("Este Excel no es un papel de trabajo del módulo (no trae la hoja de datos). "
+                         "Sube el archivo que descargaste del mes anterior.")
+    partes = [r[0] for r in wb[HOJA_DATOS].iter_rows(min_row=2, max_col=1, values_only=True) if r and r[0]]
+    doc = json.loads("".join(partes))
+    doc.setdefault("meses", {})
+    return doc
+
+
+def recalcular(doc: dict, desde: int = 1) -> list[int]:
+    """Recalcula en orden los meses del documento a partir de `desde` (usa el ISR pagado capturado)."""
+    hechos = []
+    for m in range(desde, 13):
+        g = doc["meses"].get(str(m))
+        if not g:
+            continue
+        g["resultado"] = calcular_mes(doc, m, g["entrada"])
+        if g.get("isr_pagado_auto", True):
+            g["isr_pagado"] = g["resultado"]["isr"]["a_pagar"]
+        hechos.append(m)
+    return hechos

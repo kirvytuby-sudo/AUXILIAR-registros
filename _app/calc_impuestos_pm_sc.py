@@ -427,17 +427,18 @@ def calcular_mes(doc: dict, mes: int, e: dict) -> dict:
     else:
         ret_ant = r2(e.get("iva_ret_mes_anterior", 0) or 0)
     a_cargo = r2(e["iva_trasladado"] - acreditable - e.get("saldo_favor_aplicado", 0) - ret_ant)
-    total_iva = r2(max(a_cargo, 0))
+    ret_mes = r2(e.get("iva_ret_216_10") or 0)
+    total_iva = r2(max(a_cargo, 0) + ret_mes)
     iva = {"actos_16": gravados, "trasladado": e["iva_trasladado"], "gastos_16": e.get("gastos_16", 0),
            "proporcion": round(proporcion, 4), "acreditable": acreditable,
            "saldo_favor_aplicado": e.get("saldo_favor_aplicado", 0), "retenido_mes_anterior": ret_ant,
-           "a_cargo": a_cargo, "retenido_216_10_mes": r2(e.get("iva_ret_216_10") or 0),
+           "a_cargo": a_cargo, "retenido_216_10_mes": ret_mes,
            "saldo_a_favor": r2(max(-a_cargo, 0)), "total": total_iva}
 
     # ── Accesorios ────────────────────────────────────────────────────────────
     lineas = [
         ("ISR personas morales", a_pagar),
-        ("IVA", total_iva),
+        ("IVA (incluye IVA retenido a terceros)", total_iva),
         ("ISR retenciones por salarios", e.get("isr_sueldos", 0)),
         ("ISR retenciones por asimilados (remanente)", e.get("isr_remanente", 0)),
         ("ISR retenciones por servicios profesionales", isr_hon),
@@ -510,7 +511,7 @@ def generar_excel(doc: dict) -> bytes:
 
     hoja("Resumen", [
         ("ISR personas morales", res_linea(0, "a_cargo"), None, False),
-        ("IVA", res_linea(1, "a_cargo"), None, False),
+        ("IVA (incluye IVA retenido a terceros)", res_linea(1, "a_cargo"), None, False),
         ("ISR retenciones por salarios", res_linea(2, "a_cargo"), None, False),
         ("ISR retenciones por asimilados (remanente)", res_linea(3, "a_cargo"), None, False),
         ("ISR retenciones por servicios profesionales", lambda g: g["resultado"]["resumen"][4]["a_cargo"] if len(g["resultado"]["resumen"]) > 4 else 0, None, False),
@@ -547,9 +548,9 @@ def generar_excel(doc: dict) -> bytes:
         ("(−) Saldo a favor aplicado", V("saldo_favor_aplicado"), None, False),
         ("(−) I.V.A. retenido del mes anterior", lambda g: g["resultado"]["iva"].get("retenido_mes_anterior", 0), None, False),
         ("IVA a cargo / (a favor) del periodo", V("a_cargo"), None, True),
-        ("Total IVA a enterar", V("total"), None, True),
-        ("IVA retenido a terceros del mes (abono 216-10) — se resta el mes siguiente",
+        ("(+) IVA retenido a terceros del mes (abono cuenta 216-10)",
          lambda g: g["resultado"]["iva"].get("retenido_216_10_mes", 0), None, False),
+        ("Total IVA a enterar", V("total"), None, True),
     ])
     hon = lambda g: (g["resultado"]["resumen"][4]["a_cargo"] if len(g["resultado"]["resumen"]) > 4 else 0)
     hon_t = lambda g: (g["resultado"]["resumen"][4]["total"] if len(g["resultado"]["resumen"]) > 4 else 0)

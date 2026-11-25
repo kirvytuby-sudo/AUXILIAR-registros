@@ -390,7 +390,8 @@ def calcular_mes(doc: dict, mes: int, e: dict) -> dict:
     ptu_acum = r2(prev["ptu"] + e.get("ptu_pagada", 0))
     anticipos_acum = r2(prev["anticipos"] + e.get("remanente", 0))
     perdidas = float(e.get("perdidas", 0) or 0)
-    base = r2(max(utilidad - ptu_acum - anticipos_acum - perdidas, 0))
+    otros = float(e.get("otros_disminuyen", 0) or 0)       # captura manual
+    base = r2(max(utilidad - ptu_acum - anticipos_acum - otros - perdidas, 0))
     causado = r2(base * TASA_ISR_PM)
     ret_bancos_acum = r2(prev["ret_bancos"] + e.get("isr_ret_bancos", 0))
     a_pagar = r2(max(causado - prev["pagos_prov"] - ret_bancos_acum, 0))
@@ -403,7 +404,7 @@ def calcular_mes(doc: dict, mes: int, e: dict) -> dict:
         "ingresos_mes": ingresos_mes, "ingresos_previos": prev["ingresos"], "ingresos_acum": ingresos_acum,
         "coeficiente": coef, "utilidad": utilidad, "ptu_acum": ptu_acum,
         "remanente_mes": e.get("remanente", 0), "anticipos_acum": anticipos_acum,
-        "perdidas": perdidas, "base": base, "causado": causado,
+        "otros_disminuyen": otros, "perdidas": perdidas, "base": base, "causado": causado,
         "pagos_anteriores": prev["pagos_prov"], "ret_bancos_acum": ret_bancos_acum, "a_pagar": a_pagar,
     }
 
@@ -532,6 +533,7 @@ def generar_excel(doc: dict) -> bytes:
         ("(−) PTU pagada (acumulada)", R("ptu_acum"), None, False),
         ("Remanente distribuible pagado a socios en el mes", R("remanente_mes"), None, False),
         ("(−) Anticipos de remanente a socios, acumulado (art. 14 fr. II LISR)", R("anticipos_acum"), None, False),
+        ("(−) Otros conceptos que disminuyen la base (captura manual)", lambda g: g["resultado"]["isr"].get("otros_disminuyen", 0), None, False),
         ("(−) Pérdidas fiscales por amortizar", R("perdidas"), None, False),
         ("Base del pago provisional", R("base"), None, True),
         ("ISR causado 30%", R("causado"), None, False),

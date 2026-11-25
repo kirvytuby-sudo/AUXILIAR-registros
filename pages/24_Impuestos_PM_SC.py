@@ -79,6 +79,7 @@ if st.button("📖 Leer archivos", type="primary", disabled=not f_bal):
         datos["recargos"] = {"aplica": False, "fecha_pago": None,
                              "vencimiento": calc.vencimiento(ejercicio, mes).isoformat()}
         datos["perdidas"] = 0.0
+        datos["otros_disminuyen"] = 0.0
         st.session_state.pm2 = {"doc": doc, "mes": mes, "entrada": datos, "avisos": avisos,
                                 "provs": diot["proveedores"] if diot else [], "con_prev": bool(f_prev)}
         st.session_state.pm2_ver = st.session_state.get("pm2_ver", 0) + 1
@@ -180,6 +181,9 @@ def _panel():
         num("PTU pagada en el mes", "ptu_pagada", cont=x[0])
         num("ISR retenido por bancos en el mes", "isr_ret_bancos", cont=x[1])
         num("Pérdidas fiscales por amortizar", "perdidas", cont=x[2])
+        E.setdefault("otros_disminuyen", 0.0)
+        num("(−) Otros conceptos que disminuyen la base (captura manual)", "otros_disminuyen", cont=st.columns(3)[0],
+            help="Se resta a la base del pago provisional de este mes, después del remanente a socios.")
     with t2:
         x = st.columns(3)
         num("IVA trasladado cobrado (208-01)", "iva_trasladado", cont=x[0])
@@ -268,13 +272,14 @@ def _panel():
             ("Utilidad fiscal estimada", I["utilidad"]),
             ("(−) PTU pagada", I["ptu_acum"]),
             (f"(−) Remanente a socios acumulado (mes: {_money(I['remanente_mes'])})", I["anticipos_acum"]),
+            ("(−) Otros conceptos (captura manual)", I.get("otros_disminuyen", 0)),
             ("(−) Pérdidas fiscales", I["perdidas"]),
             ("Base", I["base"]),
             ("ISR causado 30%", I["causado"]),
             ("(−) Pagos provisionales anteriores", I["pagos_anteriores"]),
             ("(−) ISR retenido por bancos", I["ret_bancos_acum"]),
             ("ISR a pagar", I["a_pagar"]),
-        ]), hide_index=True, use_container_width=True, height=630)
+        ]), hide_index=True, use_container_width=True, height=665)
     with r2c:
         st.markdown("**IVA**")
         st.dataframe(_tabla([

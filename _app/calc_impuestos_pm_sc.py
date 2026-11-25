@@ -4,8 +4,8 @@ _app/calc_impuestos_pm_sc.py — Motor de Impuestos Persona Moral · Sociedad Ci
 Pagos provisionales mensuales de una S.C. (Título II LISR, ingresos efectivamente cobrados):
   · ISR PM (art. 14 LISR): facturado → ajuste por cobranza → cobrado, coeficiente de utilidad,
     PTU, anticipos de remanente distribuible a socios (art. 14 fr. II), pérdidas, pagos anteriores.
-  · IVA (arts. 1, 1-A, 5 y 5-D LIVA): trasladado cobrado, acreditable (DIOT), saldo a favor, IVA retenido.
-  · Retenciones de IVA a terceros por concepto y tasa (art. 1-A LIVA, art. 3 RLIVA).
+  · IVA (arts. 1, 1-A, 5 y 5-D LIVA): trasladado cobrado, acreditable (DIOT) y saldo a favor.
+  · Retenciones de ISR por servicios profesionales (abono de la cuenta 216-04, cuando aparece en la balanza).
   · ISR retenido por sueldos y por remanente distribuible (asimilados).
   · Actualización (art. 17-A CFF) y recargos (art. 21 CFF) por pago extemporáneo.
 
@@ -268,7 +268,7 @@ def extraer_mes(bal: dict, diot: dict | None) -> tuple[dict, list[str]]:
         "remanente": r2(remanente), "isr_remanente": r2(isr_rem),
         "ptu_pagada": r2(ptu), "isr_ret_bancos": r2(ret_bancos),
         "saldo_favor_iva_disponible": r2(saldo_favor_iva),
-        "iva_retenido_216_04": r2(_cta(bal, "216-04", "abonos")),   # IVA retenido a enterar (abono 216-04)
+        "isr_ret_honorarios": r2(_cta(bal, "216-04", "abonos")),   # ISR retenido por servicios profesionales (abono 216-04)
     }
     if diot:
         t = diot["totales"]
@@ -277,14 +277,11 @@ def extraer_mes(bal: dict, diot: dict | None) -> tuple[dict, list[str]]:
         d["iva_retenido_diot"] = r2(t["iva_retenido"])
         for p in diot["proveedores"]:
             d["retenciones"][p["concepto"]] = r2(d["retenciones"][p["concepto"]] + p["base"])
-        bal_ret = _cta(bal, "216-10", "abonos")
-        if bal_ret and abs(bal_ret - t["iva_retenido"]) > 1:
-            avisos.append(f"IVA retenido: DIOT ${t['iva_retenido']:,.2f} vs balanza 216-10 ${bal_ret:,.2f}.")
         if abs(d["iva_acreditable"] - _cta(bal, "118-01", "cargos")) > 1 and _cta(bal, "118-01", "cargos"):
             avisos.append(f"IVA acreditable: DIOT ${d['iva_acreditable']:,.2f} vs balanza 118-01 "
                           f"${_cta(bal, '118-01', 'cargos'):,.2f}.")
     else:
-        avisos.append("Sin DIOT: el IVA acreditable se toma de la cuenta 118-01 y no hay desglose de retenciones.")
+        avisos.append("Sin DIOT: el IVA acreditable se toma de la cuenta 118-01.")
     return d, avisos
 
 
@@ -409,46 +406,32 @@ def calcular_mes(doc: dict, mes: int, e: dict) -> dict:
         "pagos_anteriores": prev["pagos_prov"], "ret_bancos_acum": ret_bancos_acum, "a_pagar": a_pagar,
     }
 
-    # ── Retenciones de IVA ────────────────────────────────────────────────────
-    ret_det, ret_total = [], 0.0
-    for c in CONCEPTOS_RET_IVA:
-        base_c = float(e["retenciones"].get(c["clave"], 0) or 0)
-        if not base_c:
-            continue
-        ret = r2(base_c * c["tasa"])
-        ret_det.append({"concepto": c["nombre"], "tasa": c["texto"], "valor": r2(base_c),
-                        "iva_trasladado": r2(base_c * TASA_IVA), "iva_retenido": ret})
-        ret_total += ret
-    ret_calculado = r2(ret_total)
-    # El IVA retenido que se entera es el abono de la cuenta 216-04 (si viene en la captura)
-    ret_total = r2(e["iva_retenido_216_04"]) if e.get("iva_retenido_216_04") is not None else ret_calculado
+    # ── Retenciones de ISR por servicios profesionales (abono 216-04) ─────────
+    isr_hon = e.get("isr_ret_honorarios")
+    if isr_hon is None:                       # papeles anteriores
+        isr_hon = e.get("iva_retenido_216_04", 0)
+    isr_hon = r2(isr_hon or 0)
+    ret_det = {"isr_servicios_profesionales": isr_hon}
 
     # ── IVA ───────────────────────────────────────────────────────────────────
     gravados = r2(e["iva_trasladado"] / TASA_IVA) if e["iva_trasladado"] else 0.0
     tot_actos = gravados + e.get("actos_0", 0) + e.get("actos_exentos", 0)
     proporcion = 1.0 if not tot_actos else (gravados + e.get("actos_0", 0)) / tot_actos
     acreditable = r2(e["iva_acreditable"] * proporcion)
-    # IVA retenido a terceros del mes anterior (se entera y se acredita en este mes)
-    g_ant = (doc.get("meses") or {}).get(str(mes - 1))
-    if e.get("iva_ret_ant_auto", True) and g_ant and g_ant.get("resultado"):
-        ret_ant = r2(g_ant["resultado"]["iva"]["retenido"])
-    else:
-        ret_ant = r2(e.get("iva_ret_mes_anterior", 0))
-    a_cargo = r2(e["iva_trasladado"] - acreditable - e.get("saldo_favor_aplicado", 0) - ret_ant)
-    total_iva = r2(max(a_cargo, 0) + ret_total)
+    a_cargo = r2(e["iva_trasladado"] - acreditable - e.get("saldo_favor_aplicado", 0))
+    total_iva = r2(max(a_cargo, 0))
     iva = {"actos_16": gravados, "trasladado": e["iva_trasladado"], "gastos_16": e.get("gastos_16", 0),
            "proporcion": round(proporcion, 4), "acreditable": acreditable,
-           "saldo_favor_aplicado": e.get("saldo_favor_aplicado", 0), "retenido_mes_anterior": ret_ant,
-           "a_cargo": a_cargo,
-           "saldo_a_favor": r2(max(-a_cargo, 0)), "retenido": ret_total,
-           "retenido_calculado": ret_calculado, "total": total_iva}
+           "saldo_favor_aplicado": e.get("saldo_favor_aplicado", 0), "a_cargo": a_cargo,
+           "saldo_a_favor": r2(max(-a_cargo, 0)), "total": total_iva}
 
     # ── Accesorios ────────────────────────────────────────────────────────────
     lineas = [
         ("ISR personas morales", a_pagar),
-        ("IVA (incluye retenido)", total_iva),
+        ("IVA", total_iva),
         ("ISR retenciones por salarios", e.get("isr_sueldos", 0)),
         ("ISR retenciones por asimilados (remanente)", e.get("isr_remanente", 0)),
+        ("ISR retenciones por servicios profesionales", isr_hon),
     ]
     resumen = []
     for nombre, monto in lineas:
@@ -518,9 +501,10 @@ def generar_excel(doc: dict) -> bytes:
 
     hoja("Resumen", [
         ("ISR personas morales", res_linea(0, "a_cargo"), None, False),
-        ("IVA (incluye retenido)", res_linea(1, "a_cargo"), None, False),
+        ("IVA", res_linea(1, "a_cargo"), None, False),
         ("ISR retenciones por salarios", res_linea(2, "a_cargo"), None, False),
         ("ISR retenciones por asimilados (remanente)", res_linea(3, "a_cargo"), None, False),
+        ("ISR retenciones por servicios profesionales", lambda g: g["resultado"]["resumen"][4]["a_cargo"] if len(g["resultado"]["resumen"]) > 4 else 0, None, False),
         ("Actualización", lambda g: r2(sum(x["actualizacion"] for x in g["resultado"]["resumen"])), None, False),
         ("Recargos", lambda g: r2(sum(x["recargos"] for x in g["resultado"]["resumen"])), None, False),
         ("Total a pagar", lambda g: g["resultado"]["total"], None, True),
@@ -552,20 +536,15 @@ def generar_excel(doc: dict) -> bytes:
         ("Proporción de acreditamiento", V("proporcion"), "0.0000", False),
         ("(−) IVA acreditable", V("acreditable"), None, False),
         ("(−) Saldo a favor aplicado", V("saldo_favor_aplicado"), None, False),
-        ("(−) I.V.A. retenido del mes anterior", lambda g: g["resultado"]["iva"].get("retenido_mes_anterior", 0), None, False),
         ("IVA a cargo / (a favor) del periodo", V("a_cargo"), None, True),
-        ("(+) IVA retenido a terceros", V("retenido"), None, False),
         ("Total IVA a enterar", V("total"), None, True),
     ])
-    filas_ret = []
-    for c in CONCEPTOS_RET_IVA:
-        k = c["clave"]
-        filas_ret.append((f"{c['nombre']} — valor de la contraprestación", lambda g, k=k: g["entrada"]["retenciones"].get(k, 0), None, False))
-        filas_ret.append((f"   IVA retenido ({c['texto']})", lambda g, k=k, t=c["tasa"]: r2(g["entrada"]["retenciones"].get(k, 0) * t), None, False))
-    filas_ret.append(("IVA retenido calculado por tasa (referencia)", lambda g: g["resultado"]["iva"].get("retenido_calculado"), None, False))
-    filas_ret.append(("IVA retenido según DIOT (referencia)", E("iva_retenido_diot"), None, False))
-    filas_ret.append(("Total IVA retenido (abono cuenta 216-04)", V("retenido"), None, True))
-    hoja("Retenciones IVA", filas_ret)
+    hon = lambda g: (g["resultado"]["resumen"][4]["a_cargo"] if len(g["resultado"]["resumen"]) > 4 else 0)
+    hon_t = lambda g: (g["resultado"]["resumen"][4]["total"] if len(g["resultado"]["resumen"]) > 4 else 0)
+    hoja("Retenciones ISR", [
+        ("ISR retenido por servicios profesionales (abono cuenta 216-04)", hon, None, True),
+        ("Total con actualización y recargos", hon_t, None, False),
+    ])
     hoja("Sueldos y remanente", [
         ("Sueldos y salarios pagados", E("sueldos"), None, False),
         ("ISR retenido por sueldos", E("isr_sueldos"), None, True),

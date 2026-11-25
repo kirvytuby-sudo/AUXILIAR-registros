@@ -170,7 +170,7 @@ def _panel():
 
     # ── Captura del mes ───────────────────────────────────────────────────────
     st.markdown("##### 2️⃣ Datos del mes (puedes corregirlos)")
-    t1, t2, t3, t4 = st.tabs(["Ingresos / ISR", "IVA", "Retenciones de IVA", "Sueldos, remanente y recargos"])
+    t1, t2, t3, t4 = st.tabs(["Ingresos / ISR", "IVA", "Retenciones ISR servicios profesionales", "Sueldos, remanente y recargos"])
     with t1:
         x = st.columns(3)
         num("Ingresos facturados (401)", "facturado", cont=x[0])
@@ -190,35 +190,12 @@ def _panel():
         num("Actos exentos cobrados", "actos_exentos", cont=x[1])
         num("Saldo a favor de IVA aplicado", "saldo_favor_aplicado", cont=x[2],
             help=f"Saldo a favor en balanza (113-01): {_money(E.get('saldo_favor_iva_disponible'))}")
-        x = st.columns(3)
-        hay_ant = str(mes - 1) in DOC["meses"]
-        E.setdefault("iva_ret_mes_anterior", 0.0)
-        E["iva_ret_ant_auto"] = x[0].checkbox("I.V.A. retenido del mes anterior: tomarlo del papel de trabajo",
-                                              value=hay_ant and E.get("iva_ret_ant_auto", True),
-                                              disabled=not hay_ant, key=f"{K}_retant_auto")
-        if E["iva_ret_ant_auto"] and hay_ant:
-            x[1].metric("I.V.A. retenido del mes anterior", _money(DOC["meses"][str(mes - 1)]["resultado"]["iva"]["retenido"]))
-        else:
-            num("I.V.A. retenido del mes anterior", "iva_ret_mes_anterior", cont=x[1],
-                help=f"IVA retenido a terceros del mes anterior. Referencia: cargos de la 216-10 en este mes "
-                     f"{_money(E.get('iva_ret_enterado_216_10'))}.")
     with t3:
-        E.setdefault("iva_retenido_216_04", 0.0)
-        num("IVA retenido a enterar — abono de la cuenta 216-04", "iva_retenido_216_04", cont=st.columns(3)[0],
-            help="Este es el IVA retenido que se entera y que se suma al total de IVA.")
-        st.caption("Desglose de referencia: valor de la contraprestación pagada **sin IVA** por concepto y su retención según la tasa de ley.")
-        cols = st.columns(2)
-        for i, c in enumerate(calc.CONCEPTOS_RET_IVA):
-            num(f"{c['nombre']} — {c['texto']}", c["clave"], cont=cols[i % 2], dct=E["retenciones"])
-        if S["provs"]:
-            with st.expander("Proveedores con IVA retenido en la DIOT"):
-                st.dataframe(pd.DataFrame(S["provs"]).rename(columns={
-                    "rfc": "RFC", "nombre": "Proveedor", "base": "Valor", "iva": "IVA",
-                    "retenido": "IVA retenido", "concepto": "Concepto"}).style.format(
-                    {"Valor": "{:,.2f}", "IVA": "{:,.2f}", "IVA retenido": "{:,.2f}"}),
-                    hide_index=True, use_container_width=True)
-        if E.get("iva_retenido_diot"):
-            st.caption(f"IVA retenido según DIOT: {_money(E['iva_retenido_diot'])}")
+        if E.get("isr_ret_honorarios") is None:
+            E["isr_ret_honorarios"] = float(E.pop("iva_retenido_216_04", 0) or 0)
+        num("ISR retenido por servicios profesionales — abono de la cuenta 216-04", "isr_ret_honorarios",
+            cont=st.columns(2)[0],
+            help="Se toma de la balanza cuando aparece la cuenta 216-04; si no aparece queda en cero. Se suma al total a pagar.")
     with t4:
         x = st.columns(2)
         num("Sueldos y salarios pagados", "sueldos", cont=x[0])
@@ -253,12 +230,13 @@ def _panel():
     I, V = RES["isr"], RES["iva"]
 
     st.markdown(f"##### 3️⃣ Impuestos de {MESES[mes - 1]} {ejercicio}")
-    m = st.columns(5)
+    m = st.columns(6)
     m[0].metric("Total a pagar", _money(RES["total"]))
     m[1].metric("ISR PM", _money(I["a_pagar"]))
-    m[2].metric("IVA (incl. retenido)", _money(V["total"]))
+    m[2].metric("IVA", _money(V["total"]))
     m[3].metric("ISR sueldos", _money(E.get("isr_sueldos", 0)))
     m[4].metric("ISR remanente", _money(E.get("isr_remanente", 0)))
+    m[5].metric("ISR serv. profesionales", _money(RES["retenciones"]["isr_servicios_profesionales"]))
 
     r1, r2c = st.columns(2)
     with r1:
@@ -289,20 +267,9 @@ def _panel():
             ("IVA trasladado cobrado", V["trasladado"]),
             ("(−) IVA acreditable", V["acreditable"]),
             ("(−) Saldo a favor aplicado", V["saldo_favor_aplicado"]),
-            ("(−) I.V.A. retenido del mes anterior", V["retenido_mes_anterior"]),
             ("IVA a cargo / (a favor)", V["a_cargo"]),
-            ("(+) IVA retenido a terceros", V["retenido"]),
             ("Total IVA a enterar", V["total"]),
         ]), hide_index=True, use_container_width=True)
-        st.caption(f"IVA retenido (abono 216-04): {_money(V['retenido'])} · calculado por tasa: "
-                   f"{_money(V['retenido_calculado'])} · DIOT: {_money(E.get('iva_retenido_diot'))}")
-        if RES["retenciones"]:
-            st.markdown("**Retenciones de IVA (desglose de referencia)**")
-            st.dataframe(pd.DataFrame(RES["retenciones"]).rename(columns={
-                "concepto": "Concepto", "tasa": "Tasa", "valor": "Valor pagado",
-                "iva_trasladado": "IVA trasladado", "iva_retenido": "IVA retenido"}).style.format(
-                {"Valor pagado": "{:,.2f}", "IVA trasladado": "{:,.2f}", "IVA retenido": "{:,.2f}"}),
-                hide_index=True, use_container_width=True)
         st.markdown("**Resumen de pago**")
         acc = RES["accesorios"]
         if acc["aplica"]:

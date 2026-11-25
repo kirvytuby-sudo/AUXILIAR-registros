@@ -18,7 +18,6 @@ import streamlit as st
 
 st.set_page_config(page_title="Impuestos PM S.C. | Auxiliar de Registros", page_icon="🏛️", layout="wide")
 
-import _auth
 import _theme
 from _app import calc_impuestos_pm_sc as calc
 
@@ -26,7 +25,6 @@ _theme.aplicar_header(
     "🏛️ Impuestos PM — Sociedad Civil",
     "Sube el papel de trabajo del mes anterior + balanza y DIOT del mes → descarga el papel de trabajo actualizado",
 )
-_auth.require_login("Impuestos PM")
 
 MESES = calc.MESES
 

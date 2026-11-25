@@ -37,6 +37,7 @@ pg = st.navigation(
             st.Page("pages/21_Facturacion_CFDI.py",           title="Facturación CFDI",            icon="🧾"),
             st.Page("pages/23_Facturas_de_Tickets.py",        title="Facturas de Tickets",         icon="🎫"),
             st.Page("pages/13_Impuestos_PF.py",               title="Impuestos PF",                icon="📊"),
+            st.Page("pages/24_Impuestos_PM_SC.py",            title="Impuestos PM S.C.",           icon="🏛️"),
             st.Page("pages/22_Depuracion_de_Cuentas.py",      title="DEPURACIÓN DE CUENTAS",       icon="🧹"),
         ],
     },

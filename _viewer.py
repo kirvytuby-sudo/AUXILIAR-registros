@@ -279,7 +279,8 @@ def show(
         with b2:
             if st.button("✖", key=f"{key}_cls", help="Limpiar filtro",
                          use_container_width=True):
-                st.session_state[K_flt] = ""
+                if K_flt in st.session_state:
+                    del st.session_state[K_flt]
                 st.rerun()
         st.markdown('<div class="vwr-grp-lbl">Buscar & Filtrar</div>', unsafe_allow_html=True)
 
@@ -303,11 +304,10 @@ def show(
         if st.button("🔄 Recargar original", key=f"{key}_reload", use_container_width=True,
                      help="Descarta cambios y vuelve al archivo original"):
             # Borrar estado del editor
-            if K_editor in st.session_state:
-                del st.session_state[K_editor]
-            st.session_state[K_sort] = ""
-            st.session_state[K_flt]  = ""
-            st.session_state[K_fmt]  = "auto"
+            for _rk in [K_editor, K_sort, K_flt]:
+                if _rk in st.session_state:
+                    del st.session_state[_rk]
+            st.session_state[K_fmt] = "auto"
             st.rerun()
         st.markdown('<div class="vwr-grp-lbl">Edición</div>', unsafe_allow_html=True)
 

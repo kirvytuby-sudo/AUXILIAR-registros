@@ -208,7 +208,7 @@ def _panel():
             num("I.V.A. retenido del mes anterior", "iva_ret_mes_anterior", cont=x[1],
                 help="Abono de la cuenta 216-10 (IVA retenido a terceros) del mes anterior.")
         E.setdefault("iva_ret_216_10", 0.0)
-        num("(+) IVA retenido a terceros del mes (abono 216-10) — se suma al total y se resta el mes siguiente", "iva_ret_216_10", cont=x[2])
+        num("(−) IVA retenido a terceros del mes (abono 216-10) — se resta en el mes y se suma el mes siguiente", "iva_ret_216_10", cont=x[2])
     with t3:
         if E.get("isr_ret_honorarios") is None:
             E["isr_ret_honorarios"] = float(E.pop("iva_retenido_216_04", 0) or 0)
@@ -287,9 +287,9 @@ def _panel():
             ("IVA trasladado cobrado", V["trasladado"]),
             ("(−) IVA acreditable", V["acreditable"]),
             ("(−) Saldo a favor aplicado", V["saldo_favor_aplicado"]),
-            ("(−) I.V.A. retenido del mes anterior", V["retenido_mes_anterior"]),
+            ("(+) I.V.A. retenido del mes anterior", V["retenido_mes_anterior"]),
             ("IVA a cargo / (a favor)", V["a_cargo"]),
-            ("(+) IVA retenido a terceros del mes (216-10)", V["retenido_216_10_mes"]),
+            ("(−) IVA retenido a terceros del mes (216-10)", V["retenido_216_10_mes"]),
             ("Total IVA a enterar", V["total"]),
         ]), hide_index=True, use_container_width=True)
         st.markdown("**Resumen de pago**")

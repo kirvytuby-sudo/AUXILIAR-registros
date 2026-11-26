@@ -269,7 +269,7 @@ def extraer_mes(bal: dict, diot: dict | None) -> tuple[dict, list[str]]:
         "ptu_pagada": r2(ptu), "isr_ret_bancos": r2(ret_bancos),
         "saldo_favor_iva_disponible": r2(saldo_favor_iva),
         "isr_ret_honorarios": r2(_cta(bal, "216-04", "abonos")),
-        "iva_ret_216_10": r2(_cta(bal, "216-10", "abonos")),      # IVA retenido a terceros del mes (se resta el mes siguiente)   # ISR retenido por servicios profesionales (abono 216-04)
+        "iva_ret_216_10": r2(_cta(bal, "216-10", "abonos")),      # IVA retenido a terceros del mes (se resta en el mes y se suma el mes siguiente)   # ISR retenido por servicios profesionales (abono 216-04)
     }
     if diot:
         t = diot["totales"]
@@ -427,19 +427,19 @@ def calcular_mes(doc: dict, mes: int, e: dict) -> dict:
         ret_ant = r2(ea.get("iva_ret_216_10") if ea.get("iva_ret_216_10") is not None else ea.get("iva_retenido_diot", 0))
     else:
         ret_ant = r2(e.get("iva_ret_mes_anterior", 0) or 0)
-    a_cargo = r2(e["iva_trasladado"] - acreditable - e.get("saldo_favor_aplicado", 0) - ret_ant)
+    a_cargo = r2(e["iva_trasladado"] - acreditable - e.get("saldo_favor_aplicado", 0) + ret_ant)
     ret_mes = r2(e.get("iva_ret_216_10") or 0)
-    total_iva = r2(max(a_cargo, 0) + ret_mes)
+    total_iva = r2(max(a_cargo - ret_mes, 0))
     iva = {"actos_16": gravados, "trasladado": e["iva_trasladado"], "gastos_16": e.get("gastos_16", 0),
            "proporcion": round(proporcion, 4), "acreditable": acreditable,
            "saldo_favor_aplicado": e.get("saldo_favor_aplicado", 0), "retenido_mes_anterior": ret_ant,
            "a_cargo": a_cargo, "retenido_216_10_mes": ret_mes,
-           "saldo_a_favor": r2(max(-a_cargo, 0)), "total": total_iva}
+           "saldo_a_favor": r2(max(ret_mes - a_cargo, 0)), "total": total_iva}
 
     # ── Accesorios ────────────────────────────────────────────────────────────
     lineas = [
         ("ISR personas morales", a_pagar),
-        ("IVA (incluye IVA retenido a terceros)", total_iva),
+        ("IVA a cargo del mes", total_iva),
         ("ISR retenciones por salarios", e.get("isr_sueldos", 0)),
         ("ISR retenciones por asimilados (remanente)", e.get("isr_remanente", 0)),
         ("ISR retenciones por servicios profesionales", isr_hon),

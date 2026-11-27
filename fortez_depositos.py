@@ -12,6 +12,16 @@ import re, sys, os
 
 # ── Aliases adicionales (palabras clave que no están en el nombre de cuenta) ──
 # key = palabra clave del nombre de cuenta (UPPERCASE), value = lista de alias
+# Nombre que aparece en REFERENCIA / CONCEPTO según la cuenta destino del depósito
+_CONCEPTO_DISPLAY = {
+    "AMERICAN EXPRESS": "AMERICAN EXPRESS",
+    "EDENRED":          "BANORTE EDENRED",
+    "PLUXE":            "PLUXEE",
+    "EFECTIVALE":       "EFECTIVALE",
+    "BANORTE":          "BANORTE",
+    "EFECTIVO":         "EFECTIVO",
+}
+
 _EXTRA_ALIASES = {
     "BANORTE":    ["SUPER SERV VALLEJO", "SUPER SERV PARIFERIC", "SUPER SERV PERIFÉRIC",
                    "SUPER SERV PERIFERIC", "SERV MENA", "BANORTE"],
@@ -248,8 +258,12 @@ def generar_poliza_fortez(
         cel(ws, r, C_TIPO,  "I", bold=True, align_h="center", bg_col=bg)
         cel(ws, r, C_FECHA, fecha, align_h="center", bg_col=bg)
         ws.cell(r, C_FECHA).number_format = "DD/MM/YYYY"
-        cel(ws, r, C_REF,   banco_str, bg_col=bg)
-        cel(ws, r, C_CONC,  banco_str, bg_col=bg)
+        # Referencia y concepto dinámicos según la cuenta destino del depósito
+        _ab_kw    = abonos_activos[idx_remap[ab_idx]]["kw"]
+        _ab_disp  = _CONCEPTO_DISPLAY.get(_ab_kw, _ab_kw)
+        _conc_str = f"DEPOSITO A {banco} DE {_ab_disp}"
+        cel(ws, r, C_REF,   _conc_str, bg_col=bg)
+        cel(ws, r, C_CONC,  _conc_str, bg_col=bg)
         cel(ws, r, C_ERR,   None, bg_col=bg)
         cel(ws, r, C_UIDD,  None, bg_col=bg)
         cel(ws, r, C_NUMPOL,None, bg_col=bg)

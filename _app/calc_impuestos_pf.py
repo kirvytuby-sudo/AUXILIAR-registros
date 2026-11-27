@@ -139,22 +139,61 @@ INPC_REF = 145.75  # Septiembre 2026 (referencia actualización)
 RECARGO_RATES = {2024: 0.0147, 2025: 0.0147, 2026: 0.0207}
 
 # ─── Clasificación de gastos ──────────────────────────────────────────────────
-NO_DED_PROV   = ['UBER','DIDI',
-                  'WAL MART','WALMART','CHEDRAUI',
-                  'MASCOTAS','PET ',
-                  'RESTAURANTE','RESTAURANT','TACO ','MARISCOS','ASADOR','GASTRONOMIC',
-                  'CEVICHI','MANTALA','BEER FACTORY','LIKOREAK','LA CALLE DEL VINO',
-                  'SILENT BEATS',
-                  'STAR MEDICA','ULTRASONIDO','MASTOGRAFIA',
-                  'CLUB RECREATIVO','CLUB DEPORTIVO',
-                  'OPERADORA HOTELERA','SERVICIOS AEROPORTUARIOS',
-                  'OXXO','AEROCOMIDA']
-NO_DED_CONC   = ['MULTA','RECARGO','SANCION','SANCIÓN','DONATIVO','DONACION','DONACIÓN',
-                  'CLAUSULA PENAL','CLÁUSULA PENAL',
-                  'HOSPEDAJE']
+# ── Proveedores / emisores NO DEDUCIBLES ──────────────────────────────────────
+# Art. 103 LISR: solo gastos estrictamente indispensables para la actividad.
+# Art. 28 fr. II/III LISR: no son deducibles gastos de carácter personal,
+#   recreativos, suntuarios ni entretenimiento que no sean de representación.
+NO_DED_PROV   = [
+    # Transporte personal
+    'UBER','DIDI','CABIFY','BEAT ',
+    # Supermercados y abarrotes
+    'WAL MART','WALMART','CHEDRAUI','SORIANA','BODEGA AURRERA','AURRERA',
+    'LA COMER','COSTCO','CIUDAD MERCADO',
+    # Mascotas
+    'MASCOTAS','PET ',
+    # Restaurantes / Bares (Art. 28 fr. XX → solo 8.5%, manejado en PARCIAL_DED)
+    'RESTAURANTE','RESTAURANT','TACO ','MARISCOS','ASADOR','GASTRONOMIC',
+    'CEVICHI','MANTALA','BEER FACTORY','LIKOREAK','LA CALLE DEL VINO',
+    'SILENT BEATS',
+    # Farmacias / salud personal
+    'STAR MEDICA','ULTRASONIDO','MASTOGRAFIA',
+    # Clubes y recreación
+    'CLUB RECREATIVO','CLUB DEPORTIVO',
+    # Hoteles / aeropuertos
+    'OPERADORA HOTELERA','SERVICIOS AEROPORTUARIOS',
+    # Tiendas de conveniencia
+    'OXXO','AEROCOMIDA','SEVEN ELEVEN','7-ELEVEN',
+    # ── TIENDAS DEPARTAMENTALES (Art. 103 LISR — no indispensable) ────────────
+    'PALACIO DE HIERRO','LIVERPOOL','SEARS OPCO','SUBURBIA',
+    'EL PUERTO DE LIVERPOOL','ZARA','H&M ','GAP ','PULL&BEAR',
+    'BERSHKA','STRADIVARIUS',
+    # ── EVENTOS DEPORTIVOS / RECREATIVOS (Art. 28 fr. III LISR) ──────────────
+    'MARATON','MARATÓN','TRIATON','TRIATLON','TRIATLÓN',
+    'IRONMAN','SNORKEL','BUCEO','SKYDIVE','PARACAID',
+    'BALLENAS','WHALE WATCHING',
+    # ── ENTRETENIMIENTO ───────────────────────────────────────────────────────
+    'CINEPOLIS','CINEMEX','PARQUE DE DIVERSIONES','TICKETMASTER',
+    'SUPER BOLETOS',
+]
+
+NO_DED_CONC   = [
+    'MULTA','RECARGO','SANCION','SANCIÓN','DONATIVO','DONACION','DONACIÓN',
+    'CLAUSULA PENAL','CLÁUSULA PENAL',
+    'HOSPEDAJE',
+    # ── Eventos deportivos / recreativos (Art. 28 fr. III LISR) ──────────────
+    'MARATÓN','MARATON','SNORKEL','BUCEO','TRIATLÓN','TRIATLON',
+    'INSCRIPCION DEPORT','EVENTO DEPORTIVO','EVENTO RECREAT',
+    # ── Artículos personales ──────────────────────────────────────────────────
+    'ROPA ','VESTIMENTA','CALZADO PERSONAL',
+    # ── Honorarios médicos (gastos personales de salud — no indispensable) ───
+    'HONORARIOS MEDIC','HONORARIOS MÉDIC','CONSULTA MEDICA','CONSULTA MÉDICA',
+    'HONORARIOS DR','HONORARIOS DRA',
+]
+
 # Gastos con deducción parcial 8.5% — Art. 28 fr. XX LISR
 PARCIAL_DED_CONC   = ['CONSUMO','RESTAURANTE','RESTAURANT','ALIMENTO','COMIDA','VIATICO']
 PARCIAL_DED_FACTOR = 0.085
+
 NO_DED_MED_PROV = ['FARMACIA','DROGUE','MEDICAMENTO','SALUD','PHARMA']
 NO_DED_MED_CONC = ['MEDICAMENTO','MEDICINA','CONSULTA MEDICA','ANÁLISIS CLINICO','LABORATORIO']
 
@@ -375,12 +414,14 @@ def _parse_xml(path: str, rfc_contribuyente: str, year: int):
         ns = {ns_cfdi: _NS[ns_cfdi], 'tfd': _NS['tfd']}
         tag = lambda t: f'{{{_NS[ns_cfdi]}}}{t}'
 
-        tipo     = root.get('TipoDeComprobante','')   # I=Ingreso E=Egreso P=Pago N=Nómina
-        fecha_s  = root.get('Fecha','')[:10]
-        total    = float(root.get('Total','0'))
-        subtotal = float(root.get('SubTotal','0'))
-        serie    = root.get('Serie','')
-        folio    = root.get('Folio','')
+        tipo         = root.get('TipoDeComprobante','')   # I=Ingreso E=Egreso P=Pago N=Nómina
+        fecha_s      = root.get('Fecha','')[:10]
+        total        = float(root.get('Total','0'))
+        subtotal     = float(root.get('SubTotal','0'))
+        serie        = root.get('Serie','')
+        folio        = root.get('Folio','')
+        metodo_pago  = root.get('MetodoPago','')   # PUE=una exhibición / PPD=parcialidades
+        forma_pago   = root.get('FormaPago','')    # 01=Efectivo 03=TRF 04=Tarjeta etc.
 
         try:
             fecha = datetime.datetime.strptime(fecha_s, '%Y-%m-%d').date()
@@ -423,6 +464,7 @@ def _parse_xml(path: str, rfc_contribuyente: str, year: int):
                     ret_isr=round(ret_isr,2), ret_iva=round(ret_iva,2),
                     total=round(total,2), neto=round(neto,2),
                     uuid=uuid, conc=conc,
+                    metodo_pago=metodo_pago, forma_pago=forma_pago,
                     estado='PENDIENTE',
                     banco_fecha='', banco_desc='', banco_monto=0.0, banco_nombre='')
     except Exception:
@@ -554,7 +596,26 @@ def calcular_impuestos(rfc: str, year: int,
         cls, motivo, factor = clasificar_gasto(g['conc'], g['nom_e'])
         row = dict(mes=g['mes'], fecha=g['fecha'], folio=g['folio_full'],
                    nom_e=g['nom_e'], sub=g['sub'], iva=g['iva'],
-                   total=g['total'], conc=g['conc'])
+                   total=g['total'], conc=g['conc'],
+                   metodo_pago=g.get('metodo_pago',''), forma_pago=g.get('forma_pago',''))
+
+        # ── Reglas de deducibilidad por forma de pago ──────────────────────────
+        if cls in ('DEDUCIBLE', 'PARCIAL_DED'):
+            _fp   = g.get('forma_pago', '')
+            _conc = (g.get('conc','') + ' ' + g.get('nom_e','')).upper()
+            _es_combustible = any(k in _conc for k in
+                                  ('GASOLINA','DIESEL','COMBUSTIBLE','GAS NATURAL','GAS L.P.'))
+            if _fp == '01':  # Efectivo
+                if _es_combustible:
+                    # Art. 28 fr. V LISR — combustible en efectivo → no deducible
+                    cls    = 'NO_DED'
+                    motivo = 'Combustible pagado en EFECTIVO (Art.28 fr.V LISR — no deducible)'
+                elif g['sub'] > 2000:
+                    # Art. 27 fr. III LISR — pago en efectivo > $2,000 → no deducible
+                    cls    = 'NO_DED'
+                    motivo = f'Efectivo >${g["sub"]:,.2f} excede $2,000 (Art.27 fr.III LISR — no deducible)'
+        # ───────────────────────────────────────────────────────────────────────
+
         if cls in ('DEDUCIBLE', 'PARCIAL_DED'):
             sub_ded = round(g['sub'] * factor, 2)
             iva_ded = round(g['iva'] * factor, 2)
@@ -604,16 +665,19 @@ def calcular_impuestos(rfc: str, year: int,
         isr_pag_acum = round(isr_pag_acum + isr_pay, 2)
         tasa = round(isr_tar / base_acum * 100, 4) if base_acum > 0 else 0.0
 
-        # IVA (mensual)
-        iva_neto  = round(iva_caus[mes] + iva_fav_prev - iva_acred[mes] - iva_ret_c[mes], 2)
+        # IVA (mensual) — Art. 5-D LIVA
+        # IVA_neto = IVA_causado − IVA_acreditable − IVA_retenido − Saldo_a_favor_anterior
+        # Si > 0 → se paga; si < 0 → nuevo saldo a favor que se arrastra al mes siguiente
+        iva_fav_ant_save = iva_fav_prev          # saldo a favor del mes anterior (para display)
+        iva_neto  = round(iva_caus[mes] - iva_acred[mes] - iva_ret_c[mes] - iva_fav_prev, 2)
         iva_pay   = max(0.0, iva_neto)
         iva_fav   = abs(iva_neto) if iva_neto < 0 else 0.0
         iva_fav_prev = iva_fav
 
-        # Recargos (cero si se paga a tiempo)
-        rec_isr = act_isr = tot_rec_isr = 0.0
-        rec_iva = act_iva = tot_rec_iva = 0.0
-        total_con_rec = round(isr_pay + iva_pay, 2)
+        # Recargos y actualización (Art. 21 / Art. 17-A CFF) — pagos extemporáneos
+        rec_isr, act_isr, tot_rec_isr = calc_rec_act(isr_pay, mes, year)
+        rec_iva, act_iva, tot_rec_iva = calc_rec_act(iva_pay, mes, year)
+        total_con_rec = round(tot_rec_isr + tot_rec_iva, 2)
         total_sat     = total_con_rec
 
         n_emit = sum(1 for e in emitidas if e['mes']==mes and e['tipo'] in ('I','E'))
@@ -630,7 +694,7 @@ def calcular_impuestos(rfc: str, year: int,
             isr_cargo=isr_cargo, isr_pay=isr_pay, isr_pag_acum=isr_pag_acum,
             rec_isr=rec_isr, act_isr=act_isr, total_con_rec_isr=tot_rec_isr,
             iva_caus=round(iva_caus[mes],2), iva_acred=round(iva_acred[mes],2),
-            iva_ret=round(iva_ret_c[mes],2), iva_fav_ant=iva_fav_prev,
+            iva_ret=round(iva_ret_c[mes],2), iva_fav_ant=iva_fav_ant_save,
             iva_neto=iva_neto, iva_pay=iva_pay, iva_fav=iva_fav,
             iva_pag_acum=0.0,
             rec_iva=rec_iva, act_iva=act_iva, total_con_rec_iva=tot_rec_iva,
@@ -829,15 +893,33 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
     for ci, h in enumerate(h2, 1):
         c=ws2.cell(3,ci,h); c.fill=Az; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
     ws2.row_dimensions[3].height = 40
+    _TAR_SH   = f'TARIFA ISR {year}'
+    _TAR_RNG  = f"'{_TAR_SH}'!$A$3:$D$13"   # 11 tramos
     for ri, r in enumerate(results, 4):
-        bg = La if ri%2==1 else Lg
-        rv = [(r['nom'],None),(r['ing_m'],MXN),(r['ded_m'],MXN),(r['ing_acum'],MXN),(r['ded_acum'],MXN),
-              (r['base_acum'],MXN),(r['isr_tar'],MXN),(r['ret_isr_m'],MXN),(r['ret_isr_acum'],MXN),
-              (r['isr_pag_ant'],MXN),(r['isr_cargo'],MXN),(r['isr_pay'],MXN),(r['tasa']/100,PCT)]
+        bg  = La if ri%2==1 else Lg
+        _m3 = f'LEFT(A{ri},3)'   # criterio SUMIF: 3 letras del mes (ENE/FEB/…)
+        # ── Fórmulas dinámicas — toda edición en INGRESOS DETALLE o GASTOS DEDUCIBLES
+        #    se propaga automáticamente hasta ISR A PAGAR y TASA EFECTIVA.
+        f_b = f"=SUMIF('INGRESOS DETALLE'!$A:$A,{_m3},'INGRESOS DETALLE'!$G:$G)"
+        f_c = f"=SUMIF('GASTOS DEDUCIBLES'!$A:$A,{_m3},'GASTOS DEDUCIBLES'!$E:$E)"
+        f_d = f"=SUM($B$4:B{ri})"
+        f_e = f"=SUM($C$4:C{ri})"
+        f_f = f"=MAX(0,D{ri}-E{ri})"
+        f_g = (f"=IFERROR(VLOOKUP(F{ri},{_TAR_RNG},3,TRUE)"
+               f"+(F{ri}-VLOOKUP(F{ri},{_TAR_RNG},1,TRUE))"
+               f"*VLOOKUP(F{ri},{_TAR_RNG},4,TRUE),0)")
+        f_h = f"=SUMIF('INGRESOS DETALLE'!$A:$A,{_m3},'INGRESOS DETALLE'!$I:$I)"
+        f_i = f"=SUM($H$4:H{ri})"
+        f_j = "0" if ri == 4 else f"=SUM($L$4:L{ri-1})"  # pp anteriores (0 en ENE)
+        f_k = f"=G{ri}-I{ri}-J{ri}"
+        f_l = f"=MAX(0,K{ri})"
+        f_m = f"=IFERROR(G{ri}/F{ri},0)"
+        rv  = [(r['nom'],None),(f_b,MXN),(f_c,MXN),(f_d,MXN),(f_e,MXN),
+               (f_f,MXN),(f_g,MXN),(f_h,MXN),(f_i,MXN),
+               (f_j,MXN),(f_k,MXN),(f_l,MXN),(f_m,PCT)]
         for ci, (v, fmt) in enumerate(rv, 1):
             bold = ci in (11,12)
-            col  = '991B1B' if ci==11 and isinstance(v,float) and v<0 else \
-                   '14532D' if ci==12 and isinstance(v,float) and v>0 else '000000'
+            col  = '991B1B' if ci==11 else '14532D' if ci==12 else '000000'
             put(ws2, ri, ci, v, bold, col, bg, LL if ci==1 else RR, fmt)
         ws2.row_dimensions[ri].height = 15
     for ci, w in enumerate([13,13,13,14,14,15,14,12,12,13,13,13,10], 1):
@@ -847,125 +929,492 @@ def generar_excel(results, emitidas_log, ded_log, no_ded_log,
     # ══ HOJA 4: CÁLCULO IVA ═══════════════════════════════════════════════════
     ws3 = wb.create_sheet('CÁLCULO IVA')
     title(ws3, 9, 1, f'CÁLCULO IVA MENSUAL {year} — Art. 5-D LIVA', Vd)
-    title(ws3, 9, 2, 'IVA a pagar = IVA Causado − IVA Acreditable − IVA Retenido + Saldo a favor mes anterior', Gs, 8)
+    title(ws3, 9, 2, 'IVA a pagar = IVA Causado − IVA Acreditable − IVA Retenido − Saldo a favor mes anterior  (Art. 5-D LIVA)', Gs, 8)
     ws3.row_dimensions[2].height = 14
     h3 = ['MES','IVA CAUSADO\n(Emit.)','SALDO FAV.\nANT.','IVA ACREDIT.\n(Ded.)','IVA RET.\nCLIENTES',
           'IVA NETO','IVA A PAGAR','SALDO A\nFAVOR','CFDIs\nE/R']
     for ci, h in enumerate(h3, 1):
         c=ws3.cell(3,ci,h); c.fill=Vd; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
     ws3.row_dimensions[3].height = 44
-    iva_fav_prev2 = 0.0
     for ri, r in enumerate(results, 4):
-        bg = Lv if ri%2==1 else Lg
-        rv = [(r['nom'],None),(r['iva_caus'],MXN),(iva_fav_prev2,MXN),(r['iva_acred'],MXN),(r['iva_ret'],MXN),
-              (r['iva_neto'],MXN),(r['iva_pay'],MXN),(r['iva_fav'],MXN),(f"{r['n_emit']}/{r['n_ded']}",None)]
-        iva_fav_prev2 = r['iva_fav']
+        bg  = Lv if ri%2==1 else Lg
+        _m3 = f'LEFT(A{ri},3)'
+        # col B: IVA causado (ingresos emitidos col H = IVA)
+        f_b = f"=SUMIF('INGRESOS DETALLE'!$A:$A,{_m3},'INGRESOS DETALLE'!$H:$H)"
+        # col C: saldo a favor del mes anterior
+        f_c = "0" if ri == 4 else f"=H{ri-1}"
+        # col D: IVA acreditable (gastos deducibles col F = IVA ACRED.)
+        f_d = f"=SUMIF('GASTOS DEDUCIBLES'!$A:$A,{_m3},'GASTOS DEDUCIBLES'!$F:$F)"
+        # col E: IVA retenido por clientes (ingresos col J = Ret.IVA)
+        f_e = f"=SUMIF('INGRESOS DETALLE'!$A:$A,{_m3},'INGRESOS DETALLE'!$J:$J)"
+        # col F: IVA neto del mes
+        f_f = f"=B{ri}-D{ri}-E{ri}-C{ri}"
+        # col G: IVA a pagar
+        f_g = f"=MAX(0,F{ri})"
+        # col H: saldo a favor → siguiente mes
+        f_h = f"=IF(F{ri}<0,ABS(F{ri}),0)"
+        rv  = [(r['nom'],None),(f_b,MXN),(f_c,MXN),(f_d,MXN),(f_e,MXN),
+               (f_f,MXN),(f_g,MXN),(f_h,MXN),(f"{r['n_emit']}/{r['n_ded']}",None)]
         for ci, (v, fmt) in enumerate(rv, 1):
             bold = ci in (6,7,8)
-            col  = '991B1B' if ci==6 and isinstance(v,float) and v<0 else \
-                   '14532D' if ci==7 and isinstance(v,float) and v>0 else \
-                   '78350F' if ci==8 and isinstance(v,float) and v>0 else '000000'
+            col  = '000000' if ci==6 else '14532D' if ci==7 else '78350F' if ci==8 else '000000'
             put(ws3, ri, ci, v, bold, col, bg, LL if ci in(1,9) else RR, fmt)
         ws3.row_dimensions[ri].height = 15
     for ci, w in enumerate([13,15,13,15,13,13,13,13,9], 1):
         ws3.column_dimensions[get_column_letter(ci)].width = w
     ws3.freeze_panes = 'B4'
 
-    # ══ CÉDULA DE CÁLCULO ══════════════════════════════════════════════════════
+
+
+    # ══ CÉDULA DE CÁLCULO (vertical: conceptos x meses — con fórmulas Excel) ═
+    # Mapa de hojas referenciadas:
+    #   'CÁLCULO ISR':  row4=ENE..row15=DIC
+    #     B=ing_m  C=ded_m  D=ing_acum  E=ded_acum  F=base_acum
+    #     G=isr_tar  H=ret_isr_m  I=ret_isr_acum  J=pp_ant  K=isr_cargo
+    #     L=isr_pay  M=tasa
+    #   'CÁLCULO IVA':  row4=ENE..row15=DIC
+    #     B=iva_caus  C=saldo_fav_ant  D=iva_acred  E=iva_ret
+    #     F=iva_neto  G=iva_pay  H=saldo_a_favor
+    # Columnas CÉDULA: B=ENE(ci=2)..M=DIC(ci=13)  → isr/iva_row = ci+2
+
     ws_ced = wb.create_sheet('CÉDULA DE CÁLCULO')
-    title(ws_ced, 16, 1, f'CÉDULA DE CÁLCULO DE IMPUESTOS {year} — {rfc} — {nombre}', Az)
-    title(ws_ced, 16, 2, 'Régimen 612 | ISR provisional acumulado Art.106 LISR | IVA mensual Art.5-D LIVA | Recargos Art.21 CFF', Az2, 8)
+    MCOLS_CED  = 13   # última col de mes (M=DIC)
+    MCOLS_TOT  = 14   # col N = TOTAL
+    ws_ced.merge_cells(f'A1:{get_column_letter(MCOLS_TOT)}1')
+    c = ws_ced['A1']
+    c.value = f'CÉDULA DE CÁLCULO DE IMPUESTOS {year} — {rfc} — {nombre} — RÉG. 612'
+    c.font=f(True,'FFFFFF',12); c.fill=Az; c.alignment=CC; c.border=BD
+    ws_ced.row_dimensions[1].height = 26
+    ws_ced.merge_cells(f'A2:{get_column_letter(MCOLS_TOT)}2')
+    c = ws_ced['A2']
+    c.value = ('Art. 106 LISR — Pagos provisionales ISR acumulado '
+               '| Art. 5-D LIVA — IVA mensual '
+               '| Art. 21 CFF — Recargos y actualización')
+    c.font=f(False,'FFFFFF',8,True); c.fill=Az2; c.alignment=CC; c.border=BD
     ws_ced.row_dimensions[2].height = 14
 
-    # Grupos de columnas
-    GRP_ISR = Gs; GRP_IVA = Vd; GRP_REC = PatternFill('solid',fgColor='7C3AED'); GRP_TOT = Am
-    for s, e2, lbl, fl in [('A3','C3','INGRESOS / DEDUCCIONES',Az),
-                            ('D3','H3','ISR PROVISIONAL — ACUMULADO',GRP_ISR),
-                            ('I3','L3','IVA MENSUAL',GRP_IVA),
-                            ('M3','N3','RECARGOS Y ACTUALIZ.',GRP_REC),
-                            ('O3','P3','TOTAL A PAGAR SAT',GRP_TOT)]:
-        ws_ced.merge_cells(f'{s}:{e2}')
-        c=ws_ced[s]; c.value=lbl; c.fill=fl; c.font=f(True,'FFFFFF',9); c.alignment=CC; c.border=BD
-    ws_ced.row_dimensions[3].height = 28
+    _MESES_CORTOS = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC']
+    ch0 = ws_ced.cell(3,1,'CONCEPTO')
+    ch0.fill=PatternFill('solid',fgColor='374151'); ch0.font=f(True,'FFFFFF',9)
+    ch0.alignment=CC; ch0.border=BD
+    for _ci, _mn in enumerate(_MESES_CORTOS, 2):
+        _ch = ws_ced.cell(3,_ci,_mn)
+        _ch.fill=Az; _ch.font=f(True,'FFFFFF',9); _ch.alignment=CC; _ch.border=BD
+    # Encabezado columna TOTAL (col N)
+    _ct = ws_ced.cell(3, MCOLS_TOT, 'TOTAL')
+    _ct.fill=PatternFill('solid',fgColor='1E3A8A'); _ct.font=f(True,'FFFFFF',9)
+    _ct.alignment=CC; _ct.border=BD
+    ws_ced.row_dimensions[3].height = 22
 
-    hdrs_ced = [('MES',Az),('INGRESOS\nMES',Az),('DED.\nMES',Az),
-                ('BASE\nACUM.',GRP_ISR),('ISR\nTARIFA',GRP_ISR),('RET.ISR\nACUM.',GRP_ISR),
-                ('ISR PP\nANT.',GRP_ISR),('ISR A\nPAGAR',GRP_ISR),
-                ('IVA\nCAUS.',GRP_IVA),('IVA\nACRED.',GRP_IVA),('IVA\nRET.',GRP_IVA),('IVA A\nPAGAR',GRP_IVA),
-                ('REC.\nISR',GRP_REC),('REC.\nIVA',GRP_REC),
-                ('TOTAL\nISR+IVA',GRP_TOT),('TOTAL\nC/REC.',GRP_TOT)]
-    for ci, (h, fl) in enumerate(hdrs_ced, 1):
-        c=ws_ced.cell(4,ci,h); c.fill=fl; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
-    ws_ced.row_dimensions[4].height = 32
+    _LBL_ISR = PatternFill('solid', fgColor='EFF6FF')
+    _LBL_IVA = PatternFill('solid', fgColor='F0FDF4')
+    _LBL_REC = PatternFill('solid', fgColor='F5F3FF')
+    _TOT_ISR  = PatternFill('solid', fgColor='374151')
 
-    tot_isr_ced = tot_iva_ced = 0.0
-    for ri_c, r in enumerate(results, 5):
-        bg = La if ri_c%2==0 else Lg
-        isr_rec = r.get('rec_isr',0.0); iva_rec = r.get('rec_iva',0.0)
-        total_base  = round(r['isr_pay'] + r['iva_pay'], 2)
-        total_crec  = round(total_base + isr_rec + iva_rec, 2)
-        tot_isr_ced += r['isr_pay']; tot_iva_ced += r['iva_pay']
-        vals_c = [(r['nom'],None),(r['ing_m'],MXN),(r['ded_m'],MXN),
-                  (r['base_acum'],MXN),(r['isr_tar'],MXN),(r['ret_isr_acum'],MXN),
-                  (r['isr_pag_ant'],MXN),(r['isr_pay'],MXN),
-                  (r['iva_caus'],MXN),(r['iva_acred'],MXN),(r['iva_ret'],MXN),(r['iva_pay'],MXN),
-                  (isr_rec,MXN),(iva_rec,MXN),
-                  (total_base,MXN),(total_crec,MXN)]
-        for ci, (v, fmt) in enumerate(vals_c, 1):
-            bold = ci in (8,12,15,16)
-            col  = '1F4E79' if ci==8 and isinstance(v,float) and v>0 else \
-                   '14532D' if ci==12 and isinstance(v,float) and v>0 else \
-                   '78350F' if ci in(15,16) and isinstance(v,float) and v>0 else '000000'
-            put(ws_ced, ri_c, ci, v, bold, col, bg, LL if ci==1 else RR, fmt)
-        ws_ced.row_dimensions[ri_c].height = 15
+    # ── Factores INPC/recargos por mes (para incrustar en fórmulas) ──────────
+    _REC_RATE_CED  = RECARGO_RATES.get(year, 0.0147)
+    _INPC_REF_CED  = INPC_REF                            # 145.75
 
-    tr_c = len(results)+5
-    ws_ced.merge_cells(f'A{tr_c}:C{tr_c}')
-    put(ws_ced, tr_c, 1, f'TOTAL ANUAL {year}', True, 'FFFFFF', Blk, LL)
-    for ci in range(2, 17):
-        ws_ced.cell(tr_c,ci).fill=Blk; ws_ced.cell(tr_c,ci).border=BD
-    put(ws_ced, tr_c, 8,  tot_isr_ced, True,'FFFFFF',Blk,RR,MXN)
-    put(ws_ced, tr_c, 12, tot_iva_ced, True,'FFFFFF',Blk,RR,MXN)
-    put(ws_ced, tr_c, 15, round(tot_isr_ced+tot_iva_ced,2), True,'FFFFFF',Blk,RR,MXN)
-    ws_ced.row_dimensions[tr_c].height = 20
-    for ci, w in enumerate([10,13,13,14,13,13,13,13,12,12,11,12,12,12,14,14],1):
-        ws_ced.column_dimensions[get_column_letter(ci)].width = w
-    ws_ced.freeze_panes = 'B5'
+    def _inpc_m(mes):
+        return INPC_TABLE.get((year, mes), _INPC_REF_CED)
 
-    # ══ GASTOS DEDUCIBLES ══════════════════════════════════════════════════════
+    # Filas clave en la CÉDULA (row_i = index_en_CEDULA_ROWS + 4)
+    # Índice 0=sec_ISR(row4) 15=ISR_A_PAGAR(row19) 24=IVA_A_PAGAR(row28)
+    # 28=ACT_ISR(row32) 29=REC_ISR(row33) 30=ISR_CR(row34)
+    # 31=ACT_IVA(row35) 32=REC_IVA(row36) 33=IVA_CR(row37) 34=TOTAL(row38)
+    _R_ISR_PAY = 19   # ISR A PAGAR AL SAT
+    _R_IVA_PAY = 28   # IVA A PAGAR AL SAT
+    _R_ACT_ISR = 32   # Actualización ISR
+    _R_REC_ISR = 33   # Recargos ISR
+    _R_ISR_CR  = 34   # ISR CON ACTUALIZ. Y RECARGOS
+    _R_ACT_IVA = 35   # Actualización IVA
+    _R_REC_IVA = 36   # Recargos IVA
+    _R_IVA_CR  = 37   # IVA CON ACTUALIZ. Y RECARGOS
+
+    # (label, fill_lbl, is_sec_hdr, is_total, fmt_key, formula_fn, total_mode)
+    # total_mode: 'SUM'=suma B:M | 'DIC'=valor DIC (acumulado) | 'AVG'=promedio | None=vacío
+    _CEDULA_ROWS = [
+        # ── Sección ISR ──────────────────────────────────────────────────────
+        ('ISR — PAGO PROVISIONAL MENSUAL  (Art. 106 LISR)',
+            Az, True, False, None, None, None),                                 # row 4
+        ('(+)  Ingresos del mes',
+            _LBL_ISR, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO ISR'!B{ci+2}", 'SUM'),                      # row 5
+        ('(+)  Acum. ingresos meses anteriores',
+            _LBL_ISR, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO ISR'!D{ci+2}-'CÁLCULO ISR'!B{ci+2}", None), # row 6
+        ('(=)  Ingresos acumulados ene→mes',
+            _TOT_ISR, False, True, 'MXN',
+            lambda ci: f"={get_column_letter(ci)}5+{get_column_letter(ci)}6", 'DIC'), # row 7
+        ('(--)  Deducciones autorizadas del mes',
+            _LBL_ISR, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO ISR'!C{ci+2}", 'SUM'),                      # row 8
+        ('(--)  Acum. deducciones meses anteriores',
+            _LBL_ISR, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO ISR'!E{ci+2}-'CÁLCULO ISR'!C{ci+2}", None), # row 9
+        ('(=)  Deducciones acumuladas ene→mes',
+            Vd, False, True, 'MXN',
+            lambda ci: f"={get_column_letter(ci)}8+{get_column_letter(ci)}9", 'DIC'), # row 10
+        ('(=)  BASE GRAVABLE ACUMULADA',
+            Az, False, True, 'MXN',
+            lambda ci: f"=MAX(0,{get_column_letter(ci)}7-{get_column_letter(ci)}10)", 'DIC'), # row 11
+        ('(\xd7)  ISR segun tarifa Art. 96 LISR',
+            _LBL_ISR, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO ISR'!G{ci+2}", 'DIC'),                      # row 12
+        ('       Tasa efectiva ISR',
+            _LBL_ISR, False, False, 'PCT',
+            lambda ci: f"='CÁLCULO ISR'!M{ci+2}", 'DIC'),                      # row 13
+        ('(--)  Retenciones ISR del mes',
+            _LBL_ISR, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO ISR'!H{ci+2}", 'SUM'),                      # row 14
+        ('(--)  Acum. retenciones meses anteriores',
+            _LBL_ISR, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO ISR'!I{ci+2}-'CÁLCULO ISR'!H{ci+2}", None), # row 15
+        ('(=)  Retenciones ISR acumuladas ene→mes',
+            _TOT_ISR, False, True, 'MXN',
+            lambda ci: f"={get_column_letter(ci)}14+{get_column_letter(ci)}15", 'DIC'), # row 16
+        ('(--)  Pagos provisionales anteriores',
+            _LBL_ISR, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO ISR'!J{ci+2}", None),                       # row 17
+        ('(=)  ISR CARGO / (FAVOR)',
+            _TOT_ISR, False, True, 'MXN',
+            lambda ci: (f"={get_column_letter(ci)}12"
+                        f"-{get_column_letter(ci)}16"
+                        f"-{get_column_letter(ci)}17"), 'SUM'),                 # row 18
+        ('(=)  ISR A PAGAR AL SAT',
+            ISR_PAG, False, True, 'MXN',
+            lambda ci: f"=MAX(0,{get_column_letter(ci)}18)", 'SUM'),            # row 19
+        ('(+)  ISR pagado acumulado año',
+            _LBL_ISR, False, False, 'MXN',
+            lambda ci: f"=SUM('CÁLCULO ISR'!$L$4:L{ci+2})", 'DIC'),           # row 20
+        # blank                                                                  # row 21
+        (None, None, False, False, None, None, None),
+        # ── Sección IVA ──────────────────────────────────────────────────────
+        ('IVA — PAGO MENSUAL  (Art. 5-D LIVA)',
+            Vd, True, False, None, None, None),                                 # row 22
+        ('(+)  IVA causado del mes',
+            _LBL_IVA, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO IVA'!B{ci+2}", 'SUM'),                      # row 23
+        ('(--)  IVA acreditable del mes',
+            _LBL_IVA, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO IVA'!D{ci+2}", 'SUM'),                      # row 24
+        ('(--)  IVA retenido por clientes',
+            _LBL_IVA, False, False, 'MXN',
+            lambda ci: f"='CÁLCULO IVA'!E{ci+2}", 'SUM'),                      # row 25
+        ('(+)  Saldo a favor IVA mes anterior',
+            _LBL_IVA, False, False, 'MXN',
+            lambda ci: (
+                f"='CÁLCULO IVA'!C4"
+                if ci == 2 else
+                f"=IF({get_column_letter(ci-1)}27<0,ABS({get_column_letter(ci-1)}27),0)"
+            ), None),                                                            # row 26
+        ('(=)  IVA NETO DEL MES',
+            Vd, False, True, 'MXN',
+            lambda ci: (f"={get_column_letter(ci)}23"
+                        f"-{get_column_letter(ci)}24"
+                        f"-{get_column_letter(ci)}25"
+                        f"-{get_column_letter(ci)}26"), 'SUM'),                 # row 27
+        ('(=)  IVA A PAGAR AL SAT',
+            IVA_PAG, False, True, 'MXN',
+            lambda ci: f"=MAX(0,{get_column_letter(ci)}27)", 'SUM'),            # row 28
+        ('       Saldo a favor → sig. mes',
+            _LBL_IVA, False, False, 'MXN',
+            lambda ci: f"=IF({get_column_letter(ci)}27<0,ABS({get_column_letter(ci)}27),0)", 'DIC'), # row 29
+        # blank                                                                  # row 30
+        (None, None, False, False, None, None, None),
+        # ── Sección Recargos ─────────────────────────────────────────────────
+        ('RECARGOS Y ACTUALIZACION  (Art. 21 CFF)',
+            PatternFill('solid',fgColor='4C1D95'), True, False, None, None, None), # row 31
+        (f'(+)  Actualizacion ISR  [INPC ref {_INPC_REF_CED} ÷ INPC {year}/mes]',
+            _LBL_REC, False, False, 'MXN',
+            lambda ci: (
+                f"={get_column_letter(ci)}{_R_ISR_PAY}"
+                f"*MAX(0,{_INPC_REF_CED}/{_inpc_m(ci-1):.3f}-1)"
+            ), 'SUM'),                                                           # row 32
+        (f'(+)  Recargos ISR  [{year}: {_REC_RATE_CED*100:.2f}%/mes × meses de retraso]',
+            _LBL_REC, False, False, 'MXN',
+            lambda ci: (
+                f"={get_column_letter(ci)}{_R_ISR_PAY}"
+                f"*{_REC_RATE_CED}*MAX(1,{14-ci})"
+            ), 'SUM'),                                                           # row 33
+        ('(=)  ISR CON ACTUALIZ. Y RECARGOS',
+            ISR_PAG, False, True, 'MXN',
+            lambda ci: (
+                f"={get_column_letter(ci)}{_R_ISR_PAY}"
+                f"+{get_column_letter(ci)}{_R_ACT_ISR}"
+                f"+{get_column_letter(ci)}{_R_REC_ISR}"
+            ), 'SUM'),                                                           # row 34
+        (f'(+)  Actualizacion IVA  [INPC ref {_INPC_REF_CED} ÷ INPC {year}/mes]',
+            _LBL_REC, False, False, 'MXN',
+            lambda ci: (
+                f"={get_column_letter(ci)}{_R_IVA_PAY}"
+                f"*MAX(0,{_INPC_REF_CED}/{_inpc_m(ci-1):.3f}-1)"
+            ), 'SUM'),                                                           # row 35
+        (f'(+)  Recargos IVA  [{year}: {_REC_RATE_CED*100:.2f}%/mes × meses de retraso]',
+            _LBL_REC, False, False, 'MXN',
+            lambda ci: (
+                f"={get_column_letter(ci)}{_R_IVA_PAY}"
+                f"*{_REC_RATE_CED}*MAX(1,{14-ci})"
+            ), 'SUM'),                                                           # row 36
+        ('(=)  IVA CON ACTUALIZ. Y RECARGOS',
+            IVA_PAG, False, True, 'MXN',
+            lambda ci: (
+                f"={get_column_letter(ci)}{_R_IVA_PAY}"
+                f"+{get_column_letter(ci)}{_R_ACT_IVA}"
+                f"+{get_column_letter(ci)}{_R_REC_IVA}"
+            ), 'SUM'),                                                           # row 37
+        ('(=)  TOTAL CON RECARGOS Y ACTUALIZ.',
+            TOT_F, False, True, 'MXN',
+            lambda ci: (
+                f"={get_column_letter(ci)}{_R_ISR_CR}"
+                f"+{get_column_letter(ci)}{_R_IVA_CR}"
+            ), 'SUM'),                                                           # row 38
+    ]
+
+    _TOT_COL = get_column_letter(MCOLS_TOT)   # 'N'
+
+    for _ri_off, (_lbl, _lfill, _is_sec, _is_tot, _fmt_key, _ffunc, _tot_mode) in enumerate(_CEDULA_ROWS):
+        _row_i = _ri_off + 4
+        _fmt = MXN if _fmt_key == 'MXN' else (PCT if _fmt_key == 'PCT' else None)
+
+        if _lbl is None:                              # separador en blanco
+            ws_ced.row_dimensions[_row_i].height = 5
+            for _ci_b in range(1, MCOLS_TOT+1):
+                ws_ced.cell(_row_i, _ci_b).border = BD
+            continue
+
+        if _is_sec:                                   # encabezado de sección
+            ws_ced.merge_cells(start_row=_row_i, start_column=1,
+                               end_row=_row_i, end_column=MCOLS_TOT)
+            _c = ws_ced.cell(_row_i, 1, _lbl)
+            _c.fill=_lfill; _c.font=f(True,'FFFFFF',9); _c.alignment=CC; _c.border=BD
+            ws_ced.row_dimensions[_row_i].height = 18
+            continue
+
+        # Celda etiqueta
+        _lc = ws_ced.cell(_row_i, 1, _lbl)
+        _lc.fill=_lfill; _lc.border=BD
+        if _is_tot:
+            _lc.font=f(True,'FFFFFF',9); _lc.alignment=LL
+        else:
+            _lc.font=f(False,'1E293B',9); _lc.alignment=LL
+
+        # Celdas de fórmula: una por mes (B→M)
+        for _ci2 in range(2, MCOLS_CED+1):
+            _formula = _ffunc(_ci2) if _ffunc else None
+            _dc = ws_ced.cell(_row_i, _ci2, _formula)
+            _dc.fill=_lfill; _dc.border=BD
+            if _fmt:
+                _dc.number_format = _fmt
+            _dc.font = f(True,'FFFFFF',10) if _is_tot else f(False,'1E293B',9)
+            _dc.alignment = RR
+
+        # Columna TOTAL (col N)
+        _tc = ws_ced.cell(_row_i, MCOLS_TOT)
+        if _tot_mode == 'SUM':
+            _tc.value = f"=SUM(B{_row_i}:M{_row_i})"
+        elif _tot_mode == 'DIC':
+            _tc.value = f"=M{_row_i}"          # DIC ya es el acumulado anual
+        elif _tot_mode == 'AVG':
+            _tc.value = f"=IFERROR(AVERAGEIF(B{_row_i}:M{_row_i},\"<>0\"),0)"
+        # else None → celda vacía
+        _tc.fill = PatternFill('solid', fgColor='1E3A8A') if _is_tot else \
+                   PatternFill('solid', fgColor='DBEAFE')
+        _tc.border = BD
+        if _fmt:
+            _tc.number_format = _fmt
+        _tc.font  = f(True,'FFFFFF',10) if _is_tot else f(False,'1E3A8A',9)
+        _tc.alignment = RR
+
+        ws_ced.row_dimensions[_row_i].height = 16 if _is_tot else 14
+
+    ws_ced.column_dimensions['A'].width = 55
+    for _ci3 in range(2, MCOLS_CED+1):
+        ws_ced.column_dimensions[get_column_letter(_ci3)].width = 13
+    ws_ced.column_dimensions[_TOT_COL].width = 15   # columna TOTAL un poco más ancha
+    ws_ced.freeze_panes = 'B4'
+
+
+    # ══ GASTOS DEDUCIBLES (con subtotales por mes) ════════════════════════════
     ws4 = wb.create_sheet('GASTOS DEDUCIBLES')
-    title(ws4, 8, 1, f'GASTOS DEDUCIBLES {year} — {len(ded_log)} facturas', Vd)
-    title(ws4, 8, 2, 'Art. 103 LISR | Deducciones autorizadas Régimen 612 | Consumo/restaurante al 8.5% Art.28 fr.XX', Vd, 8)
+    _GD_COLS = 8
+    title(ws4, _GD_COLS, 1, f'GASTOS DEDUCIBLES {year} — {len(ded_log)} facturas', Vd)
+    title(ws4, _GD_COLS, 2,
+          'Art. 103 LISR | Deducciones autorizadas Regimen 612 | Consumo/restaurante al 8.5% Art.28 fr.XX',
+          Vd, 8)
     ws4.row_dimensions[2].height = 14
-    hdrs4 = ['MES','FECHA','FOLIO','PROVEEDOR / EMISOR','SUBTOTAL ORIG.','DED. EFECTIVA','IVA ACRED.','CONCEPTO / NOTA']
-    for ci, h in enumerate(hdrs4, 1):
-        c=ws4.cell(3,ci,h); c.fill=Vd; c.font=f(True,'FFFFFF',8); c.alignment=CC; c.border=BD
+    _hdrs4 = ['MES','FECHA','FOLIO','PROVEEDOR / EMISOR','SUBTOTAL DED.','IVA ACRED.','CONCEPTO / NOTA','MÉTODO/FORMA PAGO']
+    for _ci4h, _h4 in enumerate(_hdrs4, 1):
+        _c4=ws4.cell(3,_ci4h,_h4)
+        _c4.fill=Vd; _c4.font=f(True,'FFFFFF',8); _c4.alignment=CC; _c4.border=BD
     ws4.row_dimensions[3].height = 20
-    rows4 = sorted(ded_log, key=lambda x:(x['mes'],x['fecha']))
-    for ri, g in enumerate(rows4, 4):
-        parcial = g.get('factor', 1.0) < 1.0
-        bg = PatternFill('solid', fgColor='FEF9C3') if parcial else (Lv if ri%2==0 else Lg)
-        nota = g.get('nota', '')
-        rv = [(MESES[g['mes']][:3],None),(g['fecha'],None),(g['folio'],None),(g['nom_e'],None),
-              (g.get('sub_original', g['sub']),MXN),(g.get('sub_ded', g['sub']),MXN),
-              (g['iva_acred'],MXN),(g['conc'] + (f' [{nota}]' if nota else ''),None)]
-        for ci, (v, fmt) in enumerate(rv, 1):
-            put(ws4, ri, ci, v, fill=bg, align=LL if ci in(1,2,3,4,8) else RR, fmt=fmt)
-        ws4.row_dimensions[ri].height = 13
+
+    def _gd_subtotal(ws, row_n, mes_num, mes_buf):
+        _lbl_m3  = MESES_C[mes_num]           # "ENE", "FEB", ...
+        _sub_lbl = f'Subtotal {_lbl_m3} ({len(mes_buf)} facturas)'
+        _c = ws.cell(row_n, 1, _sub_lbl)
+        _c.fill=Vd; _c.font=f(True,'FFFFFF',8); _c.alignment=LL; _c.border=BD
+        for _ci_st in [2,3,4]:
+            ws.cell(row_n,_ci_st).fill=Vd; ws.cell(row_n,_ci_st).border=BD
+        # Fórmulas SUMIF: si el usuario edita/quita filas, el subtotal se recalcula
+        _c5 = ws.cell(row_n, 5, f'=SUMIF($A:$A,"{_lbl_m3}",$E:$E)')
+        _c5.fill=Vd; _c5.font=f(True,'FFFFFF',9); _c5.number_format=MXN; _c5.alignment=RR; _c5.border=BD
+        _c6 = ws.cell(row_n, 6, f'=SUMIF($A:$A,"{_lbl_m3}",$F:$F)')
+        _c6.fill=Vd; _c6.font=f(True,'FFFFFF',9); _c6.number_format=MXN; _c6.alignment=RR; _c6.border=BD
+        ws.cell(row_n,7).fill=Vd; ws.cell(row_n,7).border=BD
+        ws.cell(row_n,8).fill=Vd; ws.cell(row_n,8).border=BD
+        ws.row_dimensions[row_n].height = 16
+
+    _rows4 = sorted(ded_log, key=lambda x:(x['mes'],x['fecha']))
+    _row4 = 4
+    _mes_actual4 = None
+    _mes_buf4 = []
+
+    for _g4 in _rows4:
+        if _mes_actual4 != _g4['mes']:
+            if _mes_actual4 is not None and _mes_buf4:
+                _gd_subtotal(ws4, _row4, _mes_actual4, _mes_buf4)
+                _row4 += 1
+            _mes_actual4 = _g4['mes']
+            _mes_buf4 = []
+
+        _parcial4 = _g4.get('factor', 1.0) < 1.0
+        _bg4 = PatternFill('solid', fgColor='FEF9C3') if _parcial4 else (Lv if _row4%2==0 else Lg)
+        _nota4 = _g4.get('nota','')
+        _sub_ded4 = _g4.get('sub_ded', _g4['sub'])
+        # Método de pago: "PUE – Pago en una sola exhibición" ó "PPD – Pago en parcialidades"
+        _mp = _g4.get('metodo_pago','')
+        _fp = _g4.get('forma_pago','')
+        _MP_DESC = {'PUE':'PUE – Una exhibición','PPD':'PPD – Parcialidades o diferido'}
+        _FP_DESC = {
+            '01':'01-Efectivo','02':'02-Cheque','03':'03-Transferencia','04':'04-Tarjeta crédito',
+            '28':'28-Tarjeta débito','99':'99-Por definir',
+        }
+        _mp_str = _MP_DESC.get(_mp, _mp)
+        _fp_str = _FP_DESC.get(_fp, _fp)
+        _metodo_col = f"{_mp_str} / {_fp_str}" if _mp_str or _fp_str else ''
+        _rv4 = [
+            (MESES[_g4['mes']][:3], None),
+            (_g4['fecha'],           None),
+            (_g4['folio'],           None),
+            (_g4['nom_e'],           None),
+            (_sub_ded4,              MXN),
+            (_g4['iva_acred'],       MXN),
+            (_g4['conc'] + (f' [{_nota4}]' if _nota4 else ''), None),
+            (_metodo_col,            None),
+        ]
+        for _ci4d, (_v4, _fmt4d) in enumerate(_rv4, 1):
+            put(ws4, _row4, _ci4d, _v4, fill=_bg4,
+                align=LL if _ci4d in(1,2,3,4,7,8) else RR, fmt=_fmt4d)
+        ws4.row_dimensions[_row4].height = 13
+        _mes_buf4.append(_g4)
+        _row4 += 1
+
+    if _mes_actual4 is not None and _mes_buf4:
+        _gd_subtotal(ws4, _row4, _mes_actual4, _mes_buf4)
+        _row4 += 1
+
     if ded_log:
-        tr4 = len(ded_log)+4
-        put(ws4, tr4, 4, 'TOTAL GENERAL', True, 'FFFFFF', Blk, LL)
-        put(ws4, tr4, 5, sum(g.get('sub_original',g['sub']) for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
-        put(ws4, tr4, 6, sum(g.get('sub_ded',g['sub']) for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
-        put(ws4, tr4, 7, sum(g['iva_acred'] for g in ded_log), True, 'FFFFFF', Blk, RR, MXN)
-        for ci in [1,2,3,8]:
-            ws4.cell(tr4,ci).fill=Blk; ws4.cell(tr4,ci).border=BD
-        ws4.row_dimensions[tr4].height = 18
-    for ci, w in enumerate([9,11,12,38,14,13,13,50], 1):
-        ws4.column_dimensions[get_column_letter(ci)].width = w
+        _tr4 = _row4
+        put(ws4, _tr4, 1, 'TOTAL GENERAL', True, 'FFFFFF', Blk, LL)
+        # SUMPRODUCT cuenta solo filas con mes de 3 letras (excluye subtotales y encabezados)
+        _c5t = ws4.cell(_tr4, 5, f'=SUMPRODUCT(--(LEN($A$4:$A{_tr4-1})=3),($E$4:$E{_tr4-1}))')
+        _c5t.font=f(True,'FFFFFF',9); _c5t.fill=Blk; _c5t.number_format=MXN; _c5t.alignment=RR; _c5t.border=BD
+        _c6t = ws4.cell(_tr4, 6, f'=SUMPRODUCT(--(LEN($A$4:$A{_tr4-1})=3),($F$4:$F{_tr4-1}))')
+        _c6t.font=f(True,'FFFFFF',9); _c6t.fill=Blk; _c6t.number_format=MXN; _c6t.alignment=RR; _c6t.border=BD
+        for _ci4t in [2,3,4,7,8]:
+            ws4.cell(_tr4,_ci4t).fill=Blk; ws4.cell(_tr4,_ci4t).border=BD
+        ws4.row_dimensions[_tr4].height = 18
+
+    for _ci4w, _w4 in enumerate([9,11,12,40,14,13,52,32], 1):
+        ws4.column_dimensions[get_column_letter(_ci4w)].width = _w4
+
+
+    # ══ INGRESOS DETALLE (fuente editable para CÁLCULO ISR e IVA) ═══════════════
+    FILL_ING = PatternFill('solid',fgColor='1E3A8A')
+    ws_id = wb.create_sheet('INGRESOS DETALLE')
+    _ID_COLS = 11
+    title(ws_id, _ID_COLS, 1, f'INGRESOS DETALLE {year} — facturas emitidas', FILL_ING)
+    title(ws_id, _ID_COLS, 2,
+          'Edita SUBTOTAL (col G) o IVA (col H) → CÁLCULO ISR/IVA y CÉDULA se recalculan',
+          Az2, 8)
+    ws_id.row_dimensions[2].height = 14
+    _hdrs_id = ['MES','FECHA','SERIE','FOLIO','CLIENTE','RFC','SUBTOTAL','IVA','RET.ISR','RET.IVA','TOTAL']
+    for _ci_id, _h_id in enumerate(_hdrs_id, 1):
+        _c = ws_id.cell(3, _ci_id, _h_id)
+        _c.fill=FILL_ING; _c.font=f(True,'FFFFFF',8); _c.alignment=CC; _c.border=BD
+    ws_id.row_dimensions[3].height = 20
+
+    _rows_id   = sorted([e for e in emitidas_log if e['tipo'] in ('I','E')],
+                        key=lambda x:(x['mes'], x['fecha']))
+    _row_id    = 4
+    _mes_a_id  = None
+    _mes_b_id  = []
+
+    def _id_subtotal(ws, row_n, mes_num, buf):
+        _lm3 = MESES_C[mes_num]
+        _c = ws.cell(row_n, 1, f'Subtotal {_lm3} ({len(buf)} facturas)')
+        _c.fill=FILL_ING; _c.font=f(True,'FFFFFF',8); _c.alignment=LL; _c.border=BD
+        for _ci in [2,3,4,5,6]:
+            ws.cell(row_n,_ci).fill=FILL_ING; ws.cell(row_n,_ci).border=BD
+        for _ci, _fml in [(7, f'=SUMIF($A:$A,"{_lm3}",$G:$G)'),
+                          (8, f'=SUMIF($A:$A,"{_lm3}",$H:$H)'),
+                          (9, f'=SUMIF($A:$A,"{_lm3}",$I:$I)'),
+                          (10,f'=SUMIF($A:$A,"{_lm3}",$J:$J)'),
+                          (11,f'=SUMIF($A:$A,"{_lm3}",$K:$K)')]:
+            _c2 = ws.cell(row_n, _ci, _fml)
+            _c2.fill=FILL_ING; _c2.font=f(True,'FFFFFF',9)
+            _c2.number_format=MXN; _c2.alignment=RR; _c2.border=BD
+        ws.row_dimensions[row_n].height = 16
+
+    for _ei in _rows_id:
+        if _mes_a_id != _ei['mes']:
+            if _mes_a_id is not None and _mes_b_id:
+                _id_subtotal(ws_id, _row_id, _mes_a_id, _mes_b_id)
+                _row_id += 1
+            _mes_a_id = _ei['mes']; _mes_b_id = []
+        _bg = La if _row_id%2==0 else Lg
+        _rv = [(MESES_C[_ei['mes']], None),
+               (_ei['fecha'],          None),
+               (_ei.get('serie',''),   None),
+               (_ei['folio'],          None),
+               (_ei['nom_r'],          None),
+               (_ei['rfc_r'],          None),
+               (_ei['sub'],            MXN),
+               (_ei['iva'],            MXN),
+               (_ei.get('ret_isr',0),  MXN),
+               (_ei.get('ret_iva',0),  MXN),
+               (_ei['total'],          MXN)]
+        for _ci, (_v, _fmt) in enumerate(_rv, 1):
+            put(ws_id, _row_id, _ci, _v, fill=_bg, align=LL if _ci<=6 else RR, fmt=_fmt)
+        ws_id.row_dimensions[_row_id].height = 13
+        _mes_b_id.append(_ei); _row_id += 1
+
+    if _mes_a_id is not None and _mes_b_id:
+        _id_subtotal(ws_id, _row_id, _mes_a_id, _mes_b_id); _row_id += 1
+
+    if _rows_id:
+        _tr_id = _row_id
+        put(ws_id, _tr_id, 1, 'TOTAL GENERAL', True, 'FFFFFF', Blk, LL)
+        for _ci in [2,3,4,5,6]:
+            ws_id.cell(_tr_id,_ci).fill=Blk; ws_id.cell(_tr_id,_ci).border=BD
+        for _ci, _fml in [
+            (7,  f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($G$4:$G{_tr_id-1}))'),
+            (8,  f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($H$4:$H{_tr_id-1}))'),
+            (9,  f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($I$4:$I{_tr_id-1}))'),
+            (10, f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($J$4:$J{_tr_id-1}))'),
+            (11, f'=SUMPRODUCT(--(LEN($A$4:$A{_tr_id-1})=3),($K$4:$K{_tr_id-1}))')]:
+            _c2 = ws_id.cell(_tr_id, _ci, _fml)
+            _c2.font=f(True,'FFFFFF',9); _c2.fill=Blk
+            _c2.number_format=MXN; _c2.alignment=RR; _c2.border=BD
+        ws_id.row_dimensions[_tr_id].height = 18
+
+    for _ci_w, _w in enumerate([9,11,8,12,35,16,14,13,12,12,14], 1):
+        ws_id.column_dimensions[get_column_letter(_ci_w)].width = _w
+    ws_id.freeze_panes = 'B4'
+
 
     # ══ HOJAS MENSUALES ═══════════════════════════════════════════════════════
-    FILL_ING = PatternFill('solid',fgColor='1E3A8A')
     FILL_GAS = PatternFill('solid',fgColor='14532D')
     for mes in range(1,13):
         r_res = results[mes-1]
